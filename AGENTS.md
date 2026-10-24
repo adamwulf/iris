@@ -27,7 +27,8 @@ Sources/IrisKit/
                MailReader (sessions, paging, errors), MailModels (rows, pages)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw)
-  Helpers/     OutputFormatter (table/json/jsonl/id for list commands)
+  Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
+               MailAddress (the one address type), DateText, ModifiedUTF7
   IrisError.swift   the one error type; each message says what to do next
   IrisLog.swift     the logging seam
 Sources/iris/
@@ -43,9 +44,12 @@ Tests/CLITests/     argument parsing only, never run()
 `MailClient` is the protocol for the few IMAP calls iris makes. One client is
 one session: `login()`, the calls, then `logout()`. `MailReader` owns that
 order (`withClient` logs out on success, on error, and after a failed login)
-and holds all the logic: paging math, ordering, date fallback, and error
-mapping. `SwiftMailClient` only converts SwiftMail types and errors; it has no
-logic that a test would need, because it needs a server.
+and holds the logic: paging math, ordering, date fallback, and modified
+UTF-7 encoding of the mailbox name before EXAMINE. `SwiftMailClient` only
+converts SwiftMail types and errors. Its parts that need no server are static
+and tested in `SwiftMailClientTests`: the error mapping
+(`irisError(for:command:account:)`), the TLS choice
+(`transportSecurity(forPort:)`), and `MailboxInfo(swiftMail:)`.
 
 Tests never touch the network. They use `FakeMailClient`, which returns
 scripted results and records the calls.
@@ -92,7 +96,9 @@ Never put a password in an error message, a log line, or JSON output.
 
 Add a case to `IrisError` in its section (`// IMAP`, `// Message rendering`)
 with an `errorDescription` that says what the user can do next. Map library
-errors to it in one place (for IMAP, `SwiftMailClient.irisError(for:command:)`).
+errors to it in one place (for IMAP, `SwiftMailClient.irisError(for:command:account:)`,
+with a test in `SwiftMailClientTests`). A next-step command in the message
+names the account (`--account <name>`).
 
 ## Gotchas
 
@@ -101,8 +107,16 @@ errors to it in one place (for IMAP, `SwiftMailClient.irisError(for:command:)`).
   it, change the revision in `Package.swift`, then run `swift package resolve`
   (never edit `Package.resolved` by hand). Read SwiftMail's source in
   `.build/checkouts/SwiftMail`; its README is behind the code.
-- **Raw fetch deadline:** `fetchRawMessage` gives up after 10 seconds (fixed
-  in SwiftMail). iris turns that into `messageDownloadTimedOut`.
+- **10 second deadlines:** every SwiftMail FETCH gives up after 10 seconds
+  (fixed in SwiftMail). `fetchRawMessage` turns that into
+  `messageDownloadTimedOut`. `fetchEnvelopes` uses the chunked
+  `fetchMessageInfos(using:options:chunkSize:)` stream (100 messages per
+  FETCH), so each chunk has its own deadline. Any other timeout after login is
+  `serverTimedOut`; before login it is `connectionFailed`.
+- **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
+  `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, so iris
+  decodes names in `MailboxInfo(swiftMail:)` and `MailReader` encodes
+  `--mailbox` before EXAMINE. Users only see and type the decoded names.
 - **Transport security:** iris passes `.startTLS` for port 143 and
   `.implicitTLS` for every other port. SwiftMail's `.automatic` would continue
   in plain text on 143 when the server has no STARTTLS.
@@ -120,9 +134,10 @@ errors to it in one place (for IMAP, `SwiftMailClient.irisError(for:command:)`).
 - **libxml2** obeys a `<meta charset>` over the encoding it is given, so
   `MessageDecoder.declaringUTF8` points every `<meta>` charset at UTF-8 (the
   text is already decoded).
-- **swift-log:** SwiftMail logs at `.info` to stderr by default.
-  `CLI.bootstrapSwiftLog()` keeps only warnings. Only the executable depends on
-  swift-log.
+- **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
+  every failed command at `.error`. iris reports each failure itself as an
+  `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the
+  executable depends on swift-log.
 - **Adam's global gitignore ignores folders named `Output/`.** Do not put
   sources in one. After adding files, check `git status --short --ignored`.
 

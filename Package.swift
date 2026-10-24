@@ -42,7 +42,14 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
-        .testTarget(name: "IrisKitTests", dependencies: ["IrisKit"]),
+        .testTarget(
+            name: "IrisKitTests",
+            dependencies: [
+                "IrisKit",
+                // SwiftMailClientTests builds SwiftMail errors and mailbox infos.
+                .product(name: "SwiftMail", package: "SwiftMail"),
+            ]
+        ),
         .testTarget(name: "CLITests", dependencies: ["iris"]),
     ]
 )

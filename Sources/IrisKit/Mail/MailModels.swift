@@ -111,7 +111,7 @@ public struct MessagePage: Sendable, Equatable {
         return max(1, newest - limit + 1)...newest
     }
 
-    /// The line `iris list` writes to stderr after the table, such as
+    /// The line `iris list` writes to stderr after the rows (in every format), such as
     /// `Showing 1-25 of 1234. Next page: iris list --page 2`.
     /// `account` is the `--account` value, if any, so the next-page command uses the same account.
     public func hint(account: String?) -> String {
