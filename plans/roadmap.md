@@ -85,9 +85,11 @@ done; README.md describes it.
 - A server that sends a mailbox name that is not valid modified UTF-7 (raw
   `R&D` instead of `R&-D`) shows it unchanged, but typing it sends `R&-D`,
   so that mailbox cannot be opened. RFC 3501 servers do not do this.
-- When the HTML body is shown, a text/plain part outside the
-  multipart/alternative (for example a mailing-list footer) is listed as an
-  attachment, not shown in the body.
+- A text/plain part outside the multipart/alternative (for example a
+  mailing-list footer) is part of the text body. When the HTML body is shown,
+  that part is not shown and not listed (`--body text` shows it). SwiftMail
+  keeps only leaf parts, not the multipart subtypes, so iris cannot tell a
+  footer from the text rendition of the same body.
 
 ## Open questions
 
