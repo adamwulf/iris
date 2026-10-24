@@ -182,8 +182,16 @@ struct SwiftMailClient: MailClient {
         case (_, IMAPError.timeout):
             // The login worked, so the host and port are right.
             return .serverTimedOut(account: account.name, command: command.name)
-        case (_, IMAPError.connectionFailed), (_, IMAPError.greetingFailed):
+        case (.login, IMAPError.connectionFailed), (_, IMAPError.greetingFailed):
             return connectionFailed(reason: reason(of: error), account: account)
+        case (_, IMAPError.connectionFailed):
+            // The login worked, so the host and port are right. SwiftMail
+            // reports a closed connection and a BYE this way.
+            return .connectionLost(
+                account: account.name,
+                command: command.name,
+                reason: redacting(password, in: reason(of: error))
+            )
         case (_, let error as IMAPError):
             return .serverError(
                 account: account.name,

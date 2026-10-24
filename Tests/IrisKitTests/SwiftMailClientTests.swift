@@ -80,11 +80,32 @@ final class SwiftMailClientTests: XCTestCase {
         }
     }
 
-    func testConnectionAndGreetingFailuresBecomeConnectionFailedWithoutThePassword() {
-        for error in [IMAPError.connectionFailed("reset secret"), IMAPError.greetingFailed("reset secret")] {
+    func testConnectionFailureOnLoginAndGreetingFailuresBecomeConnectionFailedWithoutThePassword() {
+        let cases: [(IMAPError, SwiftMailClient.Command)] = [
+            (.connectionFailed("reset secret"), .login),
+            (.greetingFailed("reset secret"), .login),
+            (.greetingFailed("reset secret"), .capability),
+        ]
+        for (error, command) in cases {
             XCTAssertEqual(
-                irisError(error, .capability),
-                .connectionFailed(account: "work", host: "imap.example.com", port: 993, reason: "reset <password>")
+                irisError(error, command),
+                .connectionFailed(account: "work", host: "imap.example.com", port: 993, reason: "reset <password>"),
+                "\(error) on \(command)"
+            )
+        }
+    }
+
+    func testConnectionFailureAfterLoginBecomesConnectionLostWithoutThePassword() {
+        let commands: [SwiftMailClient.Command] = [
+            .capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes, .fetchRawMessage(uid: 42),
+        ]
+        for command in commands {
+            XCTAssertEqual(
+                irisError(IMAPError.connectionFailed("Server terminated connection: secret"), command),
+                .connectionLost(
+                    account: "work", command: command.name, reason: "Server terminated connection: <password>"
+                ),
+                "\(command)"
             )
         }
     }

@@ -28,6 +28,19 @@ final class MailErrorTests: XCTestCase {
         XCTAssertTrue(message.contains("993"))
     }
 
+    func testConnectionLostAdvisesRetryingNotTheHostAndPort() throws {
+        let error = IrisError.connectionLost(
+            account: "work", command: "FETCH", reason: "Connection closed before command completed"
+        )
+        let message = try XCTUnwrap(error.errorDescription)
+        XCTAssertEqual(
+            message,
+            "The connection to the server broke during FETCH (account \"work\"): "
+                + "Connection closed before command completed. "
+                + "The network may have dropped, or the server may have closed the connection. Try again."
+        )
+    }
+
     func testUnknownMailboxPointsToTheMailboxesCommandForThatAccount() throws {
         let error = IrisError.unknownMailbox(account: "personal", name: "Nope", reason: "NO no such mailbox")
         let message = try XCTUnwrap(error.errorDescription)

@@ -26,8 +26,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
 
     /// The server refused the username or password.
     case loginFailed(account: String, username: String, host: String, reason: String)
-    /// iris could not reach the server, or the connection broke.
+    /// iris could not reach the server, or the connection broke before the login worked.
     case connectionFailed(account: String, host: String, port: Int, reason: String)
+    /// After a good login, the connection broke: the server closed it, or the network dropped.
+    case connectionLost(account: String, command: String, reason: String)
     /// EXAMINE failed: the mailbox does not exist, or the server cannot open it.
     case unknownMailbox(account: String, name: String, reason: String)
     /// The open mailbox has no message with this UID.
@@ -84,6 +86,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "Could not connect to \(host):\(port) (account \"\(account)\"): \(reason). "
                 + "Check your network connection, and check \(AccountResolver.key(.host, account: account)) and "
                 + "\(AccountResolver.key(.port, account: account)) (IMAP over TLS uses port \(AccountResolver.defaultPort))."
+        case .connectionLost(let account, let command, let reason):
+            return "The connection to the server broke during \(command) (account \"\(account)\"): \(reason). "
+                + "The network may have dropped, or the server may have closed the connection. Try again."
         case .unknownMailbox(let account, let name, let reason):
             return "The server could not open the mailbox \"\(name)\" (account \"\(account)\"): \(reason). "
                 + "Run `iris mailboxes --account \(MessagePage.shellQuoted(account))` to see the mailbox names."
