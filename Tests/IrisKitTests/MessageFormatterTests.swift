@@ -18,8 +18,9 @@ final class MessageFormatterTests: XCTestCase {
         body: "Can we meet **Tuesday**?\n\n> Quoted line",
         bodySource: .html,
         attachments: [
-            MessageAttachment(filename: "résumé.pdf", contentType: "application/pdf", size: 120_000),
-            MessageAttachment(filename: nil, contentType: "text/calendar", size: 512),
+            MessageAttachment(filename: "résumé.pdf", contentType: "application/pdf", size: 120_000, inline: false),
+            MessageAttachment(filename: nil, contentType: "text/calendar", size: 512, inline: false),
+            MessageAttachment(filename: "photo.jpg", contentType: "image/jpeg", size: 1_200_000, inline: true),
         ]
     )
 
@@ -43,6 +44,7 @@ final class MessageFormatterTests: XCTestCase {
         **Attachments:**
         - résumé.pdf (application/pdf, 120 KB)
         - (no filename) (text/calendar, 512 bytes)
+        - photo.jpg (image/jpeg, 1.2 MB, inline)
         """)
     }
 
@@ -134,11 +136,19 @@ final class MessageFormatterTests: XCTestCase {
             {
               "contentType" : "application/pdf",
               "filename" : "résumé.pdf",
+              "inline" : false,
               "size" : 120000
             },
             {
               "contentType" : "text/calendar",
+              "inline" : false,
               "size" : 512
+            },
+            {
+              "contentType" : "image/jpeg",
+              "filename" : "photo.jpg",
+              "inline" : true,
+              "size" : 1200000
             }
           ],
           "body" : "Can we meet **Tuesday**?\\n\\n> Quoted line",

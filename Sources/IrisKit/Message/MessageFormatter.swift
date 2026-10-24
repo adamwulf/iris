@@ -35,7 +35,7 @@ public enum MessageFormatter {
 
     /// The message as Markdown: a subject heading, the From/To/Cc/Date lines
     /// (each but the last ends in a hard break), the body, and the attachments
-    /// (only when there are any). It has no trailing newline.
+    /// and inline parts (only when there are any). It has no trailing newline.
     ///
     /// - Parameter timeZone: The zone for the date line. Tests pass a fixed zone.
     public static func markdown(_ document: MessageDocument, timeZone: TimeZone = .current) -> String {
@@ -58,7 +58,11 @@ public enum MessageFormatter {
         if !document.attachments.isEmpty {
             lines += ["", "---", "", "**Attachments:**"]
             lines += document.attachments.map { attachment in
-                "- \(attachment.filename ?? "(no filename)") (\(attachment.contentType), \(sizeText(attachment.size)))"
+                var details = [attachment.contentType, sizeText(attachment.size)]
+                if attachment.inline {
+                    details.append("inline")
+                }
+                return "- \(attachment.filename ?? "(no filename)") (\(details.joined(separator: ", ")))"
             }
         }
         return lines.joined(separator: "\n")

@@ -266,7 +266,7 @@ final class MessageDecoderTests: XCTestCase {
             references: ["<root@example.com>", "<first@example.com>"],
             body: "Attached.",
             bodySource: .text,
-            attachments: [MessageAttachment(filename: "résumé.pdf", contentType: "application/pdf", size: 11)]
+            attachments: [MessageAttachment(filename: "résumé.pdf", contentType: "application/pdf", size: 11, inline: false)]
         ))
     }
 
@@ -310,7 +310,10 @@ final class MessageDecoderTests: XCTestCase {
 
         XCTAssertEqual(document.body, "")
         XCTAssertNil(document.bodySource)
-        XCTAssertEqual(document.attachments, [MessageAttachment(filename: "scan.png", contentType: "image/png", size: 8)])
+        XCTAssertEqual(
+            document.attachments,
+            [MessageAttachment(filename: "scan.png", contentType: "image/png", size: 8, inline: false)]
+        )
     }
 
     /// A plain-text message from Apple Mail with a PDF in the middle: the body
@@ -389,6 +392,10 @@ final class MessageDecoderTests: XCTestCase {
 
         XCTAssertEqual(document.body, "Here is the contract:\n\nPlease sign page 2.\n\nThanks,\nAdam")
         XCTAssertEqual(document.bodySource, .text)
+        XCTAssertEqual(
+            document.attachments,
+            [MessageAttachment(filename: "contract.pdf", contentType: "application/pdf", size: 8, inline: false)]
+        )
     }
 
     func testAppleMailHTMLPartsAroundAnInlineImageAreJoined() async throws {
@@ -399,6 +406,44 @@ final class MessageDecoderTests: XCTestCase {
         let text = try await MessageDecoder.decode(eml(appleMailHTML), body: .text)
         XCTAssertEqual(text.body, "Look at this:\n\nIsn't it nice?\n\nAdam")
         XCTAssertEqual(text.bodySource, .text)
+    }
+
+    func testAnInlinePhotoIsListedAsAnInlinePart() async throws {
+        let document = try await MessageDecoder.decode(eml(appleMailHTML))
+
+        XCTAssertEqual(
+            document.attachments,
+            [MessageAttachment(filename: "IMG_0042.jpeg", contentType: "image/jpeg", size: 10, inline: true)]
+        )
+    }
+
+    func testABounceListsTheReturnedMessage() async throws {
+        let returned = "From: adam@example.com\nSubject: Hello\n\nHi"
+        let document = try await MessageDecoder.decode(eml("""
+        From: MAILER-DAEMON@example.com
+        Subject: Undelivered Mail Returned to Sender
+        Content-Type: multipart/report; report-type=delivery-status; boundary="r"
+
+        --r
+        Content-Type: text/plain
+
+        The message could not be delivered.
+        --r
+        Content-Type: message/delivery-status
+
+        Action: failed
+        --r
+        Content-Type: message/rfc822
+
+        \(returned)
+        --r--
+        """))
+
+        XCTAssertEqual(document.body, "The message could not be delivered.")
+        XCTAssertEqual(document.attachments, [
+            MessageAttachment(filename: nil, contentType: "message/delivery-status", size: 14, inline: true),
+            MessageAttachment(filename: nil, contentType: "message/rfc822", size: eml(returned).count, inline: true),
+        ])
     }
 
     func testAnInlineTextAttachmentIsNotPartOfTheBody() async throws {
