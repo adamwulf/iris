@@ -25,8 +25,8 @@ struct List: AsyncParsableCommand {
         let reader = MailReader(account: try accountOptions.resolve())
         let result = try await reader.list(mailbox: mailbox, page: page, limit: limit)
         CLI.printRows(try OutputFormatter.render(result.messages, format: format))
-        if format == .table {
-            CLI.printToStderr(result.hint(account: accountOptions.account))
-        }
+        // On stderr for every format: a JSON reader, such as an agent, also
+        // needs to know that a next page exists.
+        CLI.printToStderr(result.hint(account: accountOptions.account))
     }
 }
