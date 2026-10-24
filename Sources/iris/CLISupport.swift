@@ -16,6 +16,16 @@ enum CLI {
         FileHandle.standardError.write(Data("\(line)\n".utf8))
     }
 
+    /// Writes a list command's rendered rows to stdout. Zero rows as `id` or
+    /// `jsonl` render as empty text, which writes nothing, so a
+    /// `while read` loop over the output gets no empty line.
+    static func printRows(_ text: String) {
+        guard !text.isEmpty else {
+            return
+        }
+        print(text)
+    }
+
     /// SwiftMail logs through swift-log, whose default handler writes `.info`
     /// lines on every connect. Keep only warnings and errors, on stderr.
     static func bootstrapSwiftLog() {

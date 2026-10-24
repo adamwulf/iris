@@ -12,7 +12,7 @@ struct Accounts: AsyncParsableCommand {
 
     func run() async throws {
         let settings = AccountResolver.settings()
-        print(try OutputFormatter.render(try AccountResolver.summaries(in: settings), format: format))
+        CLI.printRows(try OutputFormatter.render(try AccountResolver.summaries(in: settings), format: format))
         // A bad default marks no row as the default and makes every command
         // without --account fail, so say why.
         if let error = AccountResolver.defaultAccountError(in: settings) {

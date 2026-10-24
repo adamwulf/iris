@@ -14,6 +14,6 @@ struct Mailboxes: AsyncParsableCommand {
 
     func run() async throws {
         let reader = MailReader(account: try accountOptions.resolve())
-        print(try OutputFormatter.render(try await reader.mailboxes(), format: format))
+        CLI.printRows(try OutputFormatter.render(try await reader.mailboxes(), format: format))
     }
 }

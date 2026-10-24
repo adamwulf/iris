@@ -24,7 +24,7 @@ struct List: AsyncParsableCommand {
     func run() async throws {
         let reader = MailReader(account: try accountOptions.resolve())
         let result = try await reader.list(mailbox: mailbox, page: page, limit: limit)
-        print(try OutputFormatter.render(result.messages, format: format))
+        CLI.printRows(try OutputFormatter.render(result.messages, format: format))
         if format == .table {
             CLI.printToStderr(result.hint(account: accountOptions.account))
         }
