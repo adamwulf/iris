@@ -62,10 +62,10 @@ public struct MessageAttachment: Sendable, Equatable, Encodable {
     public let contentType: String
     /// The size after the transfer encoding (base64, quoted-printable) is removed.
     public let size: Int
-    /// `false` for a file attachment. `true` for a part that is meant to be
-    /// seen inside the message, such as an inline photo, an image that the
-    /// HTML body shows, or the returned message in a bounce. An inline part
-    /// that is not an image, such as a PDF, counts as a file attachment.
+    /// Whether the part's `Content-Disposition` is `inline`: the sender's mail
+    /// app showed it inside the message, for example a photo or a PDF between
+    /// two paragraphs. `false` for `attachment` and for a part with no
+    /// `Content-Disposition`, such as the returned message in a bounce.
     public let inline: Bool
 
     public init(filename: String?, contentType: String, size: Int, inline: Bool) {

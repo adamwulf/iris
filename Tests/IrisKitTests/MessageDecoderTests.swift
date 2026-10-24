@@ -444,7 +444,7 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(document.bodySource, .text)
         XCTAssertEqual(
             document.attachments,
-            [MessageAttachment(filename: "contract.pdf", contentType: "application/pdf", size: 8, inline: false)]
+            [MessageAttachment(filename: "contract.pdf", contentType: "application/pdf", size: 8, inline: true)]
         )
     }
 
@@ -491,8 +491,8 @@ final class MessageDecoderTests: XCTestCase {
 
         XCTAssertEqual(document.body, "The message could not be delivered.")
         XCTAssertEqual(document.attachments, [
-            MessageAttachment(filename: nil, contentType: "message/delivery-status", size: 14, inline: true),
-            MessageAttachment(filename: nil, contentType: "message/rfc822", size: eml(returned).count, inline: true),
+            MessageAttachment(filename: nil, contentType: "message/delivery-status", size: 14, inline: false),
+            MessageAttachment(filename: nil, contentType: "message/rfc822", size: eml(returned).count, inline: false),
         ])
     }
 

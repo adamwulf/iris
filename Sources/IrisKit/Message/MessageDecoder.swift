@@ -49,17 +49,15 @@ public enum MessageDecoder {
     /// Every part that is not a body part, in section order, so that no part
     /// of the message goes unseen. SwiftMail's `attachments` leaves out inline
     /// images (iPhone photos, images that the HTML body shows) and parts such
-    /// as the returned `message/rfc822` of a bounce. These are listed too, as
-    /// inline parts.
+    /// as the returned `message/rfc822` of a bounce, so iris does not use it here.
     static func attachments(of message: Message) -> [MessageAttachment] {
         let bodySections = Set(bodyParts(of: message).map(\.section))
-        let fileSections = Set(message.attachments.map(\.section))
         return message.parts.filter { !bodySections.contains($0.section) }.map { part in
             MessageAttachment(
                 filename: part.filename.flatMap { $0.isEmpty ? nil : $0 },
                 contentType: mimeType(of: part.contentType),
                 size: part.decodedData()?.count ?? 0,
-                inline: !fileSections.contains(part.section)
+                inline: part.disposition?.lowercased() == "inline"
             )
         }
     }
