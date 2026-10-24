@@ -1,9 +1,10 @@
 import Foundation
 
-/// The one name that iris gives a message: `<account>/<mailbox>/<UID>`, for
-/// example `work/INBOX/4821` or `personal/[Gmail]/All Mail/77`. Commands show a
+/// The iris ID, the one name that iris gives a message: `<account>/<mailbox>/<UID>`,
+/// for example `work/INBOX/4821` or `personal/[Gmail]/All Mail/77`. Commands show a
 /// message only by this name, never by its UID alone, because a UID is unique
-/// only in one mailbox of one account.
+/// only in one mailbox of one account. It is not the `Message-ID` header: iris
+/// calls that header the "message ID".
 ///
 /// The account is the text before the first `/` (an account name cannot have
 /// one), the UID is the text after the last `/`, and the mailbox is all the
@@ -24,13 +25,13 @@ public struct IrisID: Sendable, Hashable, CustomStringConvertible {
         self.uid = uid
     }
 
-    /// Reads `<account>/<mailbox>/<UID>`. Throws `invalidMessageID` when the
+    /// Reads `<account>/<mailbox>/<UID>`. Throws `invalidIrisID` when the
     /// account or the mailbox is empty, or the UID is not a decimal number.
     public init(parsing text: String) throws {
         guard let firstSlash = text.firstIndex(of: "/"),
               let lastSlash = text.lastIndex(of: "/"),
               firstSlash < lastSlash else {
-            throw IrisError.invalidMessageID(text)
+            throw IrisError.invalidIrisID(text)
         }
         let account = text[..<firstSlash]
         let mailbox = text[text.index(after: firstSlash)..<lastSlash]
@@ -39,7 +40,7 @@ public struct IrisID: Sendable, Hashable, CustomStringConvertible {
         guard !account.isEmpty, !mailbox.isEmpty,
               !uidText.isEmpty, uidText.allSatisfy({ $0.isASCII && $0.isNumber }),
               let uid = UInt32(uidText) else {
-            throw IrisError.invalidMessageID(text)
+            throw IrisError.invalidIrisID(text)
         }
         self.init(account: String(account), mailbox: String(mailbox), uid: uid)
     }

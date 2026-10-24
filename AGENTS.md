@@ -25,7 +25,7 @@ Sources/IrisKit/
   Config/      DotEnv (.env loader), AccountResolver (named accounts), Account
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
                MailReader (sessions, paging, errors), MailModels (rows, pages),
-               IrisID (the one message name, <account>/<mailbox>/<UID>)
+               IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
@@ -73,13 +73,20 @@ Never put a password in an error message, a log line, or JSON output.
 
 ### Output
 
-- A message is always named by its `IrisID`, `<account>/<mailbox>/<UID>`
+- A message is always named by its iris ID (`IrisID`), `<account>/<mailbox>/<UID>`
   (for example `work/INBOX/4821`), in every output and every argument. Never
   show or take a UID alone: UIDs repeat in every mailbox. Parse it with
   `IrisID(parsing:)` (account before the first `/`, UID after the last, the
   mailbox between), and take it as an `@Argument` with
   `transform: IrisID.init(parsing:)`, so a bad ID explains the form. The
-  mailbox is the decoded name. JSON encodes it as one string.
+  mailbox is the decoded name. JSON encodes it as one string, with the key
+  `irisID`.
+- Make an `IrisID` only with `IrisID(account:mailbox:uid:)` or
+  `IrisID(parsing:)`, never by joining strings: both lowercase the account
+  and write INBOX in any case as `INBOX`, so one message has one ID. Compare
+  mailboxes through `IrisID`, not with the typed `--mailbox`.
+- Words: user-facing text says "iris ID" for the `IrisID`. "Message ID"
+  means only the `Message-ID` header (`messageID` in `show --format json`).
 - List commands (`accounts`, `mailboxes`, `list`) take `--format
   table|json|jsonl|id`, default `table` (`OutputFormat.listDefault`: use it
   for `--format`, never the literal), through `OutputFormatter` and the

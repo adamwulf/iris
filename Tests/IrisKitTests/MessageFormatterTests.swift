@@ -89,22 +89,29 @@ final class MessageFormatterTests: XCTestCase {
             .unicodeScalars.map { UInt8($0.value) }
     )
 
+    private let irisID = IrisID(account: "work", mailbox: "INBOX", uid: 42)
+
     func testRenderRawGivesTheBytesUnchanged() async throws {
-        let output = try await MessageFormatter.render(rawMessage: latin1Message, format: .raw)
+        let output = try await MessageFormatter.render(rawMessage: latin1Message, irisID: irisID, format: .raw)
         XCTAssertEqual(output, latin1Message)
     }
 
     func testRenderMarkdownDecodesAndEndsWithANewline() async throws {
-        let output = try await MessageFormatter.render(rawMessage: latin1Message, format: .markdown, timeZone: chicago)
+        let output = try await MessageFormatter.render(
+            rawMessage: latin1Message, irisID: irisID, format: .markdown, timeZone: chicago
+        )
         let document = try await MessageDecoder.decode(latin1Message)
         XCTAssertEqual(String(decoding: output, as: UTF8.self), MessageFormatter.markdown(document, timeZone: chicago) + "\n")
         XCTAssertTrue(String(decoding: output, as: UTF8.self).contains("Café"))
     }
 
-    func testRenderJSONDecodesAndEndsWithANewline() async throws {
-        let output = try await MessageFormatter.render(rawMessage: latin1Message, format: .json)
-        let document = try await MessageDecoder.decode(latin1Message)
+    func testRenderJSONDecodesAddsTheIrisIDAndEndsWithANewline() async throws {
+        let output = try await MessageFormatter.render(rawMessage: latin1Message, irisID: irisID, format: .json)
+        var document = try await MessageDecoder.decode(latin1Message)
+        XCTAssertNil(document.irisID, "the decoder reads only the bytes")
+        document.irisID = irisID
         XCTAssertEqual(String(decoding: output, as: UTF8.self), try MessageFormatter.json(document) + "\n")
+        XCTAssertTrue(String(decoding: output, as: UTF8.self).contains(#""irisID" : "work/INBOX/42""#))
     }
 
     func testRenderPassesTheBodyPreference() async throws {
@@ -123,13 +130,15 @@ final class MessageFormatterTests: XCTestCase {
         --b--\r
 
         """.utf8)
-        let text = try await MessageFormatter.render(rawMessage: alternative, format: .json, body: .text)
-        let html = try await MessageFormatter.render(rawMessage: alternative, format: .json, body: .html)
+        let text = try await MessageFormatter.render(rawMessage: alternative, irisID: irisID, format: .json, body: .text)
+        let html = try await MessageFormatter.render(rawMessage: alternative, irisID: irisID, format: .json, body: .html)
         XCTAssertTrue(String(decoding: text, as: UTF8.self).contains(#""body" : "plain *text*""#))
         XCTAssertTrue(String(decoding: html, as: UTF8.self).contains(#""body" : "html **text**""#))
     }
 
     func testJSONIsDeterministicAndHasNoAttachmentBytes() throws {
+        var document = document
+        document.irisID = IrisID(account: "personal", mailbox: "[Gmail]/All Mail", uid: 77)
         XCTAssertEqual(try MessageFormatter.json(document), """
         {
           "attachments" : [
@@ -167,6 +176,7 @@ final class MessageFormatterTests: XCTestCase {
             }
           ],
           "inReplyTo" : "<first@example.com>",
+          "irisID" : "personal/[Gmail]/All Mail/77",
           "messageID" : "<reply-2@example.com>",
           "references" : [
             "<root@example.com>",

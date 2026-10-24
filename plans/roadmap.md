@@ -19,8 +19,9 @@ done; README.md describes it.
 
 ## Milestone 2: threads
 
-- `iris thread <id>`: every message in the thread, oldest first, as Markdown.
-  Each message shows its own ID, so a reply in Sent shows a Sent ID.
+- `iris thread <iris-id>`: every message in the thread, oldest first, as
+  Markdown. Each message shows its own iris ID, so a reply in Sent shows a
+  Sent iris ID.
 - How to find the thread depends on the server:
   - Gmail: `X-GM-THRID` (search `[Gmail]/All Mail`, so sent replies appear).
     Blocked at the current pin: SwiftMail can FETCH `X-GM-THRID`, but the
@@ -43,7 +44,7 @@ done; README.md describes it.
 
 ## Milestone 3: draft a reply
 
-- `iris draft reply <id> [--all] [--body-file <path> | stdin]`. The body is
+- `iris draft reply <iris-id> [--all] [--body-file <path> | stdin]`. The body is
   Markdown.
 - Build the message: `To` from `Reply-To` or `From` (`--all` adds the other
   recipients as `Cc`), `Subject: Re: ...`, `In-Reply-To`, `References`, and
@@ -83,7 +84,7 @@ done; README.md describes it.
 - SwiftMail's full-message fetch keeps only the first FETCH answer. If the
   server sends an unsolicited `* n FETCH (FLAGS ...)` first, iris reports
   that the message does not exist. Rare in a short session; fix upstream.
-- A message ID (`<account>/<mailbox>/<UID>`) is valid only while the
+- An iris ID (`<account>/<mailbox>/<UID>`) is valid only while the
   mailbox's UIDVALIDITY stays the same. If the server rebuilds the mailbox,
   the old IDs name other messages or none; run `iris list` again. iris does
   not check UIDVALIDITY.
@@ -102,4 +103,4 @@ done; README.md describes it.
 ## Open questions
 
 - Paging: page numbers (`--page 2`) are simple but shift when new mail
-  arrives; a cursor (`--before <id>`) is stable. Possibly both.
+  arrives; a cursor (`--before <iris-id>`) is stable. Possibly both.

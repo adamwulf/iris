@@ -2,15 +2,15 @@ import Foundation
 
 /// One row of `iris list`.
 public struct MessageSummary: Sendable, Equatable, Encodable {
-    /// The message's ID, `<account>/<mailbox>/<UID>`, which `iris show` takes.
-    public let id: IrisID
+    /// The message's iris ID, `<account>/<mailbox>/<UID>`, which `iris show` takes.
+    public let irisID: IrisID
     public let from: MailAddress?
     public let subject: String
     /// The `Date:` header, else the date the server received the message.
     public let date: Date?
 
-    init(id: IrisID, from: MailAddress?, subject: String, date: Date?) {
-        self.id = id
+    init(irisID: IrisID, from: MailAddress?, subject: String, date: Date?) {
+        self.irisID = irisID
         self.from = from
         self.subject = subject
         self.date = date
@@ -19,7 +19,7 @@ public struct MessageSummary: Sendable, Equatable, Encodable {
     /// The row for `envelope`, listed from `mailbox` (the decoded name) of `account`.
     init(envelope: MessageEnvelope, account: String, mailbox: String) {
         self.init(
-            id: IrisID(account: account, mailbox: mailbox, uid: envelope.uid),
+            irisID: IrisID(account: account, mailbox: mailbox, uid: envelope.uid),
             from: envelope.from,
             subject: envelope.subject ?? "",
             date: envelope.date ?? envelope.internalDate
@@ -33,18 +33,18 @@ public struct MessageSummary: Sendable, Equatable, Encodable {
 }
 
 extension MessageSummary: IrisRow {
-    public static var tableColumns: [String] { ["ID", "DATE", "FROM", "SUBJECT"] }
+    public static var tableColumns: [String] { ["IRIS ID", "DATE", "FROM", "SUBJECT"] }
 
     public var tableValues: [String] {
         [
-            id.description,
+            irisID.description,
             date.map { DateText.string(from: $0, timeZone: .current) } ?? "",
             Self.oneLine(from?.displayName ?? ""),
             Self.oneLine(subject),
         ]
     }
 
-    public var idValue: String { id.description }
+    public var idValue: String { irisID.description }
 }
 
 /// One row of `iris mailboxes`.

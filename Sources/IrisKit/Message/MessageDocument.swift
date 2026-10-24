@@ -3,7 +3,11 @@ import Foundation
 /// One decoded email, ready for `iris show`: the headers people read, the body
 /// as Markdown, and a list of the other parts. It never holds attachment bytes.
 public struct MessageDocument: Sendable, Equatable, Encodable {
-    /// The `Message-ID` with angle brackets, for example `<abc@example.com>`.
+    /// The message's iris ID, `<account>/<mailbox>/<UID>`. The decoder reads
+    /// only the message bytes, so it leaves this nil; `MessageFormatter.render` sets it.
+    public var irisID: IrisID?
+    /// The `Message-ID` header with angle brackets, for example `<abc@example.com>`.
+    /// The sender's mail app writes it; it is not the iris ID.
     public let messageID: String?
     public let subject: String?
     public let from: [MailAddress]
@@ -25,6 +29,7 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
     public let attachments: [MessageAttachment]
 
     public init(
+        irisID: IrisID? = nil,
         messageID: String?,
         subject: String?,
         from: [MailAddress],
@@ -38,6 +43,7 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
         bodySource: BodySource?,
         attachments: [MessageAttachment]
     ) {
+        self.irisID = irisID
         self.messageID = messageID
         self.subject = subject
         self.from = from

@@ -57,7 +57,7 @@ final class MailErrorTests: XCTestCase {
         )
         XCTAssertEqual(
             inbox,
-            "There is no message \"work/INBOX/999\". Run `iris list --account work` to see the message IDs."
+            "There is no message \"work/INBOX/999\". Run `iris list --account work` to see the iris IDs."
         )
         let sent = try XCTUnwrap(
             IrisError.unknownMessage(IrisID(account: "work", mailbox: "Sent Items", uid: 5)).errorDescription
@@ -66,12 +66,12 @@ final class MailErrorTests: XCTestCase {
         XCTAssertTrue(sent.contains("`iris list --account work --mailbox 'Sent Items'`"))
     }
 
-    func testInvalidMessageIDShowsTheFormAndAnExample() {
+    func testInvalidIrisIDShowsTheFormAndAnExample() {
         XCTAssertEqual(
-            IrisError.invalidMessageID("4821").errorDescription,
-            "\"4821\" is not a message ID. A message ID is <account>/<mailbox>/<UID>, "
-                + "for example 'work/INBOX/4821'. Put the ID in single quotes: a mailbox name can have spaces "
-                + "or [ ], which the shell would change. Run `iris list` to see the message IDs."
+            IrisError.invalidIrisID("4821").errorDescription,
+            "\"4821\" is not an iris ID. An iris ID is <account>/<mailbox>/<UID>, "
+                + "for example 'work/INBOX/4821'. Put the iris ID in single quotes: a mailbox name can have spaces "
+                + "or [ ], which the shell would change. Run `iris list` to see the iris IDs."
         )
     }
 

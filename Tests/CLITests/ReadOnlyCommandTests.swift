@@ -43,7 +43,7 @@ final class ReadOnlyCommandTests: XCTestCase {
         let readOnly = try XCTUnwrap(try Iris.parseAsRoot(["ro"] + arguments) as? Show)
 
         for command in [plain, readOnly] {
-            XCTAssertEqual(command.id, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+            XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
             XCTAssertEqual(command.format, .raw)
         }
     }

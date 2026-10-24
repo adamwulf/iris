@@ -62,7 +62,7 @@ final class IrisIDTests: XCTestCase {
         ]
         for text in invalid {
             XCTAssertThrowsError(try IrisID(parsing: text), "\"\(text)\"") { error in
-                XCTAssertEqual(error as? IrisError, .invalidMessageID(text))
+                XCTAssertEqual(error as? IrisError, .invalidIrisID(text))
             }
         }
     }

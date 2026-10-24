@@ -19,7 +19,7 @@ final class MailModelsTests: XCTestCase {
         hasMore: Bool
     ) -> MessagePage {
         let messages = (0..<count).map {
-            MessageSummary(id: id(UInt32(500 - $0), mailbox: mailbox), from: nil, subject: "", date: nil)
+            MessageSummary(irisID:id(UInt32(500 - $0), mailbox: mailbox), from: nil, subject: "", date: nil)
         }
         return MessagePage(
             mailbox: mailbox, messages: messages, totalCount: totalCount, page: page, limit: limit, hasMore: hasMore
@@ -130,16 +130,16 @@ final class MailModelsTests: XCTestCase {
             year: 2026, month: 3, day: 7, hour: 9, minute: 5
         )))
         let summary = MessageSummary(
-            id: id(42), from: MailAddress(name: "Jane Doe", address: "jane@example.com"), subject: "Hello", date: local
+            irisID: id(42), from: MailAddress(name: "Jane Doe", address: "jane@example.com"), subject: "Hello", date: local
         )
         XCTAssertEqual(summary.tableValues, ["work/INBOX/42", "2026-03-07 09:05", "Jane Doe", "Hello"])
         XCTAssertEqual(summary.idValue, "work/INBOX/42")
     }
 
     func testTableFromFallsBackToTheAddressAndEmptyValuesStayEmpty() {
-        let noName = MessageSummary(id: id(1), from: MailAddress(name: nil, address: "bot@example.com"), subject: "", date: nil)
-        let emptyName = MessageSummary(id: id(2), from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil)
-        let noSender = MessageSummary(id: id(3), from: nil, subject: "", date: nil)
+        let noName = MessageSummary(irisID:id(1), from: MailAddress(name: nil, address: "bot@example.com"), subject: "", date: nil)
+        let emptyName = MessageSummary(irisID:id(2), from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil)
+        let noSender = MessageSummary(irisID:id(3), from: nil, subject: "", date: nil)
         XCTAssertEqual(noName.tableValues, ["work/INBOX/1", "", "bot@example.com", ""])
         XCTAssertEqual(emptyName.tableValues, ["work/INBOX/2", "", "x@example.com", ""])
         XCTAssertEqual(noSender.tableValues, ["work/INBOX/3", "", "", ""])
@@ -147,14 +147,14 @@ final class MailModelsTests: XCTestCase {
 
     func testTableCellsAreOneLine() {
         let summary = MessageSummary(
-            id: id(1), from: MailAddress(name: "Jane\tDoe", address: "j@example.com"), subject: "Long\r\n subject", date: nil
+            irisID: id(1), from: MailAddress(name: "Jane\tDoe", address: "j@example.com"), subject: "Long\r\n subject", date: nil
         )
         XCTAssertEqual(summary.tableValues, ["work/INBOX/1", "", "Jane Doe", "Long  subject"])
     }
 
-    func testJSONHasTheIDAsOneStringTheFullSenderAndAnISO8601Date() throws {
+    func testJSONHasTheIrisIDAsOneStringTheFullSenderAndAnISO8601Date() throws {
         let summary = MessageSummary(
-            id: id(101, mailbox: "[Gmail]/All Mail"),
+            irisID: id(101, mailbox: "[Gmail]/All Mail"),
             from: MailAddress(name: "Jane Doe", address: "jane@example.com"),
             subject: "Hi",
             date: sampleDate
@@ -162,17 +162,17 @@ final class MailModelsTests: XCTestCase {
         XCTAssertEqual(
             try OutputFormatter.render([summary], format: .jsonl),
             #"{"date":"2026-10-24T20:21:18Z","from":{"address":"jane@example.com","name":"Jane Doe"},"#
-                + #""id":"work/[Gmail]/All Mail/101","subject":"Hi"}"# + "\n"
+                + #""irisID":"work/[Gmail]/All Mail/101","subject":"Hi"}"# + "\n"
         )
     }
 
     func testTableColumnsAndIDFormat() throws {
         let rows = [
-            MessageSummary(id: id(7), from: nil, subject: "Hi", date: nil),
-            MessageSummary(id: id(12, mailbox: "Sent Items"), from: nil, subject: "Re: Hi", date: nil),
+            MessageSummary(irisID:id(7), from: nil, subject: "Hi", date: nil),
+            MessageSummary(irisID:id(12, mailbox: "Sent Items"), from: nil, subject: "Re: Hi", date: nil),
         ]
         XCTAssertEqual(try OutputFormatter.render(rows, format: .table), """
-        ID                  DATE  FROM  SUBJECT
+        IRIS ID             DATE  FROM  SUBJECT
         work/INBOX/7                    Hi
         work/Sent Items/12              Re: Hi
 

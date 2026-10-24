@@ -74,8 +74,8 @@ All three need an **app-specific password**, not your normal password.
 - `iris mailboxes`: the mailbox names with their special-use attributes
   (`\Drafts`, `\Sent`, `\All`, ...).
 - `iris list`: a mailbox, newest first, one page at a time
-  (message ID, date, sender, subject).
-- `iris show`: one full message, by its message ID, as Markdown. HTML mail is converted to
+  (iris ID, date, sender, subject).
+- `iris show`: one full message, by its iris ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
   source.
@@ -99,33 +99,37 @@ iris show 'personal/[Gmail]/Sent Mail/77'
 List commands take `--format table|json|jsonl|id`. Hints and errors go to
 stderr, so stdout is safe to pipe.
 
-### Message IDs
+### Iris IDs
 
-iris names each message with one ID, `<account>/<mailbox>/<UID>`, for example
-`work/INBOX/4821`. `iris list` shows it (`--format id` prints only the IDs),
-and `iris show` takes it, so `iris show` needs no `--account` or `--mailbox`.
-iris never shows a UID alone: each mailbox has its own UIDs, so the same UID
-is a different message in each mailbox and in each account.
+iris names each message with one iris ID, `<account>/<mailbox>/<UID>`, for
+example `work/INBOX/4821`. `iris list` shows it (the `IRIS ID` column, the
+`irisID` key in JSON, and each line of `--format id`), and `iris show` takes
+it, so `iris show` needs no `--account` or `--mailbox`. iris never shows a UID
+alone: each mailbox has its own UIDs, so the same UID is a different message
+in each mailbox and in each account.
 
 The account is the text before the first `/`, the UID is the text after the
 last `/`, and the mailbox is all the text between them, so a mailbox name
-can have `/` in it (`personal/[Gmail]/All Mail/77`).
+can have `/` in it (`personal/[Gmail]/All Mail/77`). The account is in
+lowercase, and INBOX in any case is `INBOX`, so one message has one iris ID.
 
-Always put an ID in single quotes on the command line. A mailbox name can
-have spaces, which split the ID into two arguments, and `[ ]`, which zsh
+Always put an iris ID in single quotes on the command line. A mailbox name
+can have spaces, which split the ID into two arguments, and `[ ]`, which zsh
 reads as a file pattern: `iris show personal/[Gmail]/Drafts/7` fails in zsh
 with "no matches found". Double quotes are not enough when a name has `$`,
-`` ` ``, or `!`. In a script, pass each ID as one quoted value:
+`` ` ``, or `!`. In a script, pass each iris ID as one quoted value:
 
 ```sh
 iris list --format id | while IFS= read -r id; do iris show "$id"; done
 ```
 
-An ID stays valid while the message stays in that mailbox. When a message
-moves to a different mailbox, it gets a new UID and a new ID. The `Message-ID`
-header in `iris show --format json` is a different thing: the sender's mail
-app writes it, and the same email can have the same `Message-ID` in more than
-one mailbox or account.
+An iris ID stays valid while the message stays in that mailbox. When a
+message moves to a different mailbox, it gets a new UID and a new iris ID.
+
+The **message ID** is a different thing: the `Message-ID` header, which the
+sender's mail app writes. `iris show --format json` has both, as `irisID` and
+`messageID`. The same email can have the same message ID in more than one
+mailbox or account, so iris never uses it to find a message.
 
 ### Read-only access for agents
 

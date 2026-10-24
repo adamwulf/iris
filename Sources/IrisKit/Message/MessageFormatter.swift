@@ -12,11 +12,12 @@ public enum MessageOutputFormat: String, CaseIterable, Sendable {
 
 /// Prints a `MessageDocument` the way `iris show` does.
 public enum MessageFormatter {
-    /// The bytes `iris show` writes to stdout for the raw message `data`.
-    /// `raw` gives the bytes unchanged; the other formats decode the message
-    /// and end with a newline.
+    /// The bytes `iris show` writes to stdout for the raw message `data`, read
+    /// from `irisID`. `raw` gives the bytes unchanged; the other formats decode
+    /// the message and end with a newline. `json` has the iris ID as `irisID`.
     public static func render(
         rawMessage data: Data,
+        irisID: IrisID,
         format: MessageOutputFormat,
         body preference: BodyPreference = .auto,
         timeZone: TimeZone = .current
@@ -28,7 +29,8 @@ public enum MessageFormatter {
             let document = try await MessageDecoder.decode(data, body: preference)
             return Data((markdown(document, timeZone: timeZone) + "\n").utf8)
         case .json:
-            let document = try await MessageDecoder.decode(data, body: preference)
+            var document = try await MessageDecoder.decode(data, body: preference)
+            document.irisID = irisID
             return Data((try json(document) + "\n").utf8)
         }
     }

@@ -4,7 +4,7 @@ import Foundation
 public enum IrisError: Error, Equatable, LocalizedError {
     /// No `IRIS_<NAME>_IMAP_*` setting was found.
     case noAccountsConfigured
-    /// `--account`, or the account in a message ID, named an account that has no settings. A bad
+    /// `--account`, or the account in an iris ID, named an account that has no settings. A bad
     /// `IRIS_DEFAULT_ACCOUNT` gives `invalidSetting` instead.
     case unknownAccount(name: String, available: [String])
     /// Two or more accounts are configured and none was chosen.
@@ -32,10 +32,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case connectionLost(account: String, command: String, reason: String)
     /// EXAMINE failed: the mailbox does not exist, or the server cannot open it.
     case unknownMailbox(account: String, name: String, reason: String)
-    /// The mailbox has no message with this ID's UID.
+    /// The mailbox has no message with this iris ID's UID.
     case unknownMessage(IrisID)
-    /// The text is not `<account>/<mailbox>/<UID>`.
-    case invalidMessageID(String)
+    /// The text is not an iris ID, `<account>/<mailbox>/<UID>`.
+    case invalidIrisID(String)
     /// `--page` is less than 1.
     case invalidPage(Int)
     /// `--limit` is less than 1.
@@ -69,7 +69,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
         // Message rendering
         case .messageNotParsed(let reason):
             return "The message could not be read as an email (\(reason)). "
-                + "Check that the message ID is correct. If it is, the message may be damaged."
+                + "Check that the iris ID is correct. If it is, the message may be damaged."
         case .htmlNotConverted(let reason, let hasTextPart):
             let problem = "The HTML body of the message could not be converted to Markdown (\(reason))"
             return hasTextPart
@@ -98,11 +98,11 @@ public enum IrisError: Error, Equatable, LocalizedError {
             let list = MessagePage.listCommand(
                 account: id.account, mailbox: id.mailbox, page: 1, limit: MailReader.defaultPageLimit, format: .listDefault
             )
-            return "There is no message \"\(id)\". Run `\(list)` to see the message IDs."
-        case .invalidMessageID(let text):
-            return "\"\(text)\" is not a message ID. A message ID is <account>/<mailbox>/<UID>, "
-                + "for example 'work/INBOX/4821'. Put the ID in single quotes: a mailbox name can have spaces "
-                + "or [ ], which the shell would change. Run `iris list` to see the message IDs."
+            return "There is no message \"\(id)\". Run `\(list)` to see the iris IDs."
+        case .invalidIrisID(let text):
+            return "\"\(text)\" is not an iris ID. An iris ID is <account>/<mailbox>/<UID>, "
+                + "for example 'work/INBOX/4821'. Put the iris ID in single quotes: a mailbox name can have spaces "
+                + "or [ ], which the shell would change. Run `iris list` to see the iris IDs."
         case .invalidPage(let page):
             return "The page number must be 1 or more, not \(page). Page 1 has the newest messages."
         case .invalidLimit(let limit):

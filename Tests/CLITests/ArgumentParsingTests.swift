@@ -64,35 +64,35 @@ final class ArgumentParsingTests: XCTestCase {
 
     func testShowDefaults() throws {
         let command = try Show.parse(["work/INBOX/42"])
-        XCTAssertEqual(command.id, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+        XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
         XCTAssertEqual(command.body, .auto)
         XCTAssertEqual(command.format, .markdown)
     }
 
     func testShowParsesEveryOption() throws {
         let command = try Show.parse(["personal/[Gmail]/Sent Mail/7", "--body", "text", "--format", "raw"])
-        XCTAssertEqual(command.id, IrisID(account: "personal", mailbox: "[Gmail]/Sent Mail", uid: 7))
+        XCTAssertEqual(command.irisID, IrisID(account: "personal", mailbox: "[Gmail]/Sent Mail", uid: 7))
         XCTAssertEqual(command.body, .text)
         XCTAssertEqual(command.format, .raw)
     }
 
-    func testShowNeedsAFullMessageID() {
+    func testShowNeedsAFullIrisID() {
         XCTAssertThrowsError(try Show.parse([]))
         XCTAssertThrowsError(try Show.parse(["42"]))
         XCTAssertThrowsError(try Show.parse(["INBOX/42"]))
         XCTAssertThrowsError(try Show.parse(["work/INBOX/abc"]))
     }
 
-    func testShowExplainsABadMessageID() {
+    func testShowExplainsABadIrisID() {
         XCTAssertThrowsError(try Show.parse(["42"])) { error in
             let message = Show.message(for: error)
-            XCTAssertTrue(message.contains("\"42\" is not a message ID"), message)
+            XCTAssertTrue(message.contains("\"42\" is not an iris ID"), message)
             XCTAssertTrue(message.contains("<account>/<mailbox>/<UID>"), message)
         }
     }
 
     func testShowHasNoAccountOrMailboxOption() {
-        // The message ID names both.
+        // The iris ID names both.
         XCTAssertThrowsError(try Show.parse(["work/INBOX/42", "--account", "work"]))
         XCTAssertThrowsError(try Show.parse(["work/INBOX/42", "--mailbox", "INBOX"]))
     }
