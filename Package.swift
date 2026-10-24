@@ -1,5 +1,6 @@
 // swift-tools-version: 6.1
-// Tools 6.1 is the floor because SwiftText is added with `traits:`.
+// Tools 6.1 is the floor for this manifest, because SwiftText is added with
+// `traits:`. The toolchain must be Swift 6.3 or later: SwiftText's manifest is tools 6.3.
 import PackageDescription
 
 let package = Package(
