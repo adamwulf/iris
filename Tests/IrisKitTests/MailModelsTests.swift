@@ -151,6 +151,7 @@ final class MailModelsTests: XCTestCase {
         XCTAssertEqual(
             try OutputFormatter.render([summary], format: .jsonl),
             #"{"date":"2026-10-24T20:21:18Z","from":{"address":"jane@example.com","name":"Jane Doe"},"subject":"Hi","uid":101}"#
+                + "\n"
         )
     }
 
@@ -159,6 +160,7 @@ final class MailModelsTests: XCTestCase {
         XCTAssertEqual(try OutputFormatter.render([summary], format: .table), """
         UID  DATE  FROM  SUBJECT
         7                Hi
+
         """)
     }
 
@@ -198,12 +200,13 @@ final class MailModelsTests: XCTestCase {
         INBOX
         Sent              \Sent
         [Gmail]/All Mail  \All \Archive
+
         """#)
         XCTAssertEqual(
             try OutputFormatter.render([mailboxes[1]], format: .jsonl),
-            #"{"attributes":["\\Sent"],"name":"Sent"}"#
+            #"{"attributes":["\\Sent"],"name":"Sent"}"# + "\n"
         )
-        XCTAssertEqual(try OutputFormatter.render(mailboxes, format: .id), "INBOX\nSent\n[Gmail]/All Mail")
+        XCTAssertEqual(try OutputFormatter.render(mailboxes, format: .id), "INBOX\nSent\n[Gmail]/All Mail\n")
     }
 
     // MARK: - AccountCheck

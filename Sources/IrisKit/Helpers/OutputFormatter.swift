@@ -16,22 +16,30 @@ public protocol IrisRow: Encodable {
 }
 
 public enum OutputFormatter {
-    /// Renders `rows` as text. The output is deterministic: JSON keys are sorted,
-    /// and table columns are two spaces apart with no trailing whitespace.
+    /// Renders `rows` as the exact text for stdout, where every line ends with
+    /// `\n`. The output is deterministic: JSON keys are sorted, and table
+    /// columns are two spaces apart with no trailing whitespace.
+    ///
+    /// Zero rows give the header line as `table` and `[]` as `json`, but no
+    /// text at all as `jsonl` and `id`, so a `while read` loop gets no empty line.
     public static func render<Row: IrisRow>(_ rows: [Row], format: OutputFormat) throws -> String {
+        let lines: [String]
         switch format {
         case .table:
-            return table(header: Row.tableColumns, rows: rows.map(\.tableValues))
+            lines = table(header: Row.tableColumns, rows: rows.map(\.tableValues))
         case .json:
-            return try json(rows, pretty: true)
+            // JSONEncoder pretty-prints an empty array as "[\n\n]".
+            lines = [rows.isEmpty ? "[]" : try json(rows, pretty: true)]
         case .jsonl:
-            return try rows.map { try json($0, pretty: false) }.joined(separator: "\n")
+            lines = try rows.map { try json($0, pretty: false) }
         case .id:
-            return rows.map(\.idValue).joined(separator: "\n")
+            lines = rows.map(\.idValue)
         }
+        return lines.map { $0 + "\n" }.joined()
     }
 
-    static func table(header: [String], rows: [[String]]) -> String {
+    /// The header line and one line per row, without line ends.
+    static func table(header: [String], rows: [[String]]) -> [String] {
         let allRows = [header] + rows
         var widths = Array(repeating: 0, count: header.count)
         for row in allRows {
@@ -47,7 +55,6 @@ public enum OutputFormatter {
             // Drop the padding after the last value, so no line ends in whitespace.
             return String(line.reversed().drop(while: { $0 == " " }).reversed())
         }
-        .joined(separator: "\n")
     }
 
     static func json<T: Encodable>(_ value: T, pretty: Bool) throws -> String {

@@ -18,6 +18,7 @@ final class OutputFormatterTests: XCTestCase {
         ID  NAME
         1   first
         22
+
         """)
     }
 
@@ -25,6 +26,7 @@ final class OutputFormatterTests: XCTestCase {
         XCTAssertEqual(try OutputFormatter.render([Row(id: "", name: "x")], format: .table), """
         ID  NAME
             x
+
         """)
     }
 
@@ -36,6 +38,7 @@ final class OutputFormatterTests: XCTestCase {
             "name" : "first"
           }
         ]
+
         """)
     }
 
@@ -43,10 +46,29 @@ final class OutputFormatterTests: XCTestCase {
         XCTAssertEqual(try OutputFormatter.render(rows, format: .jsonl), """
         {"id":"1","name":"first"}
         {"id":"22","name":""}
+
         """)
     }
 
     func testIDPrintsOneIDPerLine() throws {
-        XCTAssertEqual(try OutputFormatter.render(rows, format: .id), "1\n22")
+        XCTAssertEqual(try OutputFormatter.render(rows, format: .id), "1\n22\n")
+    }
+
+    // MARK: - Zero rows
+
+    func testZeroRowsAsTableIsTheHeaderLine() throws {
+        XCTAssertEqual(try OutputFormatter.render([Row](), format: .table), "ID  NAME\n")
+    }
+
+    func testZeroRowsAsJSONIsAnEmptyArray() throws {
+        XCTAssertEqual(try OutputFormatter.render([Row](), format: .json), "[]\n")
+    }
+
+    func testZeroRowsAsJSONLinesIsNoText() throws {
+        XCTAssertEqual(try OutputFormatter.render([Row](), format: .jsonl), "")
+    }
+
+    func testZeroRowsAsIDIsNoText() throws {
+        XCTAssertEqual(try OutputFormatter.render([Row](), format: .id), "")
     }
 }
