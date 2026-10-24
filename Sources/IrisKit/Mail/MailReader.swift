@@ -76,13 +76,13 @@ public struct MailReader: Sendable {
     public func rawMessage(uid: UInt32, mailbox: String = defaultMailbox) async throws -> Data {
         // UIDs start at 1; the server would answer UID 0 with BAD.
         guard uid >= 1 else {
-            throw IrisError.unknownUID(uid: uid, mailbox: mailbox)
+            throw IrisError.unknownUID(account: account.name, uid: uid, mailbox: mailbox)
         }
         return try await withClient { client in
             _ = try await examine(mailbox, with: client)
             let data = try await client.fetchRawMessage(uid: uid)
             guard !data.isEmpty else {
-                throw IrisError.unknownUID(uid: uid, mailbox: mailbox)
+                throw IrisError.unknownUID(account: account.name, uid: uid, mailbox: mailbox)
             }
             return data
         }

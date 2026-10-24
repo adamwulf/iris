@@ -211,7 +211,7 @@ final class MailReaderTests: XCTestCase {
     func testUnknownMailboxErrorHasTheDecodedName() async {
         let fake = FakeMailClient.inbox(count: 1)
 
-        await assertThrows(.unknownMailbox(name: "R&D", reason: "NO no such mailbox")) {
+        await assertThrows(.unknownMailbox(account: "work", name: "R&D", reason: "NO no such mailbox")) {
             try await self.reader(fake).list(mailbox: "R&D")
         }
 
@@ -276,7 +276,7 @@ final class MailReaderTests: XCTestCase {
     func testUnknownMailboxThrowsAndLogsOut() async {
         let fake = FakeMailClient.inbox(count: 10)
 
-        await assertThrows(.unknownMailbox(name: "Nope", reason: "NO no such mailbox")) {
+        await assertThrows(.unknownMailbox(account: "work", name: "Nope", reason: "NO no such mailbox")) {
             try await self.reader(fake).list(mailbox: "Nope")
         }
 
@@ -285,7 +285,7 @@ final class MailReaderTests: XCTestCase {
     }
 
     func testFailedFetchStillLogsOut() async {
-        let failure = IrisError.serverError(command: "FETCH", reason: "NO server busy")
+        let failure = IrisError.serverError(account: "work", command: "FETCH", reason: "NO server busy")
         let fake = FakeMailClient(
             statuses: ["INBOX": MailboxStatus(messageCount: 5, uidValidity: 7, uidNext: 200)],
             errors: [.fetchEnvelopes: failure]
@@ -356,7 +356,7 @@ final class MailReaderTests: XCTestCase {
     func testRawMessageForAMissingUIDThrowsUnknownUIDAndLogsOut() async {
         let fake = FakeMailClient.inbox(count: 1)
 
-        await assertThrows(.unknownUID(uid: 999, mailbox: "INBOX")) {
+        await assertThrows(.unknownUID(account: "work", uid: 999, mailbox: "INBOX")) {
             try await self.reader(fake).rawMessage(uid: 999)
         }
 
@@ -367,7 +367,7 @@ final class MailReaderTests: XCTestCase {
     func testRawMessageForUIDZeroIsRejectedBeforeConnecting() async {
         let fake = FakeMailClient.inbox(count: 1)
 
-        await assertThrows(.unknownUID(uid: 0, mailbox: "INBOX")) {
+        await assertThrows(.unknownUID(account: "work", uid: 0, mailbox: "INBOX")) {
             try await self.reader(fake).rawMessage(uid: 0)
         }
 

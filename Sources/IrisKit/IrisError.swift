@@ -28,9 +28,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// iris could not reach the server, or the connection broke.
     case connectionFailed(account: String, host: String, port: Int, reason: String)
     /// EXAMINE failed: the mailbox does not exist, or the server cannot open it.
-    case unknownMailbox(name: String, reason: String)
+    case unknownMailbox(account: String, name: String, reason: String)
     /// The open mailbox has no message with this UID.
-    case unknownUID(uid: UInt32, mailbox: String)
+    case unknownUID(account: String, uid: UInt32, mailbox: String)
     /// `--page` is less than 1.
     case invalidPage(Int)
     /// `--limit` is less than 1.
@@ -40,7 +40,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// After a good login, the server did not answer a command in time.
     case serverTimedOut(account: String, command: String)
     /// The server answered a command with NO or BAD.
-    case serverError(command: String, reason: String)
+    case serverError(account: String, command: String, reason: String)
 
     public var errorDescription: String? {
         switch self {
@@ -83,13 +83,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "Could not connect to \(host):\(port) (account \"\(account)\"): \(reason). "
                 + "Check your network connection, and check \(AccountResolver.key(.host, account: account)) and "
                 + "\(AccountResolver.key(.port, account: account)) (IMAP over TLS uses port 993)."
-        case .unknownMailbox(let name, let reason):
-            return "The server could not open the mailbox \"\(name)\": \(reason). "
-                + "Run `iris mailboxes` to see the mailbox names."
-        case .unknownUID(let uid, let mailbox):
-            return "There is no message with UID \(uid) in \"\(mailbox)\". "
-                + "Run `\(MessagePage.listCommand(account: nil, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit))` "
-                + "to see the UIDs."
+        case .unknownMailbox(let account, let name, let reason):
+            return "The server could not open the mailbox \"\(name)\" (account \"\(account)\"): \(reason). "
+                + "Run `iris mailboxes --account \(MessagePage.shellQuoted(account))` to see the mailbox names."
+        case .unknownUID(let account, let uid, let mailbox):
+            let list = MessagePage.listCommand(account: account, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit)
+            return "There is no message with UID \(uid) in \"\(mailbox)\" (account \"\(account)\"). "
+                + "Run `\(list)` to see the UIDs."
         case .invalidPage(let page):
             return "The page number must be 1 or more, not \(page). Page 1 has the newest messages."
         case .invalidLimit(let limit):
@@ -102,9 +102,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "The server did not answer \(command) in time (account \"\(account)\"). "
                 + "The connection may be slow, or the server may be busy. Try again. "
                 + "If `iris list` timed out, try a smaller --limit."
-        case .serverError(let command, let reason):
-            return "The server answered \(command) with an error: \(reason). "
-                + "Run `iris check` to test the account settings."
+        case .serverError(let account, let command, let reason):
+            return "The server answered \(command) with an error (account \"\(account)\"): \(reason). "
+                + "Run `iris check --account \(MessagePage.shellQuoted(account))` to test the account settings."
         }
     }
 

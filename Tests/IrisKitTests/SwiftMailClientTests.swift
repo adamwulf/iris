@@ -44,11 +44,11 @@ final class SwiftMailClientTests: XCTestCase {
     func testSelectFailedOnExamineBecomesUnknownMailbox() {
         XCTAssertEqual(
             irisError(IMAPError.selectFailed("NO [NONEXISTENT] secret"), .examine(mailbox: "Nope")),
-            .unknownMailbox(name: "Nope", reason: "NO [NONEXISTENT] <password>")
+            .unknownMailbox(account: "work", name: "Nope", reason: "NO [NONEXISTENT] <password>")
         )
         XCTAssertEqual(
             irisError(IMAPError.selectFailed("NO"), .examine(mailbox: "[Gmail]/Entw&APw-rfe")),
-            .unknownMailbox(name: "[Gmail]/Entwürfe", reason: "NO"),
+            .unknownMailbox(account: "work", name: "[Gmail]/Entwürfe", reason: "NO"),
             "the error holds the name the user typed, not the wire name"
         )
     }
@@ -92,11 +92,11 @@ final class SwiftMailClientTests: XCTestCase {
     func testOtherIMAPErrorsBecomeServerErrorsNamingTheCommand() {
         XCTAssertEqual(
             irisError(IMAPError.commandFailed("NO [UNAVAILABLE] secret"), .list),
-            .serverError(command: "LIST", reason: "Command failed: NO [UNAVAILABLE] <password>")
+            .serverError(account: "work", command: "LIST", reason: "Command failed: NO [UNAVAILABLE] <password>")
         )
         XCTAssertEqual(
             irisError(IMAPError.selectFailed("NO"), .fetchEnvelopes),
-            .serverError(command: "FETCH", reason: "Select mailbox failed: NO"),
+            .serverError(account: "work", command: "FETCH", reason: "Select mailbox failed: NO"),
             "selectFailed means an unknown mailbox only for EXAMINE"
         )
     }

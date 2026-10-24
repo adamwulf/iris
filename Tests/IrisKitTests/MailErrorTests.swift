@@ -28,17 +28,35 @@ final class MailErrorTests: XCTestCase {
         XCTAssertTrue(message.contains("993"))
     }
 
-    func testUnknownMailboxPointsToTheMailboxesCommand() throws {
-        let message = try XCTUnwrap(IrisError.unknownMailbox(name: "Nope", reason: "NO no such mailbox").errorDescription)
-        XCTAssertTrue(message.contains("\"Nope\""))
-        XCTAssertTrue(message.contains("iris mailboxes"))
+    func testUnknownMailboxPointsToTheMailboxesCommandForThatAccount() throws {
+        let error = IrisError.unknownMailbox(account: "personal", name: "Nope", reason: "NO no such mailbox")
+        let message = try XCTUnwrap(error.errorDescription)
+        XCTAssertEqual(
+            message,
+            "The server could not open the mailbox \"Nope\" (account \"personal\"): NO no such mailbox. "
+                + "Run `iris mailboxes --account personal` to see the mailbox names."
+        )
     }
 
-    func testUnknownUIDPointsToTheListCommandForThatMailbox() throws {
-        let inbox = try XCTUnwrap(IrisError.unknownUID(uid: 999, mailbox: "INBOX").errorDescription)
-        XCTAssertEqual(inbox, "There is no message with UID 999 in \"INBOX\". Run `iris list` to see the UIDs.")
-        let sent = try XCTUnwrap(IrisError.unknownUID(uid: 5, mailbox: "Sent Items").errorDescription)
-        XCTAssertTrue(sent.contains("`iris list --mailbox 'Sent Items'`"))
+    func testUnknownUIDPointsToTheListCommandForThatAccountAndMailbox() throws {
+        let inbox = try XCTUnwrap(IrisError.unknownUID(account: "work", uid: 999, mailbox: "INBOX").errorDescription)
+        XCTAssertEqual(
+            inbox,
+            "There is no message with UID 999 in \"INBOX\" (account \"work\"). "
+                + "Run `iris list --account work` to see the UIDs."
+        )
+        let sent = try XCTUnwrap(IrisError.unknownUID(account: "work", uid: 5, mailbox: "Sent Items").errorDescription)
+        XCTAssertTrue(sent.contains("`iris list --account work --mailbox 'Sent Items'`"))
+    }
+
+    func testServerErrorPointsToTheCheckCommandForThatAccount() throws {
+        let error = IrisError.serverError(account: "my_gmail", command: "LIST", reason: "NO [UNAVAILABLE] try later")
+        let message = try XCTUnwrap(error.errorDescription)
+        XCTAssertEqual(
+            message,
+            "The server answered LIST with an error (account \"my_gmail\"): NO [UNAVAILABLE] try later. "
+                + "Run `iris check --account my_gmail` to test the account settings."
+        )
     }
 
     func testPageAndLimitErrorsGiveTheValue() {

@@ -174,7 +174,11 @@ struct SwiftMailClient: MailClient {
                 reason: redacting(password, in: reason)
             )
         case (.examine(let mailbox), IMAPError.selectFailed(let reason)):
-            return .unknownMailbox(name: ModifiedUTF7.decode(mailbox), reason: redacting(password, in: reason))
+            return .unknownMailbox(
+                account: account.name,
+                name: ModifiedUTF7.decode(mailbox),
+                reason: redacting(password, in: reason)
+            )
         case (.fetchRawMessage(let uid), IMAPError.timeout):
             return .messageDownloadTimedOut(uid: uid, seconds: rawMessageTimeoutSeconds)
         case (.login, IMAPError.timeout):
@@ -185,7 +189,11 @@ struct SwiftMailClient: MailClient {
         case (_, IMAPError.connectionFailed), (_, IMAPError.greetingFailed):
             return connectionFailed(reason: reason(of: error), account: account)
         case (_, let error as IMAPError):
-            return .serverError(command: command.name, reason: redacting(password, in: error.description))
+            return .serverError(
+                account: account.name,
+                command: command.name,
+                reason: redacting(password, in: error.description)
+            )
         default:
             // SwiftNIO errors: DNS, TCP, and TLS failures.
             return connectionFailed(reason: reason(of: error), account: account)
