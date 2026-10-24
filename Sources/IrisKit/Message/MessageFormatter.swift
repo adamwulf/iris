@@ -1,7 +1,38 @@
 import Foundation
 
+/// How `iris show` prints one message.
+public enum MessageOutputFormat: String, CaseIterable, Sendable {
+    /// The decoded message as Markdown.
+    case markdown
+    /// The decoded message as JSON.
+    case json
+    /// The message source exactly as the server sent it (RFC 822, an `.eml` file).
+    case raw
+}
+
 /// Prints a `MessageDocument` the way `iris show` does.
 public enum MessageFormatter {
+    /// The bytes `iris show` writes to stdout for the raw message `data`.
+    /// `raw` gives the bytes unchanged; the other formats decode the message
+    /// and end with a newline.
+    public static func render(
+        rawMessage data: Data,
+        format: MessageOutputFormat,
+        body preference: BodyPreference = .auto,
+        timeZone: TimeZone = .current
+    ) async throws -> Data {
+        switch format {
+        case .raw:
+            return data
+        case .markdown:
+            let document = try await MessageDecoder.decode(data, body: preference)
+            return Data((markdown(document, timeZone: timeZone) + "\n").utf8)
+        case .json:
+            let document = try await MessageDecoder.decode(data, body: preference)
+            return Data((try json(document) + "\n").utf8)
+        }
+    }
+
     /// The message as Markdown: a subject heading, the From/To/Cc/Date lines
     /// (each but the last ends in a hard break), the body, and the attachments
     /// (only when there are any). It has no trailing newline.

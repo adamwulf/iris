@@ -60,4 +60,30 @@ final class ArgumentParsingTests: XCTestCase {
     func testListRejectsAnUnknownFormat() {
         XCTAssertThrowsError(try List.parse(["--format", "csv"]))
     }
+
+    func testShowDefaults() throws {
+        let command = try Show.parse(["42"])
+        XCTAssertEqual(command.uid, 42)
+        XCTAssertEqual(command.mailbox, "INBOX")
+        XCTAssertEqual(command.body, .auto)
+        XCTAssertEqual(command.format, .markdown)
+        XCTAssertNil(command.accountOptions.account)
+    }
+
+    func testShowParsesEveryOption() throws {
+        let command = try Show.parse([
+            "7", "--mailbox", "[Gmail]/Sent Mail", "--body", "text", "--format", "raw", "-a", "work",
+        ])
+        XCTAssertEqual(command.uid, 7)
+        XCTAssertEqual(command.mailbox, "[Gmail]/Sent Mail")
+        XCTAssertEqual(command.body, .text)
+        XCTAssertEqual(command.format, .raw)
+        XCTAssertEqual(command.accountOptions.account, "work")
+    }
+
+    func testShowNeedsANumericUID() {
+        XCTAssertThrowsError(try Show.parse([]))
+        XCTAssertThrowsError(try Show.parse(["abc"]))
+        XCTAssertThrowsError(try Show.parse(["-1"]))
+    }
 }

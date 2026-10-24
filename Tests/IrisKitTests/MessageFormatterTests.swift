@@ -81,6 +81,52 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(MessageFormatter.sizeText(2_000_000_000), "2.0 GB")
     }
 
+    /// A message whose bytes are not valid UTF-8 (a Latin-1 "é"), so `raw` must not re-encode it.
+    private let latin1Message = Data(
+        "Subject: Caf\u{E9}\r\nContent-Type: text/plain; charset=ISO-8859-1\r\n\r\nCaf\u{E9}\r\n"
+            .unicodeScalars.map { UInt8($0.value) }
+    )
+
+    func testRenderRawGivesTheBytesUnchanged() async throws {
+        let output = try await MessageFormatter.render(rawMessage: latin1Message, format: .raw)
+        XCTAssertEqual(output, latin1Message)
+    }
+
+    func testRenderMarkdownDecodesAndEndsWithANewline() async throws {
+        let output = try await MessageFormatter.render(rawMessage: latin1Message, format: .markdown, timeZone: chicago)
+        let document = try await MessageDecoder.decode(latin1Message)
+        XCTAssertEqual(String(decoding: output, as: UTF8.self), MessageFormatter.markdown(document, timeZone: chicago) + "\n")
+        XCTAssertTrue(String(decoding: output, as: UTF8.self).contains("Café"))
+    }
+
+    func testRenderJSONDecodesAndEndsWithANewline() async throws {
+        let output = try await MessageFormatter.render(rawMessage: latin1Message, format: .json)
+        let document = try await MessageDecoder.decode(latin1Message)
+        XCTAssertEqual(String(decoding: output, as: UTF8.self), try MessageFormatter.json(document) + "\n")
+    }
+
+    func testRenderPassesTheBodyPreference() async throws {
+        let alternative = Data("""
+        Subject: Both\r
+        Content-Type: multipart/alternative; boundary="b"\r
+        \r
+        --b\r
+        Content-Type: text/plain\r
+        \r
+        plain *text*\r
+        --b\r
+        Content-Type: text/html\r
+        \r
+        <p>html <b>text</b></p>\r
+        --b--\r
+
+        """.utf8)
+        let text = try await MessageFormatter.render(rawMessage: alternative, format: .json, body: .text)
+        let html = try await MessageFormatter.render(rawMessage: alternative, format: .json, body: .html)
+        XCTAssertTrue(String(decoding: text, as: UTF8.self).contains(#""body" : "plain *text*""#))
+        XCTAssertTrue(String(decoding: html, as: UTF8.self).contains(#""body" : "html **text**""#))
+    }
+
     func testJSONIsDeterministicAndHasNoAttachmentBytes() throws {
         XCTAssertEqual(try MessageFormatter.json(document), """
         {
