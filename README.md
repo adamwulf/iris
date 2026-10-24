@@ -4,15 +4,12 @@ A command-line tool for reading email over IMAP. It lists a mailbox one page
 at a time and shows a full message as Markdown. iris only reads: it opens
 mailboxes read-only and never marks a message as read.
 
-Tested providers: Gmail, iCloud Mail, Zoho Mail.
+Made for Gmail, iCloud Mail, and Zoho Mail. It has not yet been tested
+against a live server.
 
 ## Install
 
-```sh
-mint install adamwulf/iris@main --force
-```
-
-Or build from source (macOS 15 or later, Swift 6.3 or later):
+Build from source (macOS 15 or later, Swift 6.3 or later):
 
 ```sh
 swift build -c release
@@ -26,8 +23,13 @@ the current directory or any parent directory (the nearest file wins, and the
 environment wins over `.env`).
 
 Each account has a name, and its keys have the name in the middle. You can
-add as many accounts as you need. A name is letters, digits, and underscores;
-in `--account` you can type it in any case.
+add as many accounts as you need. In the keys, a name is UPPERCASE letters,
+digits, and underscores (`IRIS_work_IMAP_HOST` is ignored); in `--account`
+you can type it in any case.
+
+`.env` rules: one `KEY=value` per line; `export KEY=value` also works; `#`
+starts a comment (in a value, only after a space, and not inside quotes);
+when a file sets a key two times, the last line wins.
 
 ```sh
 IRIS_PERSONAL_IMAP_HOST=imap.gmail.com

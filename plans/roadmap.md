@@ -22,6 +22,10 @@ done; README.md describes it.
 - `iris thread <uid>`: every message in the thread, oldest first, as Markdown.
 - How to find the thread depends on the server:
   - Gmail: `X-GM-THRID` (search `[Gmail]/All Mail`, so sent replies appear).
+    Blocked at the current pin: SwiftMail can FETCH `X-GM-THRID`, but the
+    swift-nio-imap revision it pins has no Gmail SEARCH keys (they came in
+    swift-nio-imap PR #853). Bump SwiftMail first, or use the References
+    walk below on Gmail too.
   - Servers that advertise `THREAD=REFERENCES`: use it.
   - Otherwise: walk `Message-ID` / `In-Reply-To` / `References` with header
     searches in INBOX and the special-use `\Sent` mailbox.
@@ -56,8 +60,10 @@ done; README.md describes it.
 - Search, mark as read, archive/move.
 - A live smoke test (`iris test`) against a real account, like graham's.
 - A file log (FellerBuncher) like graham's.
-- `skill/iris/SKILL.md` for agents, and install with
-  `mint install adamwulf/iris@main`.
+- `skill/iris/SKILL.md` for agents.
+- Publish the repo on GitHub, then install with
+  `mint install adamwulf/iris@main --force` (like graham and hunch) and add
+  that line to README.md.
 
 ## Known limits
 
@@ -73,6 +79,9 @@ done; README.md describes it.
   guesses the special-use attributes from mailbox names by substring, so a
   mailbox named "Consent forms" shows `\Sent`.
 - `inReplyTo` keeps only the first message ID (the same as SwiftMail's model).
+- SwiftMail's full-message fetch keeps only the first FETCH answer. If the
+  server sends an unsolicited `* n FETCH (FLAGS ...)` first, iris reports
+  that the UID does not exist. Rare in a short session; fix upstream.
 
 ## Open questions
 
