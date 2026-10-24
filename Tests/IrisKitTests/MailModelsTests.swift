@@ -87,12 +87,14 @@ final class MailModelsTests: XCTestCase {
     }
 
     func testListCommandLeavesOutDefaults() {
-        XCTAssertEqual(MessagePage.listCommand(account: nil, mailbox: "INBOX", page: 1, limit: 25), "iris list")
         XCTAssertEqual(
-            MessagePage.listCommand(account: "my_gmail", mailbox: "[Gmail]/All Mail", page: 1, limit: 25),
+            MessagePage.listCommand(account: nil, mailbox: "INBOX", page: 1, limit: 25, format: .listDefault),
+            "iris list"
+        )
+        XCTAssertEqual(
+            MessagePage.listCommand(account: "my_gmail", mailbox: "[Gmail]/All Mail", page: 1, limit: 25, format: .listDefault),
             "iris list --account my_gmail --mailbox '[Gmail]/All Mail'"
         )
-        XCTAssertEqual(MessagePage.listCommand(account: nil, mailbox: "INBOX", page: 1, limit: 25, format: .table), "iris list")
         XCTAssertEqual(
             MessagePage.listCommand(account: "work", mailbox: "Sent", page: 2, limit: 10, format: .jsonl),
             "iris list --account work --mailbox Sent --page 2 --limit 10 --format jsonl"

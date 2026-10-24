@@ -140,7 +140,7 @@ public struct MessagePage: Sendable, Equatable {
         mailbox: String,
         page: Int,
         limit: Int,
-        format: OutputFormat = .table
+        format: OutputFormat
     ) -> String {
         var words = ["iris", "list"]
         if let account {
@@ -155,7 +155,7 @@ public struct MessagePage: Sendable, Equatable {
         if limit != MailReader.defaultPageLimit {
             words += ["--limit", String(limit)]
         }
-        if format != .table {
+        if format != OutputFormat.listDefault {
             words += ["--format", format.rawValue]
         }
         return words.joined(separator: " ")

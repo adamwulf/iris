@@ -10,7 +10,7 @@ struct Mailboxes: AsyncParsableCommand {
     @OptionGroup var accountOptions: AccountOptions
 
     @Option(help: "The output format.")
-    var format: OutputFormat = .table
+    var format: OutputFormat = .listDefault
 
     func run() async throws {
         let reader = MailReader(account: try accountOptions.resolve())

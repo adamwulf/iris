@@ -592,6 +592,60 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(document.attachments, [])
     }
 
+    func testARenditionTypeWithAFilenameIsListed() async throws {
+        let document = try await MessageDecoder.decode(eml("""
+        Subject: Notes
+        Content-Type: multipart/alternative; boundary="a"
+
+        --a
+        Content-Type: text/plain; charset="UTF-8"
+
+        See the notes.
+        --a
+        Content-Type: text/enriched; charset="UTF-8"
+        Content-Disposition: attachment; filename="notes.rtx"
+
+        <bold>Notes</bold>
+        --a
+        Content-Type: text/html; charset="UTF-8"
+
+        <p>See the notes.</p>
+        --a--
+        """))
+
+        XCTAssertEqual(document.attachments.map(\.filename), ["notes.rtx"])
+        XCTAssertEqual(document.attachments.map(\.contentType), ["text/enriched"])
+    }
+
+    func testARenditionTypeThatIsNotNextToTheBodyIsListed() async throws {
+        let document = try await MessageDecoder.decode(eml("""
+        Subject: Notes
+        Content-Type: multipart/mixed; boundary="m"
+
+        --m
+        Content-Type: multipart/alternative; boundary="a"
+
+        --a
+        Content-Type: text/plain; charset="UTF-8"
+
+        See the notes.
+        --a
+        Content-Type: text/html; charset="UTF-8"
+
+        <p>See the notes.</p>
+        --a--
+        --m
+        Content-Type: text/enriched; charset="UTF-8"
+
+        <bold>Notes</bold>
+        --m--
+        """))
+
+        XCTAssertEqual(document.body, "See the notes.")
+        XCTAssertEqual(document.attachments.map(\.contentType), ["text/enriched"])
+        XCTAssertEqual(document.attachments.map(\.filename), [nil])
+    }
+
     func testACalendarInviteNextToTheBodyIsListed() async throws {
         let invite = "BEGIN:VCALENDAR\nMETHOD:REQUEST\nEND:VCALENDAR"
         let document = try await MessageDecoder.decode(eml("""

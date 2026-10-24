@@ -8,7 +8,7 @@ struct Accounts: AsyncParsableCommand {
     )
 
     @Option(help: "The output format.")
-    var format: OutputFormat = .table
+    var format: OutputFormat = .listDefault
 
     func run() async throws {
         let settings = AccountResolver.settings()

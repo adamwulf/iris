@@ -82,6 +82,9 @@ done; README.md describes it.
 - SwiftMail's full-message fetch keeps only the first FETCH answer. If the
   server sends an unsolicited `* n FETCH (FLAGS ...)` first, iris reports
   that the UID does not exist. Rare in a short session; fix upstream.
+- Table columns are padded by `Character`, so emoji and CJK text are never
+  cut, but a value with 2-column-wide characters (for example an emoji in a
+  subject or a CJK sender name) pushes the columns after it out of line.
 - A server that sends a mailbox name that is not valid modified UTF-7 (raw
   `R&D` instead of `R&-D`) shows it unchanged, but typing it sends `R&-D`,
   so that mailbox cannot be opened. RFC 3501 servers do not do this.

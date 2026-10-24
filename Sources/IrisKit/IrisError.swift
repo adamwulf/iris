@@ -93,7 +93,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "The server could not open the mailbox \"\(name)\" (account \"\(account)\"): \(reason). "
                 + "Run `iris mailboxes --account \(MessagePage.shellQuoted(account))` to see the mailbox names."
         case .unknownUID(let account, let uid, let mailbox):
-            let list = MessagePage.listCommand(account: account, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit)
+            let list = MessagePage.listCommand(
+                account: account, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit, format: .listDefault
+            )
             return "There is no message with UID \(uid) in \"\(mailbox)\" (account \"\(account)\"). "
                 + "Run `\(list)` to see the UIDs."
         case .invalidPage(let page):

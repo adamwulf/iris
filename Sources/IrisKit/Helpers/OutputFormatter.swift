@@ -3,6 +3,10 @@ import Foundation
 /// How a list command prints its rows.
 public enum OutputFormat: String, CaseIterable, Sendable {
     case table, json, jsonl, id
+
+    /// The format of a list command without `--format`. The next-page hint
+    /// leaves `--format` out only for this one.
+    public static let listDefault = OutputFormat.table
 }
 
 /// A value that list commands can print in every `OutputFormat`.
