@@ -64,6 +64,14 @@ app-specific password over TLS on port 993.
 - `skill/iris/SKILL.md` for agents, and install with
   `mint install adamwulf/iris@main`.
 
+## Known limits
+
+- Raw message download has a 10 second total deadline: SwiftMail's
+  `FetchRawMessageCommand.timeoutSeconds` is hard-coded at the pinned
+  revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. Large
+  messages may fail. Fix: an upstream SwiftMail change that adds a timeout
+  parameter, then a pin bump (ask Adam before opening an upstream PR).
+
 ## Open questions
 
 - Paging: page numbers (`--page 2`) are simple but shift when new mail
