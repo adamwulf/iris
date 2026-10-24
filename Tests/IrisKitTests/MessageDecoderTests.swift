@@ -560,6 +560,10 @@ final class MessageDecoderTests: XCTestCase {
         """))
 
         XCTAssertEqual(document.body, "My notes are attached.")
+        XCTAssertEqual(
+            document.attachments,
+            [MessageAttachment(filename: "notes.txt", contentType: "text/plain", size: 13, inline: true)]
+        )
     }
 
     func testGmailQuoteBecomesMarkdownQuote() async throws {
