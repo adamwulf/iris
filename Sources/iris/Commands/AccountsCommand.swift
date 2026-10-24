@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import IrisKit
 
-struct Accounts: AsyncParsableCommand {
+struct Accounts: ReadOnlyCommand {
     static let configuration = CommandConfiguration(
         abstract: "List the configured email accounts. Passwords are never shown."
     )

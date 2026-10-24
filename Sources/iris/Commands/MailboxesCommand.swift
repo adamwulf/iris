@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import IrisKit
 
-struct Mailboxes: AsyncParsableCommand {
+struct Mailboxes: ReadOnlyCommand {
     static let configuration = CommandConfiguration(
         abstract: #"List the mailboxes (folders) with their special-use attributes, such as \Drafts and \Sent."#
     )
