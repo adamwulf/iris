@@ -628,8 +628,9 @@ final class MessageDecoderTests: XCTestCase {
         ])
     }
 
-    func testARenditionTypeWithAFilenameIsListed() async throws {
-        let document = try await MessageDecoder.decode(eml("""
+    /// A rendition-type part next to the body, with only `renditionHeaders` added to it.
+    private func alternativeWithEnrichedPart(_ renditionHeaders: String) -> Data {
+        eml("""
         Subject: Notes
         Content-Type: multipart/alternative; boundary="a"
 
@@ -638,8 +639,7 @@ final class MessageDecoderTests: XCTestCase {
 
         See the notes.
         --a
-        Content-Type: text/enriched; charset="UTF-8"
-        Content-Disposition: attachment; filename="notes.rtx"
+        \(renditionHeaders)
 
         <bold>Notes</bold>
         --a
@@ -647,10 +647,30 @@ final class MessageDecoderTests: XCTestCase {
 
         <p>See the notes.</p>
         --a--
-        """))
+        """)
+    }
+
+    func testARenditionTypeWithAFilenameAndNoDispositionIsListed() async throws {
+        // The filename comes from the Content-Type `name`, so only the filename guard keeps it.
+        let document = try await MessageDecoder.decode(alternativeWithEnrichedPart(
+            #"Content-Type: text/enriched; charset="UTF-8"; name="notes.rtx""#
+        ))
 
         XCTAssertEqual(document.attachments.map(\.filename), ["notes.rtx"])
         XCTAssertEqual(document.attachments.map(\.contentType), ["text/enriched"])
+        XCTAssertEqual(document.attachments.map(\.inline), [false])
+    }
+
+    func testARenditionTypeWithADispositionAndNoFilenameIsListed() async throws {
+        // No filename, so only the disposition guard keeps it.
+        let document = try await MessageDecoder.decode(alternativeWithEnrichedPart("""
+        Content-Type: text/enriched; charset="UTF-8"
+        Content-Disposition: inline
+        """))
+
+        XCTAssertEqual(document.attachments.map(\.filename), [nil])
+        XCTAssertEqual(document.attachments.map(\.contentType), ["text/enriched"])
+        XCTAssertEqual(document.attachments.map(\.inline), [true])
     }
 
     func testARenditionTypeThatIsNotNextToTheBodyIsListed() async throws {
