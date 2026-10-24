@@ -104,7 +104,8 @@ public enum MessageDecoder {
         }
         // Only `.text` gets here with an HTML part: the other choices returned or threw above.
         IrisLog.log("The message has no text part, so the html part is shown.")
-        return (try await markdown(fromHTMLParts: html, hasTextPart: false, htmlToMarkdown: htmlToMarkdown), .html)
+        let converted = try await markdown(fromHTMLParts: html, hasTextPart: false, htmlToMarkdown: htmlToMarkdown)
+        return (converted, .html)
     }
 
     /// The parts that make up the body, in section order: the text/plain and
