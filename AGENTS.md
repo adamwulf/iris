@@ -115,6 +115,13 @@ enforces it:
   mark it `ReadOnlyCommand`: `ReadOnly.commands` is typed
   `[any ReadOnlyCommand.Type]`, so the compiler keeps write commands out of
   `ro`.
+- A **group with both kinds** (for example `iris draft show` and
+  `iris draft new`) cannot be a `ReadOnlyCommand`. Give it two forms: the
+  full group in `Iris` with all children, and a second group, also named
+  `draft`, in `ReadOnly.commands` whose children are typed
+  `[any ReadOnlyCommand.Type]` (only `show`). Both use the same leaf types,
+  so `iris ro draft show` behaves like `iris draft show`, and
+  `iris ro draft new` fails to parse.
 - Keep write calls out of `MailReader` and out of the IMAP calls it uses: put
   them in a separate type, so a read-only command cannot reach them.
 
