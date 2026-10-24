@@ -71,7 +71,8 @@ Never put a password in an error message, a log line, or JSON output.
 ### Output
 
 - List commands (`accounts`, `mailboxes`, `list`) take `--format
-  table|json|jsonl|id`, default `table`, through `OutputFormatter` and the
+  table|json|jsonl|id`, default `table` (`OutputFormat.listDefault`: use it
+  for `--format`, never the literal), through `OutputFormatter` and the
   `IrisRow` protocol. `OutputFormatter.render` returns the exact stdout text
   (every line ends with `\n`; for zero rows, `json` is `[]`, `table` is the
   header line, and `jsonl`/`id` are empty), and the CLI writes it unchanged
@@ -93,7 +94,8 @@ Never put a password in an error message, a log line, or JSON output.
    `SwiftMailClient` (types and errors only), and script it in
    `FakeMailClient`.
 3. Add `Sources/iris/Commands/<Name>Command.swift`: `@OptionGroup var
-   accountOptions: AccountOptions`, options, and a `run()` of a few lines.
+   accountOptions: AccountOptions`, options (a list command uses
+   `var format: OutputFormat = .listDefault`), and a `run()` of a few lines.
    Register it in `Iris.swift`.
 4. Add parse tests in `Tests/CLITests/ArgumentParsingTests.swift`.
 5. Update README.md ("What works today", "Usage") and remove the item from
