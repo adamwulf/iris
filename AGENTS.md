@@ -45,7 +45,9 @@ Tests/CLITests/     argument parsing only, never run()
 one session: `login()`, the calls, then `logout()`. `MailReader` owns that
 order (`withClient` logs out on success, on error, and after a failed login)
 and holds the logic: paging math, ordering, date fallback, and modified
-UTF-7 encoding of the mailbox name before EXAMINE. `SwiftMailClient` only
+UTF-7 in both directions (it decodes LIST names in `mailboxes()`, encodes
+`--mailbox` before EXAMINE, and puts the typed name back into an
+`unknownMailbox` error). `MailClient` speaks wire names only. `SwiftMailClient` only
 converts SwiftMail types and errors. Its parts that need no server are static
 and tested in `SwiftMailClientTests`: the error mapping
 (`irisError(for:command:account:)`), the TLS choice
@@ -70,8 +72,13 @@ Never put a password in an error message, a log line, or JSON output.
 
 - List commands (`accounts`, `mailboxes`, `list`) take `--format
   table|json|jsonl|id`, default `table`, through `OutputFormatter` and the
-  `IrisRow` protocol. Output is deterministic: sorted JSON keys, no trailing
-  whitespace in tables.
+  `IrisRow` protocol. `OutputFormatter.render` returns the exact stdout text
+  (every line ends with `\n`; for zero rows, `json` is `[]`, `table` is the
+  header line, and `jsonl`/`id` are empty), and the CLI writes it unchanged
+  with `CLI.printRows`. Output is deterministic: sorted JSON keys, no trailing
+  whitespace in tables, and cells padded by `Character` (emoji are safe).
+- The next-page hint keeps `--account`, `--mailbox`, `--limit`, and
+  `--format`, and is written to stderr for every format.
 - `show` takes `--format markdown|json|raw`, default `markdown`.
 - Hints (such as the next-page command) and errors go to stderr. stdout holds
   only data.
@@ -112,11 +119,15 @@ names the account (`--account <name>`).
   `messageDownloadTimedOut`. `fetchEnvelopes` uses the chunked
   `fetchMessageInfos(using:options:chunkSize:)` stream (100 messages per
   FETCH), so each chunk has its own deadline. Any other timeout after login is
-  `serverTimedOut`; before login it is `connectionFailed`.
+  `serverTimedOut`; before login it is `connectionFailed`. In the same way, a
+  broken connection (a closed channel, BYE, or a network error) is
+  `connectionFailed` on connect and LOGIN, and `connectionLost` after LOGIN,
+  so only the first one tells the user to check the host and port.
 - **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
-  `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, so iris
-  decodes names in `MailboxInfo(swiftMail:)` and `MailReader` encodes
-  `--mailbox` before EXAMINE. Users only see and type the decoded names.
+  `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
+  `MailClient` (and `FakeMailClient`) use wire names only. `MailReader`
+  decodes in `mailboxes()` and encodes before EXAMINE. Users only see and type
+  the decoded names.
 - **Transport security:** iris passes `.startTLS` for port 143 and
   `.implicitTLS` for every other port. SwiftMail's `.automatic` would continue
   in plain text on 143 when the server has no STARTTLS.
