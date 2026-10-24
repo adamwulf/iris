@@ -101,8 +101,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "every raw-message download after \(seconds) seconds. Try again on a faster connection."
         case .serverTimedOut(let account, let command):
             return "The server did not answer \(command) in time (account \"\(account)\"). "
-                + "The connection may be slow, or the server may be busy. Try again. "
-                + "If `iris list` timed out, try a smaller --limit."
+                + "The connection may be slow, or the server may be busy. Try again."
         case .serverError(let account, let command, let reason):
             return "The server answered \(command) with an error (account \"\(account)\"): \(reason). "
                 + "Run `iris check --account \(MessagePage.shellQuoted(account))` to test the account settings."
