@@ -7,11 +7,11 @@ import Foundation
 /// the URL opens the message only when its account is also set up in Mail.
 /// When more than one copy has the same message ID (in INBOX and in Sent, or
 /// under two Gmail labels), Mail opens one of them.
-public enum AppleMailURL {
+enum AppleMailURL {
     /// The URL for a `Message-ID` header: `message://%3Cabc@example.com%3E`
     /// for `<abc@example.com>`. Every character other than letters, digits,
     /// `-._~`, and `@` is percent-encoded. `nil` when the message ID is empty.
-    public static func string(forMessageID messageID: String) -> String? {
+    static func string(forMessageID messageID: String) -> String? {
         var id = Substring(messageID.trimmingCharacters(in: .whitespaces))
         if id.hasPrefix("<"), id.hasSuffix(">") {
             id = id.dropFirst().dropLast()
