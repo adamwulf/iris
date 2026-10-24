@@ -50,6 +50,9 @@ done; README.md describes it.
 - Save it with APPEND to the special-use `\Drafts` mailbox (found with LIST;
   Gmail's is `[Gmail]/Drafts`) with the `\Draft` flag.
 - iris never sends mail. The user reviews and sends the draft from a mail app.
+- `draft` is a write command: it is never under `iris ro` (see AGENTS.md,
+  "Read-only and write commands"), and its APPEND call lives outside
+  `MailReader`. `iris thread` (milestone 2) is read-only and goes in both.
 - Probably needs a new optional key for the From address and display name
   (for example `IRIS_<NAME>_FROM`), because the username is not always the
   address.

@@ -99,6 +99,20 @@ List commands take `--format table|json|jsonl|id`. UIDs belong to one
 mailbox, so pass the same `--mailbox` to `iris show` that you passed to
 `iris list`. Hints and errors go to stderr, so stdout is safe to pipe.
 
+### Read-only access for agents
+
+`iris ro <command>` runs the same command as `iris <command>`, but only the
+read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
+`list`, and `show`. Commands that change mail (such as drafts, when they
+come) are not there, so `iris ro draft ...` fails.
+
+To let an agent read your mail but never change it, allow only that prefix.
+For Claude Code, in `.claude/settings.json`:
+
+```json
+{ "permissions": { "allow": ["Bash(iris ro:*)"] } }
+```
+
 ## Development
 
 See [AGENTS.md](AGENTS.md) for the architecture and how to add a command.

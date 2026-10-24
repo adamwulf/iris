@@ -96,10 +96,31 @@ Never put a password in an error message, a log line, or JSON output.
 3. Add `Sources/iris/Commands/<Name>Command.swift`: `@OptionGroup var
    accountOptions: AccountOptions`, options (a list command uses
    `var format: OutputFormat = .listDefault`), and a `run()` of a few lines.
-   Register it in `Iris.swift`.
+   Register it (see "Read-only and write commands").
 4. Add parse tests in `Tests/CLITests/ArgumentParsingTests.swift`.
 5. Update README.md ("What works today", "Usage") and remove the item from
    `plans/roadmap.md`.
+
+### Read-only and write commands
+
+`iris ro <command>` holds only the read-only commands, so Adam can allow an
+agent `Bash(iris ro:*)` and nothing else. `Sources/iris/Commands/ReadOnlyCommand.swift`
+enforces it:
+
+- A **read-only** command (it cannot send, draft, move, flag, or delete) is
+  declared `struct X: ReadOnlyCommand` and added to `ReadOnly.commands`. It
+  then appears both as `iris x` and `iris ro x`.
+- A **write** command is declared `struct X: AsyncParsableCommand` and added
+  only to `Iris.configuration.subcommands`, after the read-only ones. Never
+  mark it `ReadOnlyCommand`: `ReadOnly.commands` is typed
+  `[any ReadOnlyCommand.Type]`, so the compiler keeps write commands out of
+  `ro`.
+- Keep write calls out of `MailReader` and out of the IMAP calls it uses: put
+  them in a separate type, so a read-only command cannot reach them.
+
+`ReadOnlyCommandTests` checks that `ro` has only read-only commands, that
+every read-only command is in both places, and that `iris ro <write command>`
+fails.
 
 ### Add an error
 

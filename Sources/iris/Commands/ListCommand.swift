@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import IrisKit
 
-struct List: AsyncParsableCommand {
+struct List: ReadOnlyCommand {
     static let configuration = CommandConfiguration(
         abstract: "List the messages in a mailbox, newest first, one page at a time. Messages are not marked as read."
     )

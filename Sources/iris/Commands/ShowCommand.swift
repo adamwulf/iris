@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import IrisKit
 
-struct Show: AsyncParsableCommand {
+struct Show: ReadOnlyCommand {
     static let configuration = CommandConfiguration(
         abstract: "Show one message in full, as Markdown. The message is not marked as read."
     )
