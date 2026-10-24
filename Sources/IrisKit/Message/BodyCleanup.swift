@@ -2,8 +2,9 @@ import Foundation
 
 /// Tidies a body (Markdown from HTML, or plain text) for printing.
 enum BodyCleanup {
-    /// The most blank lines kept in a row. A longer run is cut to this length.
-    static let maxBlankLines = 2
+    /// The most blank lines kept in a row. A longer run is cut to this length:
+    /// more blank lines have no meaning in Markdown.
+    static let maxBlankLines = 1
 
     /// Turns CRLF and lone CR line endings into `\n`.
     static func normalizeLineEndings(_ text: String) -> String {

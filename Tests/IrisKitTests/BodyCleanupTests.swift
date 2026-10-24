@@ -21,8 +21,8 @@ final class BodyCleanupTests: XCTestCase {
         XCTAssertEqual(BodyCleanup.clean("Thanks\n\n-- \nAdam"), "Thanks\n\n-- \nAdam")
     }
 
-    func testRunsOfBlankLinesAreCutToTwo() {
-        XCTAssertEqual(BodyCleanup.clean("a\n\nb\n\n\nc\n\n\n\n\n\nd"), "a\n\nb\n\n\nc\n\n\nd")
+    func testRunsOfBlankLinesAreCutToOne() {
+        XCTAssertEqual(BodyCleanup.clean("a\n\nb\n\n\nc\n \n\n\t\n\n\nd"), "a\n\nb\n\nc\n\nd")
     }
 
     func testBlankLinesAtTheStartAndEndAreDropped() {
