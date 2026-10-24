@@ -24,7 +24,7 @@ Details and the work that stays in IrisKit are in
 | Candidate | What it is | Activity / releases | Stars, license | macOS floor, Swift | Resolved deps | Builds on Swift 6.4? |
 |---|---|---|---|---|---|---|
 | **SwiftMail** main `06b341e` (1.16.0) | High-level `IMAPServer` actor + SMTP + MIME parser, on swift-nio-imap | Pushed 2026-10-24[^2]; 10 releases from 2026-07-28 to 1.16.0 on 2026-10-09[^3] | 104★, 55 forks, 3 open issues + PRs, BSD-2-Clause[^2] | macOS 15; library compiles in Swift 5 mode[^4] | 22 pins[^5] | Yes, 33–34 s; only with a revision or branch pin[^6] |
-| **swift-nio-imap** 0.4.0 | Apple's IMAP4rev1 parser/encoder + SwiftNIO channel handlers; no client, no MIME | Tagged commit dated 2026-07-20[^7] | 154★, 27 open issues + PRs, Apache-2.0[^8] | No floor; Swift 6 mode[^9] | 6 pins[^9] | Yes, 18 s[^9] |
+| **swift-nio-imap** 0.4.0 | Apple's IMAP4rev1 parser/encoder + SwiftNIO channel handlers; no client, no MIME | Tagged commit dated 2026-07-20[^7] | 154★, 27 open issues + PRs, Apache-2.0[^8] | No floor; Swift 6 mode[^9][^4] | 6 pins[^9] | Yes, 18 s[^9] |
 | **swift-nio-imap** main `17929ed` (`IMAPCommands`) | Same, plus a new async/await client `IMAPConnection` (PR #841, merged 2026-09-25)[^10] | 21 commits after 0.4.0, untagged[^11]; README: "not yet ready for use in production systems"[^12] | same as above | macOS 15, tools 6.2[^13] | 18 pins[^13] | Yes, 33 s[^13] |
 | **MailCore2** | Obj-C/C++ IMAP/POP/SMTP client | Commits in 2026-09 add ActiveSync/Gmail API/JMAP[^14]; newest release 0.6.4 from 2020-08-01[^15] | 2,699★, 233 open issues + PRs[^16] | SPM = binary xcframework from a third-party fork, dated 2020-09-24[^17] | n/a | Not tried |
 | **Postal** (Snips) | "A Swift framework for working with emails" | Last push 2019-05-22[^18] | 653★, MIT[^18] | n/a | n/a | Not tried (abandoned) |
@@ -57,10 +57,10 @@ client that uses swift-nio-imap directly.
 All three were built on Swift 6.4 and run on the same two fixtures: a Gmail reply with a
 `gmail_quote` blockquote, and a newsletter with a layout table around a small data table[^75].
 
-| Library | How it works | Floor, tools | Resolved deps | Result on the fixtures |
+| Library | How it works | Floor, tools | Resolved pins (with the library) | Result on the fixtures |
 |---|---|---|---|---|
-| **SwiftText** 2.4.0, `SwiftTextHTML`, `traits: ["HTML"]` | libxml2 (through Cocoanetics/XMLKit) to Markdown[^76][^87] | macOS 13; library tools 6.3; consumer tools ≥ 6.1 to pass `traits:`[^76] | 4: swift-markdown, swift-cmark, XMLKit[^76] | Best. `>` quote with the list inside it, layout table unwrapped, data table as a GFM pipe table, entities decoded, no `<style>`/`<script>` text; about 0.5 ms per message[^77] |
-| **Demark** 1.2.1 | Turndown.js in a WKWebView (default) or html-to-md in JavaScriptCore; `@MainActor` API[^78] | macOS 14; tools 6.0[^79] | 0[^79] | Runs in a plain CLI. Turndown makes each table cell its own paragraph; html-to-md prints the nested table as raw HTML; Demark falls back between engines without telling the caller; 310 ms cold start for the WKWebView engine[^80] |
+| **SwiftText** 2.4.0, `SwiftTextHTML`, `traits: ["HTML"]` | libxml2 (through Cocoanetics/XMLKit) to Markdown[^76][^87] | macOS 13; library tools 6.3; consumer tools ≥ 6.1 to pass `traits:`[^76] | 4: SwiftText, swift-markdown, swift-cmark, XMLKit[^76] | Best. `>` quote with the list inside it, layout table unwrapped, data table as a GFM pipe table, entities decoded, no `<style>`/`<script>` text; about 0.5 ms per message[^77] |
+| **Demark** 1.2.1 | Turndown.js in a WKWebView (default) or html-to-md in JavaScriptCore; `@MainActor` API[^78] | macOS 14; tools 6.0[^79] | 1[^79] | Runs in a plain CLI. Turndown makes each table cell its own paragraph; html-to-md prints the nested table as raw HTML; Demark falls back between engines without telling the caller; 310 ms cold start for the WKWebView engine[^80] |
 | **SwiftSoup** 2.14.3 | HTML parser only | macOS 12; tools 6.0[^81] | 1[^81] | `text()` is one line with no structure. Only a base for our own converter[^81] |
 | SwiftHTMLToMarkdown | Not tested | | | README: basic HTML "Almost fully supported, tables are not"[^82] |
 | xberg-io html-to-markdown | Rust core with a Swift binding; not tested | | | "SwiftPM URL consumption is not yet available"[^83] |
@@ -77,11 +77,11 @@ renderer would read as an autolink. Raw terminal output is fine[^85].
 |---|---|---|---|
 | Host | `imap.gmail.com:993`[^52] | `imap.mail.me.com:993`, SSL required[^86] | `imap.zoho.com` (personal, free org) or `imappro.zoho.com` (paid org), 993 SSL[^54]. Data-center hosts reachable on 993: `imap.zoho.eu`, `imappro.zoho.eu`, `imap.zoho.in`, `imap.zoho.com.au`, `imap.zoho.jp`, `imap.zohocloud.ca`, `imap.zoho.sa`[^55]. The account's own host is shown in Settings > Mail Accounts[^54] |
 | Pre-login CAPABILITY (live, 2026-10-24) | `IMAP4rev1 UNSELECT IDLE NAMESPACE QUOTA ID XLIST CHILDREN X-GM-EXT-1 XYZZY SASL-IR AUTH=XOAUTH2 AUTH=PLAIN AUTH=PLAIN-CLIENTTOKEN AUTH=OAUTHBEARER`[^52] | `XAPPLEPUSHSERVICE IMAP4 IMAP4rev1 SASL-IR AUTH=ATOKEN AUTH=PLAIN AUTH=ATOKEN2 AUTH=XOAUTH2`[^53] | `IMAP4rev1 UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR AUTH=XOAUTH2 UIDPLUS ESEARCH LIST-EXTENDED LIST-STATUS WITHIN LITERAL- ACL CONDSTORE`[^56] |
-| Post-login CAPABILITY (secondary source, SwiftMail README) | SPECIAL-USE, MOVE, UIDPLUS, CONDSTORE, ESEARCH, ENABLE, UTF8=ACCEPT, APPENDLIMIT yes; QRESYNC, SORT no[^43] | UIDPLUS, CONDSTORE, QRESYNC, ESEARCH, SORT yes; SPECIAL-USE, MOVE no[^43] | Not in the table |
+| Full CAPABILITY per SwiftMail README table (secondary; capture method not stated) | SPECIAL-USE, MOVE, UIDPLUS, CONDSTORE, ESEARCH, ENABLE, UTF8=ACCEPT, APPENDLIMIT yes; QRESYNC, SORT no[^43] | UIDPLUS, CONDSTORE, QRESYNC, ESEARCH, SORT yes; SPECIAL-USE, MOVE no[^43] | Not in the table |
 | THREAD | Not advertised before login[^52]; not in README table | Not advertised before login[^53] | Not advertised before login[^56] |
 | Drafts | Find it by the `\Drafts` attribute: "All LIST responses contain these Special-Use attributes"; system labels are "prefixed by "[Gmail]" or "[GoogleMail]""[^57] | Name not verified (see section 5) | Name not verified (see section 5) |
 | App password | Needs 2-Step Verification; not offered with security-key-only 2SV, work/school accounts, or Advanced Protection; revoked when the account password changes[^58]. Google's Workspace admin help: since 2025-03-14, IMAP "will no longer work with legacy passwords (basic authentication)"; the page names app passwords as an exception[^59] | Needs two-factor auth; up to 25 active; all revoked when the Apple Account password changes[^60]. Username is the name part without `@icloud.com` (try the full address if that fails)[^86] | IMAP must be turned on in Settings > Mail Accounts; app-specific password if 2FA is on; new free-plan sign-ups do not get IMAP[^54] |
-| Limits and quirks | IMAP is always on since Jan 2025; up to 15 clients per account[^61]; 2,500 MB/day download, 500 MB/day upload[^62]. Labels act as folders over IMAP, so one message can be in many mailboxes[^57]. UIDs hold only inside one mailbox; `X-GM-MSGID` identifies a message "across multiple folders"[^57][^41] | Unescaped `"` inside ENVELOPE message-IDs in `UID FETCH` replies (reported 2023, no Apple answer)[^63]; `BODY.PEEK[HEADER.FIELDS.NOT (...)]` answers with the wrong section[^64] | Only folders picked in Folder Settings show over IMAP[^54] |
+| Limits and quirks | IMAP is always on since Jan 2025; up to 15 clients per account[^61]; 2,500 MB/day download, 500 MB/day upload[^62]. Labels act as folders over IMAP, so one message can be in many mailboxes[^57]. UIDs hold only inside one mailbox[^93]; `X-GM-MSGID` identifies a message "across multiple folders"[^57] | Unescaped `"` inside ENVELOPE message-IDs in `UID FETCH` replies (reported 2023, no Apple answer)[^63]; `BODY.PEEK[HEADER.FIELDS.NOT (...)]` answers with the wrong section[^64] | Only folders picked in Folder Settings show over IMAP[^54] |
 
 ## 4. Recommendation: trade-offs, risks, and what IrisKit still writes
 
@@ -145,8 +145,8 @@ What IrisKit still writes:
 ## 5. Limitations / not verified
 
 - **Post-login CAPABILITY** for all three providers was not captured (no credentials here). The
-  post-login rows come from SwiftMail's README table, which has no capture dates for Gmail or
-  iCloud and no Zoho column[^43]. Next step: log in once per provider and record `CAPABILITY`
+  "full CAPABILITY" row comes from SwiftMail's README table, which has no capture dates for Gmail
+  or iCloud and no Zoho column[^43]. Next step: log in once per provider and record `CAPABILITY`
   and `LIST "" "*"` (Drafts names, `\Drafts` attributes, Zoho SPECIAL-USE or XLIST).
 - **Drafts mailbox names** for iCloud and Zoho are not verified.
 - **No live IMAP session** was run with either library against Gmail, iCloud or Zoho, so the
@@ -200,7 +200,7 @@ What IrisKit still writes:
 [^38]: [SwiftMail `MessagePart.textContent`](https://github.com/Cocoanetics/SwiftMail/blob/06b341e2762a5a5e3c608b3a8150007fa21807ce/Sources/SwiftMail/IMAP/Models/MessagePart.swift)
 [^39]: [SwiftMail PR #268 (open), "Keep the parameters a text part is read by: format, delsp and a quoted charset"](https://github.com/Cocoanetics/SwiftMail/pull/268)
 [^40]: [SwiftMail `Message.preview(maxLength:)`](https://github.com/Cocoanetics/SwiftMail/blob/06b341e2762a5a5e3c608b3a8150007fa21807ce/Sources/SwiftMail/IMAP/Models/Message.swift)
-[^41]: [SwiftMail `IMAPServer.fetchGmailAttributes(for:)` and `GmailMessageAttributes`](https://github.com/Cocoanetics/SwiftMail/blob/06b341e2762a5a5e3c608b3a8150007fa21807ce/Sources/SwiftMail/IMAP/IMAPServer%2BGmail.swift)
+[^41]: [SwiftMail `IMAPServer.fetchGmailAttributes(for:)`](https://github.com/Cocoanetics/SwiftMail/blob/06b341e2762a5a5e3c608b3a8150007fa21807ce/Sources/SwiftMail/IMAP/IMAPServer%2BGmail.swift)
 [^42]: [GitHub API, commit history of IMAPServer+Gmail.swift (first commit 2026-07-20)](https://api.github.com/repos/Cocoanetics/SwiftMail/commits?path=Sources/SwiftMail/IMAP/IMAPServer%2BGmail.swift&per_page=5)
 [^43]: [SwiftMail README, IMAP capability table](https://github.com/Cocoanetics/SwiftMail/blob/main/README.md)
 [^44]: [swift-nio-imap `SupportedExtensions.md`, rev 14ad388](https://github.com/apple/swift-nio-imap/blob/14ad3887dab9ca5aba38ee0ace18fddf40e9491f/Sources/NIOIMAPCore/NIOIMAPCore.docc/SupportedExtensions.md)
@@ -252,3 +252,4 @@ What IrisKit still writes:
 [^90]: [SwiftMail `FetchMessageInfoHandler` (`header.subject = subject.decodeMIMEHeader()`)](https://github.com/Cocoanetics/SwiftMail/blob/06b341e2762a5a5e3c608b3a8150007fa21807ce/Sources/SwiftMail/IMAP/IMAP/Handler/FetchMessageInfoHandler.swift)
 [^91]: [GitHub API, SwiftMail tags (1.16.0 = 88c45cbd31b3)](https://api.github.com/repos/Cocoanetics/SwiftMail/tags)
 [^92]: [GitHub API, SwiftText contributors (odrobnik 342, tabmail-kmyi 1)](https://api.github.com/repos/Cocoanetics/SwiftText/contributors?per_page=10)
+[^93]: [SwiftMail `GmailMessageAttributes` doc comment ("unlike UIDs, which are only stable within a single mailbox")](https://github.com/Cocoanetics/SwiftMail/blob/06b341e2762a5a5e3c608b3a8150007fa21807ce/Sources/SwiftMail/IMAP/Models/GmailMessageAttributes.swift)
