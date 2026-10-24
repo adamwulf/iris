@@ -55,8 +55,8 @@ final class SwiftMailClientTests: XCTestCase {
 
     func testTimeoutOnARawMessageBecomesMessageDownloadTimedOut() {
         XCTAssertEqual(
-            irisError(IMAPError.timeout, .fetchRawMessage(uid: 42)),
-            .messageDownloadTimedOut(uid: 42, seconds: SwiftMailClient.rawMessageTimeoutSeconds)
+            irisError(IMAPError.timeout, .fetchRawMessage),
+            .messageDownloadTimedOut(seconds: SwiftMailClient.rawMessageTimeoutSeconds)
         )
     }
 
@@ -97,7 +97,7 @@ final class SwiftMailClientTests: XCTestCase {
 
     func testConnectionFailureAfterLoginBecomesConnectionLostWithoutThePassword() {
         let commands: [SwiftMailClient.Command] = [
-            .capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes, .fetchRawMessage(uid: 42),
+            .capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes, .fetchRawMessage,
         ]
         for command in commands {
             XCTAssertEqual(
@@ -139,7 +139,7 @@ final class SwiftMailClientTests: XCTestCase {
             var description: String { "read(descriptor:pointer:size:): Connection reset by peer (secret)" }
         }
         let commands: [SwiftMailClient.Command] = [
-            .capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes, .fetchRawMessage(uid: 42),
+            .capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes, .fetchRawMessage,
         ]
         for command in commands {
             XCTAssertEqual(
@@ -160,7 +160,7 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.Command.list.name, "LIST")
         XCTAssertEqual(SwiftMailClient.Command.examine(mailbox: "INBOX").name, "EXAMINE")
         XCTAssertEqual(SwiftMailClient.Command.fetchEnvelopes.name, "FETCH")
-        XCTAssertEqual(SwiftMailClient.Command.fetchRawMessage(uid: 1).name, "FETCH")
+        XCTAssertEqual(SwiftMailClient.Command.fetchRawMessage.name, "FETCH")
     }
 
     // MARK: - Mailboxes

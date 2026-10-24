@@ -20,7 +20,7 @@ struct SwiftMailClient: MailClient {
         /// `mailbox` is the wire name, in modified UTF-7.
         case examine(mailbox: String)
         case fetchEnvelopes
-        case fetchRawMessage(uid: UInt32)
+        case fetchRawMessage
 
         /// The command's name in error messages.
         var name: String {
@@ -128,7 +128,7 @@ struct SwiftMailClient: MailClient {
     func fetchRawMessage(uid: UInt32) async throws -> Data {
         // SwiftMail 88c45cbd (1.16.0) fixes FetchRawMessageCommand.timeoutSeconds
         // at 10, and no public API sends BODY.PEEK[] with a longer timeout.
-        try await run(.fetchRawMessage(uid: uid)) {
+        try await run(.fetchRawMessage) {
             try await server.fetchRawMessage(identifier: UID(uid))
         }
     }
@@ -175,8 +175,8 @@ struct SwiftMailClient: MailClient {
             )
         case (.examine(let mailbox), IMAPError.selectFailed(let reason)):
             return .unknownMailbox(account: account.name, name: mailbox, reason: redacting(password, in: reason))
-        case (.fetchRawMessage(let uid), IMAPError.timeout):
-            return .messageDownloadTimedOut(uid: uid, seconds: rawMessageTimeoutSeconds)
+        case (.fetchRawMessage, IMAPError.timeout):
+            return .messageDownloadTimedOut(seconds: rawMessageTimeoutSeconds)
         case (.login, IMAPError.timeout):
             return connectionFailed(reason: "the server did not answer \(command.name) in time", account: account)
         case (_, IMAPError.timeout):

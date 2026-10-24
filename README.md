@@ -74,8 +74,8 @@ All three need an **app-specific password**, not your normal password.
 - `iris mailboxes`: the mailbox names with their special-use attributes
   (`\Drafts`, `\Sent`, `\All`, ...).
 - `iris list`: a mailbox, newest first, one page at a time
-  (UID, date, sender, subject).
-- `iris show`: one full message as Markdown. HTML mail is converted to
+  (message ID, date, sender, subject).
+- `iris show`: one full message, by its message ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
   source.
@@ -90,14 +90,32 @@ iris list                          # newest 25 messages in INBOX
 iris list --page 2 --limit 50
 iris list --mailbox "[Gmail]/Sent Mail" --format json
 
-iris show 4821                     # the message with UID 4821, as Markdown
-iris show 4821 --body text         # the plain-text part instead of the HTML
-iris show 4821 --format raw > message.eml
+iris show work/INBOX/4821                  # one message, as Markdown
+iris show work/INBOX/4821 --body text      # the plain-text part instead of the HTML
+iris show work/INBOX/4821 --format raw > message.eml
+iris show 'personal/[Gmail]/Sent Mail/77'  # quote an ID that has spaces
 ```
 
-List commands take `--format table|json|jsonl|id`. UIDs belong to one
-mailbox, so pass the same `--mailbox` to `iris show` that you passed to
-`iris list`. Hints and errors go to stderr, so stdout is safe to pipe.
+List commands take `--format table|json|jsonl|id`. Hints and errors go to
+stderr, so stdout is safe to pipe.
+
+### Message IDs
+
+iris names each message with one ID, `<account>/<mailbox>/<UID>`, for example
+`work/INBOX/4821`. `iris list` shows it (`--format id` prints only the IDs),
+and `iris show` takes it, so `iris show` needs no `--account` or `--mailbox`.
+iris never shows a UID alone: each mailbox has its own UIDs, so the same UID
+is a different message in each mailbox and in each account.
+
+The account is the text before the first `/`, the UID is the text after the
+last `/`, and the mailbox is all the text between them, so a mailbox name
+can have `/` in it (`personal/[Gmail]/All Mail/77`).
+
+An ID stays valid while the message stays in that mailbox. When a message
+moves to a different mailbox, it gets a new UID and a new ID. The `Message-ID`
+header in `iris show --format json` is a different thing: the sender's mail
+app writes it, and the same email can have the same `Message-ID` in more than
+one mailbox or account.
 
 ### Read-only access for agents
 

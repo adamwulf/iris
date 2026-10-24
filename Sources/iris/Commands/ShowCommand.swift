@@ -7,13 +7,12 @@ struct Show: ReadOnlyCommand {
         abstract: "Show one message in full, as Markdown. The message is not marked as read."
     )
 
-    @OptionGroup var accountOptions: AccountOptions
-
-    @Argument(help: "The UID of the message, from `iris list`.")
-    var uid: UInt32
-
-    @Option(help: "The mailbox that holds the message. UIDs belong to one mailbox.")
-    var mailbox: String = MailReader.defaultMailbox
+    // The ID names the account and the mailbox, so `show` has no --account or --mailbox.
+    @Argument(
+        help: "The message ID from `iris list`: <account>/<mailbox>/<UID>, for example work/INBOX/4821. Quote it when the mailbox name has spaces.",
+        transform: IrisID.init(parsing:)
+    )
+    var id: IrisID
 
     @Option(help: "The part to show. auto shows the HTML part as Markdown when there is one, else the plain text.")
     var body: BodyPreference = .auto
@@ -22,8 +21,8 @@ struct Show: ReadOnlyCommand {
     var format: MessageOutputFormat = .markdown
 
     func run() async throws {
-        let reader = MailReader(account: try accountOptions.resolve())
-        let data = try await reader.rawMessage(uid: uid, mailbox: mailbox)
+        let account = try AccountResolver.resolve(name: id.account, settings: AccountResolver.settings())
+        let data = try await MailReader(account: account).rawMessage(uid: id.uid, mailbox: id.mailbox)
         FileHandle.standardOutput.write(try await MessageFormatter.render(rawMessage: data, format: format, body: body))
     }
 }

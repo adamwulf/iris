@@ -51,15 +51,27 @@ final class MailErrorTests: XCTestCase {
         )
     }
 
-    func testUnknownUIDPointsToTheListCommandForThatAccountAndMailbox() throws {
-        let inbox = try XCTUnwrap(IrisError.unknownUID(account: "work", uid: 999, mailbox: "INBOX").errorDescription)
+    func testUnknownMessagePointsToTheListCommandForThatAccountAndMailbox() throws {
+        let inbox = try XCTUnwrap(
+            IrisError.unknownMessage(IrisID(account: "work", mailbox: "INBOX", uid: 999)).errorDescription
+        )
         XCTAssertEqual(
             inbox,
-            "There is no message with UID 999 in \"INBOX\" (account \"work\"). "
-                + "Run `iris list --account work` to see the UIDs."
+            "There is no message \"work/INBOX/999\". Run `iris list --account work` to see the message IDs."
         )
-        let sent = try XCTUnwrap(IrisError.unknownUID(account: "work", uid: 5, mailbox: "Sent Items").errorDescription)
+        let sent = try XCTUnwrap(
+            IrisError.unknownMessage(IrisID(account: "work", mailbox: "Sent Items", uid: 5)).errorDescription
+        )
+        XCTAssertTrue(sent.contains("\"work/Sent Items/5\""))
         XCTAssertTrue(sent.contains("`iris list --account work --mailbox 'Sent Items'`"))
+    }
+
+    func testInvalidMessageIDShowsTheFormAndAnExample() {
+        XCTAssertEqual(
+            IrisError.invalidMessageID("4821").errorDescription,
+            "\"4821\" is not a message ID. A message ID is <account>/<mailbox>/<UID>, "
+                + "for example work/INBOX/4821. Run `iris list` to see the message IDs."
+        )
     }
 
     func testServerErrorPointsToTheCheckCommandForThatAccount() throws {
@@ -81,9 +93,8 @@ final class MailErrorTests: XCTestCase {
     }
 
     func testDownloadTimeoutExplainsTheSwiftMailLimit() throws {
-        let message = try XCTUnwrap(IrisError.messageDownloadTimedOut(uid: 42, seconds: 10).errorDescription)
-        XCTAssertTrue(message.contains("UID 42"))
-        XCTAssertTrue(message.contains("10 seconds"))
+        let message = try XCTUnwrap(IrisError.messageDownloadTimedOut(seconds: 10).errorDescription)
+        XCTAssertTrue(message.contains("did not download in 10 seconds"))
         XCTAssertTrue(message.contains("large"))
         XCTAssertTrue(message.contains("known limit of SwiftMail"))
     }

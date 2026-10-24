@@ -24,7 +24,8 @@ go (stderr).
 Sources/IrisKit/
   Config/      DotEnv (.env loader), AccountResolver (named accounts), Account
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
-               MailReader (sessions, paging, errors), MailModels (rows, pages)
+               MailReader (sessions, paging, errors), MailModels (rows, pages),
+               IrisID (the one message name, <account>/<mailbox>/<UID>)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
@@ -62,7 +63,9 @@ Each account is a group of keys, `IRIS_<NAME>_IMAP_HOST`, `_PORT` (optional,
 993), `_USERNAME`, `_PASSWORD`, plus `IRIS_DEFAULT_ACCOUNT`. The name may have
 underscores because the suffix is fixed. The process environment wins over
 `.env`; the nearest `.env` wins over a parent's. Commands resolve the account
-once, at the start, through `AccountOptions.resolve()`. Resolver functions take
+once, at the start, through `AccountOptions.resolve()`. A command that takes
+an `IrisID` (such as `show`) has no `--account`: it resolves the account that
+the ID names, with `AccountResolver.resolve(name:settings:)`. Resolver functions take
 the settings as a parameter, so tests never read the real environment.
 
 Never put a password in an error message, a log line, or JSON output.
@@ -70,6 +73,13 @@ Never put a password in an error message, a log line, or JSON output.
 
 ### Output
 
+- A message is always named by its `IrisID`, `<account>/<mailbox>/<UID>`
+  (for example `work/INBOX/4821`), in every output and every argument. Never
+  show or take a UID alone: UIDs repeat in every mailbox. Parse it with
+  `IrisID(parsing:)` (account before the first `/`, UID after the last, the
+  mailbox between), and take it as an `@Argument` with
+  `transform: IrisID.init(parsing:)`, so a bad ID explains the form. The
+  mailbox is the decoded name. JSON encodes it as one string.
 - List commands (`accounts`, `mailboxes`, `list`) take `--format
   table|json|jsonl|id`, default `table` (`OutputFormat.listDefault`: use it
   for `--format`, never the literal), through `OutputFormatter` and the
@@ -164,7 +174,7 @@ names the account (`--account <name>`).
 - **Read-only:** use EXAMINE, never SELECT, and `BODY.PEEK[]`, so iris never
   sets `\Seen`.
 - **UIDs** belong to one mailbox. A missing UID gets an empty answer, not an
-  error; `MailReader` turns that into `unknownUID`.
+  error; `MailReader` turns that into `unknownMessage`.
 - **Special-use:** a plain LIST may leave out the attributes, so
   `SwiftMailClient.listMailboxes` merges LIST with LIST RETURN (SPECIAL-USE).
   Servers without SPECIAL-USE get SwiftMail's guess from mailbox names.

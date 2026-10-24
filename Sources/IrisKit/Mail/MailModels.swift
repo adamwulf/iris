@@ -2,23 +2,24 @@ import Foundation
 
 /// One row of `iris list`.
 public struct MessageSummary: Sendable, Equatable, Encodable {
-    /// The IMAP UID. It is valid only inside the mailbox the message was listed from.
-    public let uid: UInt32
+    /// The message's ID, `<account>/<mailbox>/<UID>`, which `iris show` takes.
+    public let id: IrisID
     public let from: MailAddress?
     public let subject: String
     /// The `Date:` header, else the date the server received the message.
     public let date: Date?
 
-    init(uid: UInt32, from: MailAddress?, subject: String, date: Date?) {
-        self.uid = uid
+    init(id: IrisID, from: MailAddress?, subject: String, date: Date?) {
+        self.id = id
         self.from = from
         self.subject = subject
         self.date = date
     }
 
-    init(envelope: MessageEnvelope) {
+    /// The row for `envelope`, listed from `mailbox` (the decoded name) of `account`.
+    init(envelope: MessageEnvelope, account: String, mailbox: String) {
         self.init(
-            uid: envelope.uid,
+            id: IrisID(account: account, mailbox: mailbox, uid: envelope.uid),
             from: envelope.from,
             subject: envelope.subject ?? "",
             date: envelope.date ?? envelope.internalDate
@@ -32,18 +33,18 @@ public struct MessageSummary: Sendable, Equatable, Encodable {
 }
 
 extension MessageSummary: IrisRow {
-    public static var tableColumns: [String] { ["UID", "DATE", "FROM", "SUBJECT"] }
+    public static var tableColumns: [String] { ["ID", "DATE", "FROM", "SUBJECT"] }
 
     public var tableValues: [String] {
         [
-            String(uid),
+            id.description,
             date.map { DateText.string(from: $0, timeZone: .current) } ?? "",
             Self.oneLine(from?.displayName ?? ""),
             Self.oneLine(subject),
         ]
     }
 
-    public var idValue: String { String(uid) }
+    public var idValue: String { id.description }
 }
 
 /// One row of `iris mailboxes`.

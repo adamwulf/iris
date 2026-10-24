@@ -6,6 +6,10 @@ final class MailModelsTests: XCTestCase {
     /// 2026-10-24 20:21:18 UTC.
     private let sampleDate = Date(timeIntervalSince1970: 1_792_873_278)
 
+    private func id(_ uid: UInt32, mailbox: String = "INBOX") -> IrisID {
+        IrisID(account: "work", mailbox: mailbox, uid: uid)
+    }
+
     private func page(
         mailbox: String = "INBOX",
         count: Int,
@@ -14,7 +18,9 @@ final class MailModelsTests: XCTestCase {
         limit: Int = 25,
         hasMore: Bool
     ) -> MessagePage {
-        let messages = (0..<count).map { MessageSummary(uid: UInt32(500 - $0), from: nil, subject: "", date: nil) }
+        let messages = (0..<count).map {
+            MessageSummary(id: id(UInt32(500 - $0), mailbox: mailbox), from: nil, subject: "", date: nil)
+        }
         return MessagePage(
             mailbox: mailbox, messages: messages, totalCount: totalCount, page: page, limit: limit, hasMore: hasMore
         )
@@ -124,46 +130,54 @@ final class MailModelsTests: XCTestCase {
             year: 2026, month: 3, day: 7, hour: 9, minute: 5
         )))
         let summary = MessageSummary(
-            uid: 42, from: MailAddress(name: "Jane Doe", address: "jane@example.com"), subject: "Hello", date: local
+            id: id(42), from: MailAddress(name: "Jane Doe", address: "jane@example.com"), subject: "Hello", date: local
         )
-        XCTAssertEqual(summary.tableValues, ["42", "2026-03-07 09:05", "Jane Doe", "Hello"])
-        XCTAssertEqual(summary.idValue, "42")
+        XCTAssertEqual(summary.tableValues, ["work/INBOX/42", "2026-03-07 09:05", "Jane Doe", "Hello"])
+        XCTAssertEqual(summary.idValue, "work/INBOX/42")
     }
 
     func testTableFromFallsBackToTheAddressAndEmptyValuesStayEmpty() {
-        let noName = MessageSummary(uid: 1, from: MailAddress(name: nil, address: "bot@example.com"), subject: "", date: nil)
-        let emptyName = MessageSummary(uid: 2, from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil)
-        let noSender = MessageSummary(uid: 3, from: nil, subject: "", date: nil)
-        XCTAssertEqual(noName.tableValues, ["1", "", "bot@example.com", ""])
-        XCTAssertEqual(emptyName.tableValues, ["2", "", "x@example.com", ""])
-        XCTAssertEqual(noSender.tableValues, ["3", "", "", ""])
+        let noName = MessageSummary(id: id(1), from: MailAddress(name: nil, address: "bot@example.com"), subject: "", date: nil)
+        let emptyName = MessageSummary(id: id(2), from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil)
+        let noSender = MessageSummary(id: id(3), from: nil, subject: "", date: nil)
+        XCTAssertEqual(noName.tableValues, ["work/INBOX/1", "", "bot@example.com", ""])
+        XCTAssertEqual(emptyName.tableValues, ["work/INBOX/2", "", "x@example.com", ""])
+        XCTAssertEqual(noSender.tableValues, ["work/INBOX/3", "", "", ""])
     }
 
     func testTableCellsAreOneLine() {
         let summary = MessageSummary(
-            uid: 1, from: MailAddress(name: "Jane\tDoe", address: "j@example.com"), subject: "Long\r\n subject", date: nil
+            id: id(1), from: MailAddress(name: "Jane\tDoe", address: "j@example.com"), subject: "Long\r\n subject", date: nil
         )
-        XCTAssertEqual(summary.tableValues, ["1", "", "Jane Doe", "Long  subject"])
+        XCTAssertEqual(summary.tableValues, ["work/INBOX/1", "", "Jane Doe", "Long  subject"])
     }
 
-    func testJSONHasTheFullSenderAndAnISO8601Date() throws {
+    func testJSONHasTheIDAsOneStringTheFullSenderAndAnISO8601Date() throws {
         let summary = MessageSummary(
-            uid: 101, from: MailAddress(name: "Jane Doe", address: "jane@example.com"), subject: "Hi", date: sampleDate
+            id: id(101, mailbox: "[Gmail]/All Mail"),
+            from: MailAddress(name: "Jane Doe", address: "jane@example.com"),
+            subject: "Hi",
+            date: sampleDate
         )
         XCTAssertEqual(
             try OutputFormatter.render([summary], format: .jsonl),
-            #"{"date":"2026-10-24T20:21:18Z","from":{"address":"jane@example.com","name":"Jane Doe"},"subject":"Hi","uid":101}"#
-                + "\n"
+            #"{"date":"2026-10-24T20:21:18Z","from":{"address":"jane@example.com","name":"Jane Doe"},"#
+                + #""id":"work/[Gmail]/All Mail/101","subject":"Hi"}"# + "\n"
         )
     }
 
-    func testTableColumns() throws {
-        let summary = MessageSummary(uid: 7, from: nil, subject: "Hi", date: nil)
-        XCTAssertEqual(try OutputFormatter.render([summary], format: .table), """
-        UID  DATE  FROM  SUBJECT
-        7                Hi
+    func testTableColumnsAndIDFormat() throws {
+        let rows = [
+            MessageSummary(id: id(7), from: nil, subject: "Hi", date: nil),
+            MessageSummary(id: id(12, mailbox: "Sent Items"), from: nil, subject: "Re: Hi", date: nil),
+        ]
+        XCTAssertEqual(try OutputFormatter.render(rows, format: .table), """
+        ID                  DATE  FROM  SUBJECT
+        work/INBOX/7                    Hi
+        work/Sent Items/12              Re: Hi
 
         """)
+        XCTAssertEqual(try OutputFormatter.render(rows, format: .id), "work/INBOX/7\nwork/Sent Items/12\n")
     }
 
     // MARK: - MailboxInfo
