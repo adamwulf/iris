@@ -27,11 +27,13 @@ enum CLI {
     }
 
     /// SwiftMail logs through swift-log, whose default handler writes `.info`
-    /// lines on every connect. Keep only warnings and errors, on stderr.
+    /// lines on every connect, and it logs every failed command at `.error`, a
+    /// long diagnostic line before iris's own message. iris reports every
+    /// failure itself as an `IrisError`, so keep only `.critical` lines, on stderr.
     static func bootstrapSwiftLog() {
         LoggingSystem.bootstrap { label in
             var handler = StreamLogHandler.standardError(label: label)
-            handler.logLevel = .warning
+            handler.logLevel = .critical
             return handler
         }
     }
