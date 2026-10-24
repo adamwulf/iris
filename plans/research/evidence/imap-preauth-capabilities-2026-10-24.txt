@@ -1,0 +1,78 @@
+Pre-login IMAP greeting + CAPABILITY, captured 2026-10-24 (US Central) from this machine with:
+
+    curl -v --max-time 15 imaps://<host>:993/
+
+curl connects over implicit TLS, sends CAPABILITY, then a LIST (rejected because there is
+no login), then LOGOUT. No credentials were sent. These are the PRE-AUTHENTICATION
+capabilities only; servers usually advertise more after login (for example SPECIAL-USE,
+MOVE, CONDSTORE on Gmail). Only the IMAP protocol lines are kept below; TLS handshake
+lines are trimmed except the certificate subject.
+
+----------------------------------------------------------------------------------------
+imap.gmail.com:993   (cert subject: CN=imap.gmail.com; TLSv1.3)
+----------------------------------------------------------------------------------------
+< * OK Gimap ready for requests from <client-ip-redacted> 006d021491bc7-70a13561483mb95770746eaf
+> A001 CAPABILITY
+< * CAPABILITY IMAP4rev1 UNSELECT IDLE NAMESPACE QUOTA ID XLIST CHILDREN X-GM-EXT-1 XYZZY SASL-IR AUTH=XOAUTH2 AUTH=PLAIN AUTH=PLAIN-CLIENTTOKEN AUTH=OAUTHBEARER
+< A001 OK Thats all she wrote! 006d021491bc7-70a13561483mb95770746eaf
+> A002 LIST "" *
+< A002 BAD Unknown command 006d021491bc7-70a13561483mb95770746eaf
+> A003 LOGOUT
+< * BYE Logout Requested 006d021491bc7-70a13561483mb95770746eaf
+< A003 OK Quoth the raven, nevermore... 006d021491bc7-70a13561483mb95770746eaf
+
+----------------------------------------------------------------------------------------
+imap.mail.me.com:993   (iCloud; cert subject: C=US; ST=California; O=Apple Inc.; CN=imap.mail.me.com; TLSv1.3)
+----------------------------------------------------------------------------------------
+< * OK [CAPABILITY XAPPLEPUSHSERVICE IMAP4 IMAP4rev1 SASL-IR AUTH=ATOKEN AUTH=PLAIN AUTH=ATOKEN2 AUTH=XOAUTH2] (2642B150-0cc9295d8d28) p00-iscream-60-percent-75d57f778d-xwvr9
+> A001 CAPABILITY
+< * CAPABILITY XAPPLEPUSHSERVICE IMAP4 IMAP4rev1 SASL-IR AUTH=ATOKEN AUTH=PLAIN AUTH=ATOKEN2 AUTH=XOAUTH2
+< A001 OK Completed
+> A002 LIST "" *
+< A002 BAD Please login first
+> A003 LOGOUT
+< * BYE
+< A003 OK
+
+----------------------------------------------------------------------------------------
+imap.zoho.com:993   (Zoho personal; cert subject: CN=*.zoho.com; TLSv1.3)
+----------------------------------------------------------------------------------------
+< * OK svwall.zoho.com IMAP4 Server (Zoho Mail IMAP4rev1 Server version 1.0)
+> A001 CAPABILITY
+< * CAPABILITY IMAP4rev1 UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR AUTH=XOAUTH2 UIDPLUS ESEARCH LIST-EXTENDED LIST-STATUS WITHIN LITERAL- ACL CONDSTORE
+< A001 OK CAPABILITY completed
+> A002 LIST "" *
+< A002 BAD [CLIENTBUG] syntax: Invalid state for command
+> A003 LOGOUT
+< * BYE IMAP4rev1 Server logging out
+< A003 OK Success
+
+----------------------------------------------------------------------------------------
+Zoho regional hosts (reachability check only), same day:
+
+    curl -sS --max-time 10 -o /dev/null -w "%{url} -> ip=%{remote_ip} ssl_verify=%{ssl_verify_result} exit=%{exitcode}\n" <urls...>
+
+imaps://imap.zoho.eu:993/ -> ip=185.230.212.25 ssl_verify=0 exit=21
+imaps://imappro.zoho.eu:993/ -> ip=185.230.212.94 ssl_verify=0 exit=21
+imaps://imap.zoho.in:993/ -> ip=169.148.149.225 ssl_verify=0 exit=21
+imaps://imap.zoho.com.au:993/ -> ip=103.91.166.141 ssl_verify=0 exit=21
+imaps://imap.zoho.jp:993/ -> ip=193.118.161.144 ssl_verify=0 exit=21
+imaps://imap.zohocloud.ca:993/ -> ip=199.67.84.150 ssl_verify=0 exit=21
+imaps://imap.zoho.sa:993/ -> ip=199.67.82.117 ssl_verify=0 exit=21
+
+ssl_verify=0 means the TLS certificate verified. curl exit 21 ("Quote command returned
+error") means the IMAP session was reached and CAPABILITY succeeded, and only the
+unauthenticated LIST was rejected, as on the hosts above.
+
+----------------------------------------------------------------------------------------
+imappro.zoho.com:993   (Zoho organization accounts; cert subject: CN=*.zoho.com; TLSv1.3)
+----------------------------------------------------------------------------------------
+< * OK svwall.zoho.com IMAP4 Server (Zoho Mail IMAP4rev1 Server version 1.0)
+> A001 CAPABILITY
+< * CAPABILITY IMAP4rev1 UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR AUTH=XOAUTH2 UIDPLUS ESEARCH LIST-EXTENDED LIST-STATUS WITHIN LITERAL- ACL CONDSTORE
+< A001 OK CAPABILITY completed
+> A002 LIST "" *
+< A002 BAD [CLIENTBUG] syntax: Invalid state for command
+> A003 LOGOUT
+< * BYE IMAP4rev1 Server logging out
+< A003 OK Success
