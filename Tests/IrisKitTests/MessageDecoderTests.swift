@@ -150,6 +150,45 @@ final class MessageDecoderTests: XCTestCase {
         }
     }
 
+    func testAnEmptyHTMLPartIsNoHTMLPart() async throws {
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+
+        let emptyHTMLOnly = try await MessageDecoder.decode(eml("""
+        Subject: Empty
+        Content-Type: text/html
+
+        \u{20}\u{20}
+
+        """))
+        XCTAssertEqual(emptyHTMLOnly.body, "")
+        XCTAssertNil(emptyHTMLOnly.bodySource)
+
+        let withText = eml("""
+        Subject: Empty HTML
+        Content-Type: multipart/alternative; boundary="b"
+
+        --b
+        Content-Type: text/plain
+
+        The text.
+        --b
+        Content-Type: text/html
+
+        \u{20}
+        --b--
+        """)
+        let auto = try await MessageDecoder.decode(withText)
+        XCTAssertEqual(auto.body, "The text.")
+        XCTAssertEqual(auto.bodySource, .text)
+
+        let html = try await MessageDecoder.decode(withText, body: .html)
+        XCTAssertEqual(html.body, "The text.")
+        XCTAssertEqual(html.bodySource, .text)
+        XCTAssertEqual(recorder.lines, ["The message has no html part, so the text part is shown."])
+    }
+
     func testQuotedPrintableISO88591AndAStaleMetaCharset() async throws {
         let message = eml("""
         Subject: Dessert
