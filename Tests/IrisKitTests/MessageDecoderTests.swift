@@ -592,6 +592,42 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(document.attachments, [])
     }
 
+    func testANestedAMPRenditionIsNotListedButTheAttachmentIs() async throws {
+        let document = try await MessageDecoder.decode(eml("""
+        Subject: New comment
+        Content-Type: multipart/mixed; boundary="m"
+
+        --m
+        Content-Type: multipart/alternative; boundary="a"
+
+        --a
+        Content-Type: text/plain; charset="UTF-8"
+
+        Jane added a comment.
+        --a
+        Content-Type: text/x-amp-html; charset="UTF-8"
+
+        <!doctype html><html amp4email><body>Jane added a comment.</body></html>
+        --a
+        Content-Type: text/html; charset="UTF-8"
+
+        <p>Jane added a comment.</p>
+        --a--
+        --m
+        Content-Type: application/pdf; name="doc.pdf"
+        Content-Disposition: attachment; filename="doc.pdf"
+        Content-Transfer-Encoding: base64
+
+        SGVsbG8=
+        --m--
+        """))
+
+        XCTAssertEqual(document.body, "Jane added a comment.")
+        XCTAssertEqual(document.attachments, [
+            MessageAttachment(filename: "doc.pdf", contentType: "application/pdf", size: 5, inline: false),
+        ])
+    }
+
     func testARenditionTypeWithAFilenameIsListed() async throws {
         let document = try await MessageDecoder.decode(eml("""
         Subject: Notes
