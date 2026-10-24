@@ -364,6 +364,7 @@ final class MessageDecoderTests: XCTestCase {
             bodySource: .text,
             attachments: [MessageAttachment(filename: "résumé.pdf", contentType: "application/pdf", size: 11, inline: false)]
         ))
+        XCTAssertEqual(document.appleMailURL, "message://%3Creply-2@example.com%3E")
     }
 
     func testMissingSubjectDateAndFrom() async throws {
@@ -376,6 +377,7 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertNil(document.subject)
         XCTAssertNil(document.date)
         XCTAssertNil(document.messageID)
+        XCTAssertNil(document.appleMailURL)
         XCTAssertEqual(document.from, [])
         XCTAssertEqual(document.body, "No headers to speak of.")
     }

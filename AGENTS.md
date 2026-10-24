@@ -27,7 +27,8 @@ Sources/IrisKit/
                MailReader (sessions, paging, errors), MailModels (rows, pages),
                IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
-               BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw)
+               BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw),
+               AppleMailURL (the message: URL from the Message-ID header)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
                MailAddress (the one address type), DateText, ModifiedUTF7
   IrisError.swift   the one error type; each message says what to do next
@@ -100,6 +101,9 @@ Never put a password in an error message, a log line, or JSON output.
 - `show` takes `--format markdown|json|raw`, default `markdown`. Markdown and
   JSON show the iris ID (`MessageFormatter.render` sets
   `MessageDocument.irisID`); `raw` is the exact message source, never changed.
+  Markdown and JSON also show `appleMailURL`, the `message:` URL that opens
+  the message in Apple Mail. `MessageDocument` makes it from `messageID` with
+  `AppleMailURL`, so it is nil when there is no `Message-ID` header.
 - Hints (such as the next-page command) and errors go to stderr. stdout holds
   only data.
 

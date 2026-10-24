@@ -33,7 +33,8 @@ final class MessageFormatterTests: XCTestCase {
         **To:** Adam Wulf <adam@example.com>, jane@example.com\u{20}\u{20}
         **Cc:** Team Lead <lead@example.com>\u{20}\u{20}
         **Date:** 2026-10-24 13:42 CDT\u{20}\u{20}
-        **Iris ID:** `my_gmail/[Gmail]/All Mail/77`
+        **Iris ID:** `my_gmail/[Gmail]/All Mail/77`\u{20}\u{20}
+        **Apple Mail:** <message://%3Creply-2@example.com%3E>
 
         ---
 
@@ -144,6 +145,7 @@ final class MessageFormatterTests: XCTestCase {
     func testJSONIsDeterministicAndHasNoAttachmentBytes() throws {
         XCTAssertEqual(try MessageFormatter.json(document), """
         {
+          "appleMailURL" : "message://%3Creply-2@example.com%3E",
           "attachments" : [
             {
               "contentType" : "application/pdf",
