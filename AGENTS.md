@@ -131,6 +131,12 @@ names the account (`--account <name>`).
   gives nil, so `HeaderDate` reads it from the raw bytes. In-Reply-To and
   References are only in `additionalFields`. A quoted non-Latin charset
   (`charset="koi8-r"`) is not recognized (SwiftMail PR #268).
+- **Body parts:** SwiftMail keeps only the leaf parts, not the multipart
+  subtypes. iris joins every text/plain (or text/html) part that is not an
+  attachment into the body (Apple Mail splits the body around attachments),
+  lists every other part, and leaves out only a known list of other
+  renditions (`MessageDecoder.otherRenditionTypes`, such as Gmail's
+  `text/x-amp-html`) that sit next to a body part.
 - **libxml2** obeys a `<meta charset>` over the encoding it is given, so
   `MessageDecoder.declaringUTF8` points every `<meta>` charset at UTF-8 (the
   text is already decoded).
