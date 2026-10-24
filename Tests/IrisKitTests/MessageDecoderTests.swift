@@ -313,6 +313,114 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(document.attachments, [MessageAttachment(filename: "scan.png", contentType: "image/png", size: 8)])
     }
 
+    /// A plain-text message from Apple Mail with a PDF in the middle: the body
+    /// is split around the attachment into two text/plain parts.
+    private let appleMailText = """
+    From: Adam <adam@example.com>
+    Subject: The contract
+    Content-Type: multipart/mixed; boundary="Apple-Mail=_A1"
+
+    --Apple-Mail=_A1
+    Content-Transfer-Encoding: 7bit
+    Content-Type: text/plain; charset=us-ascii
+
+    Here is the contract:
+
+    --Apple-Mail=_A1
+    Content-Disposition: inline; filename=contract.pdf
+    Content-Type: application/pdf; x-unix-mode=0644; name="contract.pdf"
+    Content-Transfer-Encoding: base64
+
+    JVBERi0xLjQ=
+    --Apple-Mail=_A1
+    Content-Transfer-Encoding: 7bit
+    Content-Type: text/plain; charset=us-ascii
+
+
+    Please sign page 2.
+
+    Thanks,
+    Adam
+    --Apple-Mail=_A1--
+    """
+
+    /// An HTML message from iPhone Mail with a photo in the middle: the HTML
+    /// alternative is a multipart/mixed with the photo between two text/html parts.
+    private let appleMailHTML = """
+    From: Adam <adam@example.com>
+    Subject: The view
+    Content-Type: multipart/alternative; boundary="Apple-Mail=_B1"
+
+    --Apple-Mail=_B1
+    Content-Transfer-Encoding: 7bit
+    Content-Type: text/plain; charset=us-ascii
+
+    Look at this:
+
+    Isn't it nice?
+
+    Adam
+    --Apple-Mail=_B1
+    Content-Type: multipart/mixed; boundary="Apple-Mail=_B2"
+
+    --Apple-Mail=_B2
+    Content-Transfer-Encoding: 7bit
+    Content-Type: text/html; charset=us-ascii
+
+    <html><head><meta http-equiv="content-type" content="text/html; charset=us-ascii"></head><body dir="auto"><p>Look at this:</p></body></html>
+    --Apple-Mail=_B2
+    Content-Disposition: inline; filename=IMG_0042.jpeg
+    Content-Type: image/jpeg; name="IMG_0042.jpeg"
+    Content-Transfer-Encoding: base64
+
+    /9j/4AAQSkZJRg==
+    --Apple-Mail=_B2
+    Content-Transfer-Encoding: 7bit
+    Content-Type: text/html; charset=us-ascii
+
+    <html><head><meta http-equiv="content-type" content="text/html; charset=us-ascii"></head><body dir="auto"><p>Isn't it <b>nice</b>?</p><p>Adam</p></body></html>
+    --Apple-Mail=_B2--
+
+    --Apple-Mail=_B1--
+    """
+
+    func testAppleMailTextPartsAroundAnAttachmentAreJoined() async throws {
+        let document = try await MessageDecoder.decode(eml(appleMailText))
+
+        XCTAssertEqual(document.body, "Here is the contract:\n\nPlease sign page 2.\n\nThanks,\nAdam")
+        XCTAssertEqual(document.bodySource, .text)
+    }
+
+    func testAppleMailHTMLPartsAroundAnInlineImageAreJoined() async throws {
+        let html = try await MessageDecoder.decode(eml(appleMailHTML))
+        XCTAssertEqual(html.body, "Look at this:\n\nIsn't it **nice**?\n\nAdam")
+        XCTAssertEqual(html.bodySource, .html)
+
+        let text = try await MessageDecoder.decode(eml(appleMailHTML), body: .text)
+        XCTAssertEqual(text.body, "Look at this:\n\nIsn't it nice?\n\nAdam")
+        XCTAssertEqual(text.bodySource, .text)
+    }
+
+    func testAnInlineTextAttachmentIsNotPartOfTheBody() async throws {
+        let document = try await MessageDecoder.decode(eml("""
+        Subject: Notes
+        Content-Type: multipart/mixed; boundary="m"
+
+        --m
+        Content-Type: text/plain
+
+        My notes are attached.
+        --m
+        Content-Type: text/plain; name="notes.txt"
+        Content-Disposition: inline; filename="notes.txt"
+
+        Secret notes.
+        --m--
+        """))
+
+        XCTAssertEqual(document.body, "My notes are attached.")
+    }
+
     func testGmailQuoteBecomesMarkdownQuote() async throws {
         let document = try await MessageDecoder.decode(eml("""
         From: Adam <adam@example.com>

@@ -52,19 +52,24 @@ public enum MessageDecoder {
         )
     }
 
-    /// The body as Markdown, and the part it came from.
+    /// The body as Markdown, and the part it came from. When the message has
+    /// several parts of the chosen type, the body joins all of them.
     static func body(
         of message: Message,
         preference: BodyPreference,
         htmlToMarkdown: (String) async throws -> String
     ) async throws -> (String, BodySource?) {
-        let textPart = message.findTextBodyPart()
-        let text = textPart.flatMap { part in part.textContent.map { plainText($0, contentType: part.contentType) } }
-        let html = message.findHtmlBodyPart()?.textContent
+        let parts = bodyParts(of: message)
+        let texts = parts.filter { isPlainText($0) }.compactMap { part in
+            part.textContent.map { plainText($0, contentType: part.contentType) }
+        }
+        let text = texts.isEmpty ? nil : joinedPieces(texts)
+        let htmls = parts.filter { !isPlainText($0) }.compactMap(\.textContent)
+        let html = htmls.isEmpty ? nil : htmls
 
         if preference != .text, let html {
             do {
-                return (try await htmlToMarkdown(html), .html)
+                return (try await markdown(fromHTMLParts: html, htmlToMarkdown: htmlToMarkdown), .html)
             } catch IrisError.htmlNotConverted(let reason) where preference == .auto && text != nil {
                 IrisLog.log("The HTML part could not be converted to Markdown (\(reason)), so the text part is shown.")
             }
@@ -80,7 +85,41 @@ public enum MessageDecoder {
         }
         // Only `.text` gets here with an HTML part: the other choices returned or threw above.
         IrisLog.log("The message has no text part, so the html part is shown.")
-        return (try await htmlToMarkdown(html), .html)
+        return (try await markdown(fromHTMLParts: html, htmlToMarkdown: htmlToMarkdown), .html)
+    }
+
+    /// The parts that make up the body, in section order: the text/plain and
+    /// text/html parts that are not attachments. A message can have several
+    /// parts of one type, because Apple Mail and iPhone Mail split the body
+    /// around each inline attachment, for example
+    /// `multipart/mixed(text/plain, application/pdf, text/plain)`, or, for
+    /// HTML, `multipart/alternative(text/plain, multipart/mixed(text/html, image/jpeg, text/html))`.
+    static func bodyParts(of message: Message) -> [MessagePart] {
+        let attachmentSections = Set(message.attachments.map(\.section))
+        return message.bodies.filter { !attachmentSections.contains($0.section) }
+    }
+
+    /// Whether a body part is text/plain. The other body parts are text/html.
+    static func isPlainText(_ part: MessagePart) -> Bool {
+        part.contentType.lowercased().hasPrefix("text/plain")
+    }
+
+    /// Each HTML part converted to Markdown, joined in order.
+    static func markdown(
+        fromHTMLParts htmls: [String],
+        htmlToMarkdown: (String) async throws -> String
+    ) async throws -> String {
+        var pieces: [String] = []
+        for html in htmls {
+            pieces.append(try await htmlToMarkdown(html))
+        }
+        return joinedPieces(pieces)
+    }
+
+    /// The pieces of a body that was split into several parts, with a blank
+    /// line between them. Empty pieces are left out.
+    static func joinedPieces(_ pieces: [String]) -> String {
+        pieces.filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
     /// A text/plain body, with `format=flowed` soft breaks joined. It is not
