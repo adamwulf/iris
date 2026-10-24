@@ -113,8 +113,9 @@ public struct MessagePage: Sendable, Equatable {
 
     /// The line `iris list` writes to stderr after the rows (in every format), such as
     /// `Showing 1-25 of 1234. Next page: iris list --page 2`.
-    /// `account` is the `--account` value, if any, so the next-page command uses the same account.
-    public func hint(account: String?) -> String {
+    /// `account` is the `--account` value, if any, and `format` the `--format`
+    /// value, so the next-page command uses the same account and format.
+    public func hint(account: String?, format: OutputFormat) -> String {
         guard !messages.isEmpty else {
             if totalCount == 0 {
                 return "\"\(mailbox)\" has no messages."
@@ -127,13 +128,20 @@ public struct MessagePage: Sendable, Equatable {
         let last = first + messages.count - 1
         var line = "Showing \(first)-\(last) of \(totalCount)."
         if hasMore {
-            line += " Next page: " + Self.listCommand(account: account, mailbox: mailbox, page: page + 1, limit: limit)
+            line += " Next page: "
+                + Self.listCommand(account: account, mailbox: mailbox, page: page + 1, limit: limit, format: format)
         }
         return line
     }
 
     /// The `iris list` command for these options. Options at their default values are left out.
-    static func listCommand(account: String?, mailbox: String, page: Int, limit: Int) -> String {
+    static func listCommand(
+        account: String?,
+        mailbox: String,
+        page: Int,
+        limit: Int,
+        format: OutputFormat = .table
+    ) -> String {
         var words = ["iris", "list"]
         if let account {
             words += ["--account", shellQuoted(account)]
@@ -146,6 +154,9 @@ public struct MessagePage: Sendable, Equatable {
         }
         if limit != MailReader.defaultPageLimit {
             words += ["--limit", String(limit)]
+        }
+        if format != .table {
+            words += ["--format", format.rawValue]
         }
         return words.joined(separator: " ")
     }

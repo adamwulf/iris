@@ -27,6 +27,6 @@ struct List: AsyncParsableCommand {
         CLI.printRows(try OutputFormatter.render(result.messages, format: format))
         // On stderr for every format: a JSON reader, such as an agent, also
         // needs to know that a next page exists.
-        CLI.printToStderr(result.hint(account: accountOptions.account))
+        CLI.printToStderr(result.hint(account: accountOptions.account, format: format))
     }
 }

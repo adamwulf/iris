@@ -47,7 +47,7 @@ final class MailModelsTests: XCTestCase {
 
     func testHintShowsTheRangeAndTheNextPageCommand() {
         XCTAssertEqual(
-            page(count: 25, totalCount: 1234, hasMore: true).hint(account: nil),
+            page(count: 25, totalCount: 1234, hasMore: true).hint(account: nil, format: .table),
             "Showing 1-25 of 1234. Next page: iris list --page 2"
         )
     }
@@ -55,23 +55,33 @@ final class MailModelsTests: XCTestCase {
     func testHintNextPageCommandKeepsTheAccountMailboxAndLimit() {
         let middle = page(mailbox: "Sent Items", count: 10, totalCount: 60, page: 2, limit: 10, hasMore: true)
         XCTAssertEqual(
-            middle.hint(account: "work"),
+            middle.hint(account: "work", format: .table),
             "Showing 11-20 of 60. Next page: iris list --account work --mailbox 'Sent Items' --page 3 --limit 10"
         )
     }
 
+    func testHintNextPageCommandKeepsTheFormat() {
+        let first = page(count: 25, totalCount: 1234, hasMore: true)
+        for format in [OutputFormat.json, .jsonl, .id] {
+            XCTAssertEqual(
+                first.hint(account: nil, format: format),
+                "Showing 1-25 of 1234. Next page: iris list --page 2 --format \(format.rawValue)"
+            )
+        }
+    }
+
     func testHintOnTheLastPageHasNoNextPage() {
-        XCTAssertEqual(page(count: 10, totalCount: 60, page: 3, hasMore: false).hint(account: nil), "Showing 51-60 of 60.")
+        XCTAssertEqual(page(count: 10, totalCount: 60, page: 3, hasMore: false).hint(account: nil, format: .table), "Showing 51-60 of 60.")
     }
 
     func testHintForAnEmptyMailboxAndForAPagePastTheEnd() {
-        XCTAssertEqual(page(count: 0, totalCount: 0, hasMore: false).hint(account: nil), "\"INBOX\" has no messages.")
+        XCTAssertEqual(page(count: 0, totalCount: 0, hasMore: false).hint(account: nil, format: .table), "\"INBOX\" has no messages.")
         XCTAssertEqual(
-            page(count: 0, totalCount: 60, page: 9, hasMore: false).hint(account: nil),
+            page(count: 0, totalCount: 60, page: 9, hasMore: false).hint(account: nil, format: .table),
             "Page 9 is past the end: \"INBOX\" has 60 messages, and the last page is 3."
         )
         XCTAssertEqual(
-            page(count: 0, totalCount: 1, page: 2, hasMore: false).hint(account: nil),
+            page(count: 0, totalCount: 1, page: 2, hasMore: false).hint(account: nil, format: .table),
             "Page 2 is past the end: \"INBOX\" has 1 message, and the last page is 1."
         )
     }
@@ -81,6 +91,11 @@ final class MailModelsTests: XCTestCase {
         XCTAssertEqual(
             MessagePage.listCommand(account: "my_gmail", mailbox: "[Gmail]/All Mail", page: 1, limit: 25),
             "iris list --account my_gmail --mailbox '[Gmail]/All Mail'"
+        )
+        XCTAssertEqual(MessagePage.listCommand(account: nil, mailbox: "INBOX", page: 1, limit: 25, format: .table), "iris list")
+        XCTAssertEqual(
+            MessagePage.listCommand(account: "work", mailbox: "Sent", page: 2, limit: 10, format: .jsonl),
+            "iris list --account work --mailbox Sent --page 2 --limit 10 --format jsonl"
         )
     }
 
