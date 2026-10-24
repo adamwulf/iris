@@ -74,7 +74,7 @@ All three need an **app-specific password**, not your normal password.
 - `iris mailboxes`: the mailbox names with their special-use attributes
   (`\Drafts`, `\Sent`, `\All`, ...).
 - `iris list`: a mailbox, newest first, one page at a time
-  (iris ID, date, sender, subject).
+  (iris ID, unread, date, sender, subject).
 - `iris show`: one full message, by its iris ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`

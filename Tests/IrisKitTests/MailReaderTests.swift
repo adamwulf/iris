@@ -283,7 +283,7 @@ final class MailReaderTests: XCTestCase {
             statuses: ["INBOX": MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)],
             envelopes: [
                 MessageEnvelope(
-                    sequenceNumber: 1, uid: 101, from: sender, subject: nil, date: nil, internalDate: nil
+                    sequenceNumber: 1, uid: 101, seen: true, from: sender, subject: nil, date: nil, internalDate: nil
                 ),
             ]
         )
@@ -291,8 +291,25 @@ final class MailReaderTests: XCTestCase {
         let page = try await reader(fake).list()
 
         XCTAssertEqual(page.messages, [
-            MessageSummary(irisID: IrisID(account: "work", mailbox: "INBOX", uid: 101), from: sender, subject: "", date: nil),
+            MessageSummary(
+                irisID: IrisID(account: "work", mailbox: "INBOX", uid: 101), from: sender, subject: "", date: nil, unread: false
+            ),
         ])
+    }
+
+    func testListMarksTheMessagesWithoutTheSeenFlagAsUnread() async throws {
+        let fake = FakeMailClient(
+            statuses: ["INBOX": MailboxStatus(messageCount: 3, uidValidity: 7, uidNext: 200)],
+            envelopes: [
+                FakeMailClient.envelope(sequenceNumber: 1, seen: true),
+                FakeMailClient.envelope(sequenceNumber: 2, seen: false),
+                FakeMailClient.envelope(sequenceNumber: 3, seen: true),
+            ]
+        )
+
+        let page = try await reader(fake).list()
+
+        XCTAssertEqual(page.messages.map(\.unread), [false, true, false])
     }
 
     // MARK: - list errors

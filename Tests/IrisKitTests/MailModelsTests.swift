@@ -19,7 +19,7 @@ final class MailModelsTests: XCTestCase {
         hasMore: Bool
     ) -> MessagePage {
         let messages = (0..<count).map {
-            MessageSummary(irisID: id(UInt32(500 - $0), mailbox: mailbox), from: nil, subject: "", date: nil)
+            MessageSummary(irisID: id(UInt32(500 - $0), mailbox: mailbox), from: nil, subject: "", date: nil, unread: false)
         }
         return MessagePage(
             mailbox: mailbox, messages: messages, totalCount: totalCount, page: page, limit: limit, hasMore: hasMore
@@ -130,51 +130,71 @@ final class MailModelsTests: XCTestCase {
             year: 2026, month: 3, day: 7, hour: 9, minute: 5
         )))
         let summary = MessageSummary(
-            irisID: id(42), from: MailAddress(name: "Jane Doe", address: "jane@example.com"), subject: "Hello", date: local
+            irisID: id(42),
+            from: MailAddress(name: "Jane Doe", address: "jane@example.com"),
+            subject: "Hello",
+            date: local,
+            unread: false
         )
-        XCTAssertEqual(summary.tableValues, ["work/INBOX/42", "2026-03-07 09:05", "Jane Doe", "Hello"])
+        XCTAssertEqual(summary.tableValues, ["work/INBOX/42", "", "2026-03-07 09:05", "Jane Doe", "Hello"])
         XCTAssertEqual(summary.idValue, "work/INBOX/42")
     }
 
+    func testTableUnreadIsYesOrEmpty() {
+        let unread = MessageSummary(irisID: id(1), from: nil, subject: "", date: nil, unread: true)
+        let read = MessageSummary(irisID: id(2), from: nil, subject: "", date: nil, unread: false)
+        XCTAssertEqual(unread.tableValues, ["work/INBOX/1", "yes", "", "", ""])
+        XCTAssertEqual(read.tableValues, ["work/INBOX/2", "", "", "", ""])
+    }
+
     func testTableFromFallsBackToTheAddressAndEmptyValuesStayEmpty() {
-        let noName = MessageSummary(irisID: id(1), from: MailAddress(name: nil, address: "bot@example.com"), subject: "", date: nil)
-        let emptyName = MessageSummary(irisID: id(2), from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil)
-        let noSender = MessageSummary(irisID: id(3), from: nil, subject: "", date: nil)
-        XCTAssertEqual(noName.tableValues, ["work/INBOX/1", "", "bot@example.com", ""])
-        XCTAssertEqual(emptyName.tableValues, ["work/INBOX/2", "", "x@example.com", ""])
-        XCTAssertEqual(noSender.tableValues, ["work/INBOX/3", "", "", ""])
+        let noName = MessageSummary(
+            irisID: id(1), from: MailAddress(name: nil, address: "bot@example.com"), subject: "", date: nil, unread: false
+        )
+        let emptyName = MessageSummary(
+            irisID: id(2), from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil, unread: false
+        )
+        let noSender = MessageSummary(irisID: id(3), from: nil, subject: "", date: nil, unread: false)
+        XCTAssertEqual(noName.tableValues, ["work/INBOX/1", "", "", "bot@example.com", ""])
+        XCTAssertEqual(emptyName.tableValues, ["work/INBOX/2", "", "", "x@example.com", ""])
+        XCTAssertEqual(noSender.tableValues, ["work/INBOX/3", "", "", "", ""])
     }
 
     func testTableCellsAreOneLine() {
         let summary = MessageSummary(
-            irisID: id(1), from: MailAddress(name: "Jane\tDoe", address: "j@example.com"), subject: "Long\r\n subject", date: nil
+            irisID: id(1),
+            from: MailAddress(name: "Jane\tDoe", address: "j@example.com"),
+            subject: "Long\r\n subject",
+            date: nil,
+            unread: false
         )
-        XCTAssertEqual(summary.tableValues, ["work/INBOX/1", "", "Jane Doe", "Long  subject"])
+        XCTAssertEqual(summary.tableValues, ["work/INBOX/1", "", "", "Jane Doe", "Long  subject"])
     }
 
-    func testJSONHasTheIrisIDAsOneStringTheFullSenderAndAnISO8601Date() throws {
+    func testJSONHasTheIrisIDAsOneStringTheFullSenderAnISO8601DateAndUnread() throws {
         let summary = MessageSummary(
             irisID: id(101, mailbox: "[Gmail]/All Mail"),
             from: MailAddress(name: "Jane Doe", address: "jane@example.com"),
             subject: "Hi",
-            date: sampleDate
+            date: sampleDate,
+            unread: true
         )
         XCTAssertEqual(
             try OutputFormatter.render([summary], format: .jsonl),
             #"{"date":"2026-10-24T20:21:18Z","from":{"address":"jane@example.com","name":"Jane Doe"},"#
-                + #""irisID":"work/[Gmail]/All Mail/101","subject":"Hi"}"# + "\n"
+                + #""irisID":"work/[Gmail]/All Mail/101","subject":"Hi","unread":true}"# + "\n"
         )
     }
 
     func testTableColumnsAndIDFormat() throws {
         let rows = [
-            MessageSummary(irisID: id(7), from: nil, subject: "Hi", date: nil),
-            MessageSummary(irisID: id(12, mailbox: "Sent Items"), from: nil, subject: "Re: Hi", date: nil),
+            MessageSummary(irisID: id(7), from: nil, subject: "Hi", date: nil, unread: true),
+            MessageSummary(irisID: id(12, mailbox: "Sent Items"), from: nil, subject: "Re: Hi", date: nil, unread: false),
         ]
         XCTAssertEqual(try OutputFormatter.render(rows, format: .table), """
-        IRIS ID             DATE  FROM  SUBJECT
-        work/INBOX/7                    Hi
-        work/Sent Items/12              Re: Hi
+        IRIS ID             UNREAD  DATE  FROM  SUBJECT
+        work/INBOX/7        yes                 Hi
+        work/Sent Items/12                      Re: Hi
 
         """)
         XCTAssertEqual(try OutputFormatter.render(rows, format: .id), "work/INBOX/7\nwork/Sent Items/12\n")

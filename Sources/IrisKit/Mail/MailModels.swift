@@ -8,12 +8,15 @@ public struct MessageSummary: Sendable, Equatable, Encodable {
     public let subject: String
     /// The `Date:` header, else the date the server received the message.
     public let date: Date?
+    /// Whether the message has no `\Seen` flag.
+    public let unread: Bool
 
-    init(irisID: IrisID, from: MailAddress?, subject: String, date: Date?) {
+    init(irisID: IrisID, from: MailAddress?, subject: String, date: Date?, unread: Bool) {
         self.irisID = irisID
         self.from = from
         self.subject = subject
         self.date = date
+        self.unread = unread
     }
 
     /// The row for `envelope`, listed from `mailbox` (the decoded name) of `account`.
@@ -22,7 +25,8 @@ public struct MessageSummary: Sendable, Equatable, Encodable {
             irisID: IrisID(account: account, mailbox: mailbox, uid: envelope.uid),
             from: envelope.from,
             subject: envelope.subject ?? "",
-            date: envelope.date ?? envelope.internalDate
+            date: envelope.date ?? envelope.internalDate,
+            unread: !envelope.seen
         )
     }
 
@@ -33,11 +37,12 @@ public struct MessageSummary: Sendable, Equatable, Encodable {
 }
 
 extension MessageSummary: IrisRow {
-    public static var tableColumns: [String] { ["IRIS ID", "DATE", "FROM", "SUBJECT"] }
+    public static var tableColumns: [String] { ["IRIS ID", "UNREAD", "DATE", "FROM", "SUBJECT"] }
 
     public var tableValues: [String] {
         [
             irisID.description,
+            unread ? "yes" : "",
             date.map { DateText.string(from: $0, timeZone: .current) } ?? "",
             Self.oneLine(from?.displayName ?? ""),
             Self.oneLine(subject),

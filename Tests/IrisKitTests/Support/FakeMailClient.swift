@@ -63,6 +63,7 @@ actor FakeMailClient: MailClient {
 
     static func envelope(
         sequenceNumber: Int,
+        seen: Bool = true,
         from: MailAddress? = MailAddress(name: "Jane Doe", address: "jane@example.com"),
         subject: String? = nil,
         date: Date? = nil,
@@ -71,6 +72,7 @@ actor FakeMailClient: MailClient {
         MessageEnvelope(
             sequenceNumber: sequenceNumber,
             uid: UInt32(100 + sequenceNumber),
+            seen: seen,
             from: from,
             subject: subject ?? "Message \(sequenceNumber)",
             date: date,

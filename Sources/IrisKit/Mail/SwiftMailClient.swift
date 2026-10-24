@@ -101,25 +101,16 @@ struct SwiftMailClient: MailClient {
         // The stream sends one FETCH per chunk, and each FETCH has its own deadline.
         let infos = server.fetchMessageInfos(
             using: SequenceNumberSet(sequenceNumbers),
-            options: [.envelope, .internalDate],
+            options: [.envelope, .internalDate, .flags],
             chunkSize: Self.envelopeChunkSize
         )
         return try await run(.fetchEnvelopes) {
             var envelopes: [MessageEnvelope] = []
             for try await info in infos {
                 // FETCH always asks for the UID, so a message without one is a server bug. Skip it.
-                guard let uid = info.uid else {
-                    continue
+                if let envelope = MessageEnvelope(swiftMail: info) {
+                    envelopes.append(envelope)
                 }
-                let sender = info.fromAddresses.mailboxes.first
-                envelopes.append(MessageEnvelope(
-                    sequenceNumber: Int(info.sequenceNumber.value),
-                    uid: uid.value,
-                    from: sender.map { MailAddress(name: $0.name, address: $0.address) },
-                    subject: info.subject,
-                    date: info.date,
-                    internalDate: info.internalDate
-                ))
             }
             return envelopes
         }
@@ -252,6 +243,25 @@ extension MailboxInfo {
         self.init(
             name: info.name,
             attributes: Self.specialUseNames.filter { info.attributes.contains($0.attribute) }.map(\.name)
+        )
+    }
+}
+
+extension MessageEnvelope {
+    /// `info` from FETCH (UID FLAGS ENVELOPE INTERNALDATE). Nil when it has no UID.
+    init?(swiftMail info: MessageInfo) {
+        guard let uid = info.uid else {
+            return nil
+        }
+        let sender = info.fromAddresses.mailboxes.first
+        self.init(
+            sequenceNumber: Int(info.sequenceNumber.value),
+            uid: uid.value,
+            seen: info.flags.contains(.seen),
+            from: sender.map { MailAddress(name: $0.name, address: $0.address) },
+            subject: info.subject,
+            date: info.date,
+            internalDate: info.internalDate
         )
     }
 }

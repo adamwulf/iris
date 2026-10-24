@@ -4,7 +4,7 @@ import XCTest
 @testable import IrisKit
 
 /// The parts of `SwiftMailClient` that need no server: the TLS choice, the
-/// error mapping, and the mailbox conversion.
+/// error mapping, and the mailbox and envelope conversions.
 final class SwiftMailClientTests: XCTestCase {
     private let account = Account(
         name: "work", host: "imap.example.com", port: 993, username: "me@example.com", password: "secret"
@@ -194,5 +194,25 @@ final class SwiftMailClientTests: XCTestCase {
             MailboxInfo(swiftMail: info).attributes,
             [#"\All"#, #"\Archive"#, #"\Drafts"#, #"\Flagged"#, #"\Important"#, #"\Junk"#, #"\Sent"#, #"\Trash"#]
         )
+    }
+
+    // MARK: - Envelopes
+
+    func testEnvelopeIsSeenOnlyWithTheSeenFlag() throws {
+        let read = MessageInfo(sequenceNumber: SequenceNumber(3), uid: UID(103), subject: "Hi", flags: [.flagged, .seen])
+        let unread = MessageInfo(sequenceNumber: SequenceNumber(4), uid: UID(104), flags: [.flagged, .answered])
+        let noFlags = MessageInfo(sequenceNumber: SequenceNumber(5), uid: UID(105))
+
+        let envelope = try XCTUnwrap(MessageEnvelope(swiftMail: read))
+        XCTAssertEqual(envelope.sequenceNumber, 3)
+        XCTAssertEqual(envelope.uid, 103)
+        XCTAssertEqual(envelope.subject, "Hi")
+        XCTAssertTrue(envelope.seen)
+        XCTAssertEqual(MessageEnvelope(swiftMail: unread)?.seen, false)
+        XCTAssertEqual(MessageEnvelope(swiftMail: noFlags)?.seen, false)
+    }
+
+    func testEnvelopeWithoutAUIDIsLeftOut() {
+        XCTAssertNil(MessageEnvelope(swiftMail: MessageInfo(sequenceNumber: SequenceNumber(3), flags: [.seen])))
     }
 }

@@ -53,7 +53,8 @@ UTF-7 in both directions (it decodes LIST names in `mailboxes()`, encodes
 converts SwiftMail types and errors. Its parts that need no server are static
 and tested in `SwiftMailClientTests`: the error mapping
 (`irisError(for:command:account:)`), the TLS choice
-(`transportSecurity(forPort:)`), and `MailboxInfo(swiftMail:)`.
+(`transportSecurity(forPort:)`), `MailboxInfo(swiftMail:)`, and
+`MessageEnvelope(swiftMail:)`.
 
 Tests never touch the network. They use `FakeMailClient`, which returns
 scripted results and records the calls.
