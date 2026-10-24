@@ -31,6 +31,18 @@ final class IrisIDTests: XCTestCase {
         )
     }
 
+    func testAccountAndINBOXHaveOneFormWhateverTheCase() throws {
+        let id = IrisID(account: "Work", mailbox: "inbox", uid: 5)
+        XCTAssertEqual(id, IrisID(account: "work", mailbox: "INBOX", uid: 5))
+        XCTAssertEqual(id.description, "work/INBOX/5")
+        XCTAssertEqual(try IrisID(parsing: "WORK/Inbox/5"), id)
+        XCTAssertEqual(
+            IrisID(account: "work", mailbox: "inbox/Receipts", uid: 5).mailbox, "inbox/Receipts",
+            "only INBOX itself ignores case"
+        )
+        XCTAssertEqual(IrisID(account: "work", mailbox: "Archive", uid: 5).mailbox, "Archive")
+    }
+
     func testParsingGivesBackTheSameIDThatDescriptionPrints() throws {
         let ids = [
             IrisID(account: "work", mailbox: "INBOX", uid: 1),

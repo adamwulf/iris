@@ -61,7 +61,7 @@ public enum AccountResolver {
         return names.count == 1 ? names[0] : nil
     }
 
-    /// The account a command uses: `name` (from `--account`) if given, else the default account.
+    /// The account a command uses: `name` (from `--account` or a message ID) if given, else the default account.
     public static func resolve(name: String?, settings: [String: String]) throws -> Account {
         let available = accountNames(in: settings)
         guard !available.isEmpty else {

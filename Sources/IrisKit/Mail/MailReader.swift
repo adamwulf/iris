@@ -75,7 +75,7 @@ public struct MailReader: Sendable {
 
     /// The raw RFC 822 bytes of the message with `uid` in `mailbox`. Reading it
     /// does not mark the message as read. A missing message throws `unknownMessage`.
-    public func rawMessage(uid: UInt32, mailbox: String = defaultMailbox) async throws -> Data {
+    public func rawMessage(uid: UInt32, mailbox: String) async throws -> Data {
         let id = IrisID(account: account.name, mailbox: mailbox, uid: uid)
         // UIDs start at 1; the server would answer UID 0 with BAD.
         guard uid >= 1 else {

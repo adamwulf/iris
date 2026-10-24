@@ -225,6 +225,18 @@ final class MailReaderTests: XCTestCase {
         XCTAssertEqual(calls, [.login, .examine("[Gmail]/Entw&APw-rfe"), .fetchEnvelopes(1...1), .logout])
     }
 
+    func testListGivesINBOXInOneFormWhateverCaseTheUserTyped() async throws {
+        // A server opens INBOX in any case (RFC 3501, section 5.1).
+        let fake = FakeMailClient(
+            statuses: ["inbox": MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)],
+            envelopes: [FakeMailClient.envelope(sequenceNumber: 1)]
+        )
+
+        let page = try await reader(fake).list(mailbox: "inbox")
+
+        XCTAssertEqual(page.messages.map(\.id.description), ["work/INBOX/101"])
+    }
+
     func testUnknownMailboxErrorHasTheNameTheUserTypedNotTheWireName() async {
         let fake = FakeMailClient.inbox(count: 1)
 
@@ -383,7 +395,7 @@ final class MailReaderTests: XCTestCase {
         let fake = FakeMailClient.inbox(count: 1)
 
         await assertThrows(.unknownMessage(IrisID(account: "work", mailbox: "INBOX", uid: 999))) {
-            try await self.reader(fake).rawMessage(uid: 999)
+            try await self.reader(fake).rawMessage(uid: 999, mailbox: "INBOX")
         }
 
         let calls = await fake.calls
@@ -404,7 +416,7 @@ final class MailReaderTests: XCTestCase {
         let fake = FakeMailClient.inbox(count: 1)
 
         await assertThrows(.unknownMessage(IrisID(account: "work", mailbox: "INBOX", uid: 0))) {
-            try await self.reader(fake).rawMessage(uid: 0)
+            try await self.reader(fake).rawMessage(uid: 0, mailbox: "INBOX")
         }
 
         let calls = await fake.calls
@@ -418,7 +430,7 @@ final class MailReaderTests: XCTestCase {
             errors: [.fetchRawMessage: failure]
         )
 
-        await assertThrows(failure) { try await self.reader(fake).rawMessage(uid: 101) }
+        await assertThrows(failure) { try await self.reader(fake).rawMessage(uid: 101, mailbox: "INBOX") }
 
         let calls = await fake.calls
         XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchRawMessage(101), .logout])

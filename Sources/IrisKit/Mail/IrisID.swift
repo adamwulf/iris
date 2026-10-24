@@ -10,14 +10,17 @@ import Foundation
 /// text between them, so a mailbox name can have `/` in it. The mailbox is the
 /// decoded name, as `iris mailboxes` shows it.
 public struct IrisID: Sendable, Hashable, CustomStringConvertible {
-    /// The account name, as `iris accounts` shows it.
+    /// The account name, lowercased, as `iris accounts` shows it.
     public let account: String
+    /// The decoded mailbox name. INBOX in any case is `INBOX`.
     public let mailbox: String
     public let uid: UInt32
 
+    /// Account names ignore case, and so does INBOX (RFC 3501, section 5.1),
+    /// so both are stored in one form: one message always gets the same ID.
     public init(account: String, mailbox: String, uid: UInt32) {
-        self.account = account
-        self.mailbox = mailbox
+        self.account = account.lowercased()
+        self.mailbox = mailbox.lowercased() == "inbox" ? MailReader.defaultMailbox : mailbox
         self.uid = uid
     }
 

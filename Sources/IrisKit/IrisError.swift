@@ -4,7 +4,7 @@ import Foundation
 public enum IrisError: Error, Equatable, LocalizedError {
     /// No `IRIS_<NAME>_IMAP_*` setting was found.
     case noAccountsConfigured
-    /// `--account` named an account that has no settings. A bad
+    /// `--account`, or the account in a message ID, named an account that has no settings. A bad
     /// `IRIS_DEFAULT_ACCOUNT` gives `invalidSetting` instead.
     case unknownAccount(name: String, available: [String])
     /// Two or more accounts are configured and none was chosen.

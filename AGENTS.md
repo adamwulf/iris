@@ -104,7 +104,8 @@ Never put a password in an error message, a log line, or JSON output.
    `SwiftMailClient` (types and errors only), and script it in
    `FakeMailClient`.
 3. Add `Sources/iris/Commands/<Name>Command.swift`: `@OptionGroup var
-   accountOptions: AccountOptions`, options (a list command uses
+   accountOptions: AccountOptions` (but a command that takes an `IrisID`
+   has no `--account`; see "Accounts"), options (a list command uses
    `var format: OutputFormat = .listDefault`), and a `run()` of a few lines.
    Register it (see "Read-only and write commands").
 4. Add parse tests in `Tests/CLITests/ArgumentParsingTests.swift`.
