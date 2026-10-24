@@ -5,7 +5,7 @@ import Foundation
 ///
 /// A client serves one session: `login()`, then the other calls, then
 /// `logout()`. `MailReader` keeps that order and always logs out.
-public protocol MailClient: Sendable {
+protocol MailClient: Sendable {
     /// Connects to the server and logs in.
     func login() async throws
     /// The capabilities the server reports after login, such as `IMAP4rev1` or `AUTH=PLAIN`.
@@ -26,43 +26,21 @@ public protocol MailClient: Sendable {
 }
 
 /// What EXAMINE reports about a mailbox.
-public struct MailboxStatus: Sendable, Equatable {
-    public let messageCount: Int
-    public let uidValidity: UInt32
-    public let uidNext: UInt32
-
-    public init(messageCount: Int, uidValidity: UInt32, uidNext: UInt32) {
-        self.messageCount = messageCount
-        self.uidValidity = uidValidity
-        self.uidNext = uidNext
-    }
+struct MailboxStatus: Sendable, Equatable {
+    let messageCount: Int
+    let uidValidity: UInt32
+    let uidNext: UInt32
 }
 
 /// One message as FETCH (UID ENVELOPE INTERNALDATE) reports it.
-public struct MessageEnvelope: Sendable, Equatable {
-    public let sequenceNumber: Int
-    public let uid: UInt32
+struct MessageEnvelope: Sendable, Equatable {
+    let sequenceNumber: Int
+    let uid: UInt32
     /// The first address of the `From:` header.
-    public let from: MailAddress?
-    public let subject: String?
+    let from: MailAddress?
+    let subject: String?
     /// The `Date:` header, set by the sender.
-    public let date: Date?
+    let date: Date?
     /// When the server received the message (INTERNALDATE).
-    public let internalDate: Date?
-
-    public init(
-        sequenceNumber: Int,
-        uid: UInt32,
-        from: MailAddress?,
-        subject: String?,
-        date: Date?,
-        internalDate: Date?
-    ) {
-        self.sequenceNumber = sequenceNumber
-        self.uid = uid
-        self.from = from
-        self.subject = subject
-        self.date = date
-        self.internalDate = internalDate
-    }
+    let internalDate: Date?
 }
