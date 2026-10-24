@@ -228,6 +228,16 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(document.body, "No headers to speak of.")
     }
 
+    func testDateWithATrailingCommentIsRead() async throws {
+        let document = try await MessageDecoder.decode(eml("""
+        Date: Sat, 24 Oct 2026 13:42:00 -0500 (CDT)
+
+        Body
+        """))
+
+        XCTAssertEqual(document.date, ISO8601DateFormatter().date(from: "2026-10-24T18:42:00Z"))
+    }
+
     func testMessageWithOnlyAnAttachmentHasNoBody() async throws {
         let document = try await MessageDecoder.decode(eml("""
         Subject: Scan

@@ -27,7 +27,7 @@ public enum MessageDecoder {
             to: addresses(message.toAddresses),
             cc: addresses(message.ccAddresses),
             replyTo: addresses(message.replyToAddresses),
-            date: message.date,
+            date: message.date ?? HeaderDate.date(inRawMessage: data),
             inReplyTo: messageIDs(in: additionalFields["in-reply-to"]).first,
             references: messageIDs(in: additionalFields["references"]),
             body: body,
