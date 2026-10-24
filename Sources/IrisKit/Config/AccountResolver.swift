@@ -76,21 +76,37 @@ public enum AccountResolver {
         guard let fallback = defaultAccountName(in: settings) else {
             throw IrisError.accountNotChosen(available: available)
         }
-        guard available.contains(fallback) else {
-            throw IrisError.invalidSetting(
-                key: defaultAccountKey,
-                reason: "there is no account named \"\(fallback)\". "
-                    + "Configured accounts: \(available.joined(separator: ", "))."
-            )
+        if let error = defaultAccountError(in: settings) {
+            throw error
         }
         return try account(named: fallback, in: settings)
     }
 
-    /// One summary per configured account, for `iris accounts`. It reports
-    /// problems instead of throwing, so one broken account does not hide the others.
-    public static func summaries(in settings: [String: String]) -> [AccountSummary] {
+    /// The error that commands without `--account` throw when `IRIS_DEFAULT_ACCOUNT`
+    /// names an account that is not configured, such as a typo. Nil when the key
+    /// is not set, when it names a configured account, or when no account is configured.
+    public static func defaultAccountError(in settings: [String: String]) -> IrisError? {
+        let available = accountNames(in: settings)
+        guard let name = settings[defaultAccountKey]?.lowercased(),
+              !available.isEmpty, !available.contains(name) else {
+            return nil
+        }
+        return .invalidSetting(
+            key: defaultAccountKey,
+            reason: "there is no account named \"\(name)\". Configured accounts: \(available.joined(separator: ", "))."
+        )
+    }
+
+    /// One summary per configured account, for `iris accounts`. It throws
+    /// `noAccountsConfigured` when there is no account. A problem with one
+    /// account goes in its summary, so it does not hide the others.
+    public static func summaries(in settings: [String: String]) throws -> [AccountSummary] {
+        let names = accountNames(in: settings)
+        guard !names.isEmpty else {
+            throw IrisError.noAccountsConfigured
+        }
         let defaultName = defaultAccountName(in: settings)
-        return accountNames(in: settings).map { name in
+        return names.map { name in
             var problems = requiredFields
                 .map { key($0, account: name) }
                 .filter { settings[$0] == nil }

@@ -11,10 +11,12 @@ struct Accounts: AsyncParsableCommand {
     var format: OutputFormat = .table
 
     func run() async throws {
-        let summaries = AccountResolver.summaries(in: AccountResolver.settings())
-        guard !summaries.isEmpty else {
-            throw IrisError.noAccountsConfigured
+        let settings = AccountResolver.settings()
+        print(try OutputFormatter.render(try AccountResolver.summaries(in: settings), format: format))
+        // A bad default marks no row as the default and makes every command
+        // without --account fail, so say why.
+        if let error = AccountResolver.defaultAccountError(in: settings) {
+            CLI.printToStderr("Warning: \(error.localizedDescription)")
         }
-        print(try OutputFormatter.render(summaries, format: format))
     }
 }

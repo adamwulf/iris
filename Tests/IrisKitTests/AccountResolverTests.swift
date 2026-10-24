@@ -137,7 +137,7 @@ final class AccountResolverTests: XCTestCase {
         values["IRIS_HALF_IMAP_PORT"] = "nope"
         values[AccountResolver.defaultAccountKey] = "work"
 
-        let summaries = AccountResolver.summaries(in: values)
+        let summaries = try AccountResolver.summaries(in: values)
 
         XCTAssertEqual(summaries, [
             AccountSummary(
@@ -155,5 +155,43 @@ final class AccountResolverTests: XCTestCase {
         ])
         let json = try OutputFormatter.render(summaries, format: .json)
         XCTAssertFalse(json.contains("secret"))
+    }
+
+    func testSummariesThrowWhenNoAccountsExist() {
+        XCTAssertThrowsError(try AccountResolver.summaries(in: ["OTHER": "x"])) { error in
+            XCTAssertEqual(error as? IrisError, .noAccountsConfigured)
+        }
+    }
+
+    func testDefaultAccountErrorReportsAnUnknownName() {
+        var values = settings("WORK").merging(settings("PERSONAL")) { $1 }
+        values[AccountResolver.defaultAccountKey] = "Wrok"
+
+        XCTAssertEqual(
+            AccountResolver.defaultAccountError(in: values),
+            .invalidSetting(
+                key: "IRIS_DEFAULT_ACCOUNT",
+                reason: "there is no account named \"wrok\". Configured accounts: personal, work."
+            )
+        )
+        XCTAssertEqual(
+            try AccountResolver.summaries(in: values).filter(\.isDefault), [],
+            "no account is the default"
+        )
+        XCTAssertThrowsError(try AccountResolver.resolve(name: nil, settings: values)) { error in
+            XCTAssertEqual(error as? IrisError, AccountResolver.defaultAccountError(in: values),
+                           "commands without --account throw the same error")
+        }
+    }
+
+    func testDefaultAccountErrorIsNilWhenTheDefaultIsFine() {
+        var values = settings("WORK")
+        XCTAssertNil(AccountResolver.defaultAccountError(in: values), "the key is not set")
+        values[AccountResolver.defaultAccountKey] = "Work"
+        XCTAssertNil(AccountResolver.defaultAccountError(in: values), "the key names an account, in any case")
+        XCTAssertNil(
+            AccountResolver.defaultAccountError(in: [AccountResolver.defaultAccountKey: "work"]),
+            "with no accounts, noAccountsConfigured is the problem to report"
+        )
     }
 }
