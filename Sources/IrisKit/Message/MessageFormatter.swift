@@ -47,7 +47,8 @@ public enum MessageFormatter {
         if let cc = addressList(document.cc) {
             headers.append("**Cc:** \(cc)")
         }
-        headers.append("**Date:** \(document.date.map { dateText($0, timeZone: timeZone) } ?? "(unknown)")")
+        let date = document.date.map { DateText.string(from: $0, timeZone: timeZone, showingZone: true) }
+        headers.append("**Date:** \(date ?? "(unknown)")")
 
         // A hard break after each header line except the last, so that a
         // Markdown renderer keeps one header per line.
@@ -75,15 +76,6 @@ public enum MessageFormatter {
             address.name.map { "\($0) <\(address.address)>" } ?? address.address
         }
         .joined(separator: ", ")
-    }
-
-    /// `2026-10-24 13:42 CDT`.
-    static func dateText(_ date: Date, timeZone: TimeZone) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyy-MM-dd HH:mm zzz"
-        return formatter.string(from: date)
     }
 
     /// A size in decimal units, as Finder shows it: `512 bytes`, `120 KB`, `1.5 MB`.

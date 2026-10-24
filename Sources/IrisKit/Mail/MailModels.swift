@@ -25,17 +25,6 @@ public struct MessageSummary: Sendable, Equatable, Encodable {
         )
     }
 
-    /// `date` as the table shows it: `yyyy-MM-dd HH:mm` in `timeZone`.
-    static func tableDate(_ date: Date, timeZone: TimeZone) -> String {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
-        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
-        return String(
-            format: "%04d-%02d-%02d %02d:%02d",
-            parts.year ?? 0, parts.month ?? 0, parts.day ?? 0, parts.hour ?? 0, parts.minute ?? 0
-        )
-    }
-
     /// A table cell is one line: line breaks and tabs become spaces.
     static func oneLine(_ text: String) -> String {
         String(text.map { $0.isNewline || $0 == "\t" ? " " : $0 })
@@ -48,7 +37,7 @@ extension MessageSummary: IrisRow {
     public var tableValues: [String] {
         [
             String(uid),
-            date.map { Self.tableDate($0, timeZone: .current) } ?? "",
+            date.map { DateText.string(from: $0, timeZone: .current) } ?? "",
             Self.oneLine(from?.displayName ?? ""),
             Self.oneLine(subject),
         ]

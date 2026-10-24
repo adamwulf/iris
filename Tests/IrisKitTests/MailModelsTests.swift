@@ -98,8 +98,8 @@ final class MailModelsTests: XCTestCase {
     func testTableDateIsMinutePrecisionInTheGivenTimeZone() throws {
         let chicago = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
-        XCTAssertEqual(MessageSummary.tableDate(sampleDate, timeZone: chicago), "2026-10-24 15:21")
-        XCTAssertEqual(MessageSummary.tableDate(sampleDate, timeZone: utc), "2026-10-24 20:21")
+        XCTAssertEqual(DateText.string(from: sampleDate, timeZone: chicago), "2026-10-24 15:21")
+        XCTAssertEqual(DateText.string(from: sampleDate, timeZone: utc), "2026-10-24 20:21")
     }
 
     func testTableRowUsesLocalTimeAndTheSenderName() throws {

@@ -67,7 +67,7 @@ final class MessageFormatterTests: XCTestCase {
 
     func testDateUsesTheGivenTimeZone() throws {
         let winter = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-01-15T09:05:00Z"))
-        XCTAssertEqual(MessageFormatter.dateText(winter, timeZone: chicago), "2026-01-15 03:05 CST")
+        XCTAssertEqual(DateText.string(from: winter, timeZone: chicago, showingZone: true), "2026-01-15 03:05 CST")
     }
 
     func testSizeText() {
