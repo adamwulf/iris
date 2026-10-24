@@ -17,8 +17,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
 
     /// The raw message bytes could not be parsed as an email.
     case messageNotParsed(reason: String)
-    /// The HTML body could not be converted to Markdown.
-    case htmlNotConverted(reason: String)
+    /// The HTML body could not be converted to Markdown. `hasTextPart` tells
+    /// whether the message has a text part to show instead.
+    case htmlNotConverted(reason: String, hasTextPart: Bool)
 
     // IMAP
 
@@ -62,9 +63,12 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .messageNotParsed(let reason):
             return "The message could not be read as an email (\(reason)). "
                 + "Check that the UID belongs to a message in this mailbox. If it does, the message may be damaged."
-        case .htmlNotConverted(let reason):
-            return "The HTML body of the message could not be converted to Markdown (\(reason)). "
-                + "Run the command again with --body text."
+        case .htmlNotConverted(let reason, let hasTextPart):
+            let problem = "The HTML body of the message could not be converted to Markdown (\(reason))"
+            return hasTextPart
+                ? problem + ". Run the command again with --body text."
+                : problem + ", and the message has no text part. "
+                    + "Run the command again with --format raw to see the message source."
         // IMAP
         case .loginFailed(let account, let username, let host, let reason):
             return "The server \(host) refused the login for \(username) (account \"\(account)\"): \(reason). "

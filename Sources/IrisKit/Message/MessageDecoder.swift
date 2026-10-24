@@ -85,8 +85,11 @@ public enum MessageDecoder {
 
         if preference != .text, let html {
             do {
-                return (try await markdown(fromHTMLParts: html, htmlToMarkdown: htmlToMarkdown), .html)
-            } catch IrisError.htmlNotConverted(let reason) where preference == .auto && text != nil {
+                let converted = try await markdown(
+                    fromHTMLParts: html, hasTextPart: text != nil, htmlToMarkdown: htmlToMarkdown
+                )
+                return (converted, .html)
+            } catch IrisError.htmlNotConverted(let reason, _) where preference == .auto && text != nil {
                 IrisLog.log("The HTML part could not be converted to Markdown (\(reason)), so the text part is shown.")
             }
         }
@@ -101,7 +104,7 @@ public enum MessageDecoder {
         }
         // Only `.text` gets here with an HTML part: the other choices returned or threw above.
         IrisLog.log("The message has no text part, so the html part is shown.")
-        return (try await markdown(fromHTMLParts: html, htmlToMarkdown: htmlToMarkdown), .html)
+        return (try await markdown(fromHTMLParts: html, hasTextPart: false, htmlToMarkdown: htmlToMarkdown), .html)
     }
 
     /// The parts that make up the body, in section order: the text/plain and
@@ -121,13 +124,22 @@ public enum MessageDecoder {
     }
 
     /// Each HTML part converted to Markdown, joined in order.
+    ///
+    /// - Parameter hasTextPart: Whether the message has a text part, so that
+    ///   the error can say what to do next.
+    /// - Throws: `IrisError.htmlNotConverted` when a part cannot be converted.
     static func markdown(
         fromHTMLParts htmls: [String],
+        hasTextPart: Bool,
         htmlToMarkdown: (String) async throws -> String
     ) async throws -> String {
         var pieces: [String] = []
         for html in htmls {
-            pieces.append(try await htmlToMarkdown(html))
+            do {
+                pieces.append(try await htmlToMarkdown(html))
+            } catch {
+                throw IrisError.htmlNotConverted(reason: String(describing: error), hasTextPart: hasTextPart)
+            }
         }
         return joinedPieces(pieces)
     }
@@ -149,14 +161,11 @@ public enum MessageDecoder {
         return BodyCleanup.clean(text)
     }
 
-    /// A text/html body converted to Markdown.
+    /// A text/html body converted to Markdown. It throws SwiftText's error;
+    /// `markdown(fromHTMLParts:hasTextPart:htmlToMarkdown:)` turns it into an `IrisError`.
     static func markdown(fromHTML html: String) async throws -> String {
-        do {
-            let document = try await HTMLDocument(data: Data(declaringUTF8(html).utf8), encoding: .utf8)
-            return BodyCleanup.clean(document.markdown())
-        } catch {
-            throw IrisError.htmlNotConverted(reason: String(describing: error))
-        }
+        let document = try await HTMLDocument(data: Data(declaringUTF8(html).utf8), encoding: .utf8)
+        return BodyCleanup.clean(document.markdown())
     }
 
     /// SwiftMail has already decoded the HTML with the part's charset, so it is

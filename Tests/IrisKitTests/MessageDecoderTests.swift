@@ -106,8 +106,12 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(htmlOnly.bodySource, .html)
     }
 
+    private struct ConversionFailure: Error, CustomStringConvertible {
+        let description = "broken"
+    }
+
     private func failingConverter(_ html: String) async throws -> String {
-        throw IrisError.htmlNotConverted(reason: "broken")
+        throw ConversionFailure()
     }
 
     func testAutoUsesTheTextPartWhenHTMLConversionFails() async throws {
@@ -127,7 +131,7 @@ final class MessageDecoderTests: XCTestCase {
             _ = try await MessageDecoder.decode(eml(alternative), body: .html, convertingHTMLWith: failingConverter)
             XCTFail("Expected an error")
         } catch {
-            XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken"))
+            XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken", hasTextPart: true))
             XCTAssertEqual(
                 error.localizedDescription,
                 "The HTML body of the message could not be converted to Markdown (broken). Run the command again with --body text."
@@ -135,18 +139,25 @@ final class MessageDecoderTests: XCTestCase {
         }
     }
 
-    func testAutoThrowsWhenHTMLConversionFailsAndThereIsNoTextPart() async {
+    func testEveryChoiceThrowsWhenHTMLConversionFailsAndThereIsNoTextPart() async {
         let htmlOnly = eml("""
         Subject: HTML only
         Content-Type: text/html
 
         <p>Only HTML</p>
         """)
-        do {
-            _ = try await MessageDecoder.decode(htmlOnly, body: .auto, convertingHTMLWith: failingConverter)
-            XCTFail("Expected an error")
-        } catch {
-            XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken"))
+        for preference in BodyPreference.allCases {
+            do {
+                _ = try await MessageDecoder.decode(htmlOnly, body: preference, convertingHTMLWith: failingConverter)
+                XCTFail("Expected an error for --body \(preference)")
+            } catch {
+                XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken", hasTextPart: false))
+                XCTAssertEqual(
+                    error.localizedDescription,
+                    "The HTML body of the message could not be converted to Markdown (broken), "
+                        + "and the message has no text part. Run the command again with --format raw to see the message source."
+                )
+            }
         }
     }
 
