@@ -46,6 +46,11 @@ final class SwiftMailClientTests: XCTestCase {
             irisError(IMAPError.selectFailed("NO [NONEXISTENT] secret"), .examine(mailbox: "Nope")),
             .unknownMailbox(name: "Nope", reason: "NO [NONEXISTENT] <password>")
         )
+        XCTAssertEqual(
+            irisError(IMAPError.selectFailed("NO"), .examine(mailbox: "[Gmail]/Entw&APw-rfe")),
+            .unknownMailbox(name: "[Gmail]/Entwürfe", reason: "NO"),
+            "the error holds the name the user typed, not the wire name"
+        )
     }
 
     func testTimeoutOnARawMessageBecomesMessageDownloadTimedOut() {
@@ -129,6 +134,19 @@ final class SwiftMailClientTests: XCTestCase {
             MailboxInfo(swiftMail: info),
             MailboxInfo(name: "[Gmail]/Sent Mail", attributes: [#"\All"#, #"\Sent"#])
         )
+    }
+
+    func testMailboxInfoDecodesTheModifiedUTF7Name() {
+        let names = [
+            "[Gmail]/Entw&APw-rfe": "[Gmail]/Entwürfe",
+            "R&-D": "R&D",
+            "INBOX": "INBOX",
+            "R&D": "R&D",
+        ]
+        for (wire, name) in names {
+            let info = Mailbox.Info(name: wire, attributes: [], hierarchyDelimiter: "/")
+            XCTAssertEqual(MailboxInfo(swiftMail: info).name, name, wire)
+        }
     }
 
     func testMailboxInfoMapsEverySpecialUseAttribute() {

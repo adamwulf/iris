@@ -27,8 +27,9 @@ actor FakeMailClient: MailClient {
     private let rawMessages: [UInt32: Data]
     private let errors: [Method: any Error]
 
-    /// `examine` throws `unknownMailbox` for a name that is not in `statuses`.
-    /// `fetchEnvelopes` returns the `envelopes` whose sequence number is in the
+    /// `statuses` is keyed by wire name (modified UTF-7). `examine` throws
+    /// `unknownMailbox` with the decoded name, as SwiftMailClient does, for a
+    /// name that is not in `statuses`. `fetchEnvelopes` returns the `envelopes` whose sequence number is in the
     /// range, in the order given. `fetchRawMessage` returns empty data for a UID
     /// that is not in `rawMessages`, as SwiftMail does.
     init(
@@ -89,7 +90,7 @@ actor FakeMailClient: MailClient {
     func examine(mailbox: String) async throws -> MailboxStatus {
         try record(.examine(mailbox), .examine)
         guard let status = statuses[mailbox] else {
-            throw IrisError.unknownMailbox(name: mailbox, reason: "NO no such mailbox")
+            throw IrisError.unknownMailbox(name: ModifiedUTF7.decode(mailbox), reason: "NO no such mailbox")
         }
         return status
     }

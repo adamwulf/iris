@@ -194,6 +194,31 @@ final class MailReaderTests: XCTestCase {
         XCTAssertEqual(calls, [.login, .examine("Sent"), .fetchEnvelopes(1...1), .logout])
     }
 
+    func testListExaminesTheModifiedUTF7NameAndKeepsTheDecodedName() async throws {
+        let fake = FakeMailClient(
+            statuses: ["[Gmail]/Entw&APw-rfe": MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)],
+            envelopes: [FakeMailClient.envelope(sequenceNumber: 1)]
+        )
+
+        let page = try await reader(fake).list(mailbox: "[Gmail]/Entwürfe")
+
+        XCTAssertEqual(page.mailbox, "[Gmail]/Entwürfe")
+        XCTAssertEqual(page.messages.map(\.uid), [101])
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("[Gmail]/Entw&APw-rfe"), .fetchEnvelopes(1...1), .logout])
+    }
+
+    func testUnknownMailboxErrorHasTheDecodedName() async {
+        let fake = FakeMailClient.inbox(count: 1)
+
+        await assertThrows(.unknownMailbox(name: "R&D", reason: "NO no such mailbox")) {
+            try await self.reader(fake).list(mailbox: "R&D")
+        }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("R&-D"), .logout])
+    }
+
     func testListUsesTheDateHeaderElseTheInternalDate() async throws {
         let header = Date(timeIntervalSince1970: 1_000_000)
         let received = Date(timeIntervalSince1970: 2_000_000)
@@ -312,6 +337,20 @@ final class MailReaderTests: XCTestCase {
         XCTAssertEqual(data, bytes)
         let calls = await fake.calls
         XCTAssertEqual(calls, [.login, .examine("Archive"), .fetchRawMessage(150), .logout])
+    }
+
+    func testRawMessageExaminesTheModifiedUTF7Name() async throws {
+        let bytes = Data("Subject: Hi\r\n\r\nHello\r\n".utf8)
+        let fake = FakeMailClient(
+            statuses: ["~peter/mail/&U,BTFw-/&ZeVnLIqe-": MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)],
+            rawMessages: [150: bytes]
+        )
+
+        let data = try await reader(fake).rawMessage(uid: 150, mailbox: "~peter/mail/台北/日本語")
+
+        XCTAssertEqual(data, bytes)
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("~peter/mail/&U,BTFw-/&ZeVnLIqe-"), .fetchRawMessage(150), .logout])
     }
 
     func testRawMessageForAMissingUIDThrowsUnknownUIDAndLogsOut() async {

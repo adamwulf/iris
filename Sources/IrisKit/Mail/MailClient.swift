@@ -10,10 +10,13 @@ protocol MailClient: Sendable {
     func login() async throws
     /// The capabilities the server reports after login, such as `IMAP4rev1` or `AUTH=PLAIN`.
     func capabilities() async throws -> [String]
-    /// Every mailbox with its special-use attributes. A name can appear more
-    /// than once, each time with some of its attributes; `MailReader` merges them.
+    /// Every mailbox with its special-use attributes, and its name decoded from
+    /// modified UTF-7. A name can appear more than once, each time with some of
+    /// its attributes; `MailReader` merges them.
     func listMailboxes() async throws -> [MailboxInfo]
     /// Opens a mailbox read-only (EXAMINE, never SELECT). Later fetches read from it.
+    /// `mailbox` is the wire name, in modified UTF-7; an `unknownMailbox` error
+    /// holds the decoded name.
     func examine(mailbox: String) async throws -> MailboxStatus
     /// UID, envelope, and internal date of the messages with these sequence numbers.
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope]

@@ -24,7 +24,7 @@ public struct MailReader: Sendable {
     public func check() async throws -> AccountCheck {
         try await withClient { client in
             let capabilities = try await client.capabilities()
-            let inbox = try await client.examine(mailbox: Self.defaultMailbox)
+            let inbox = try await examine(Self.defaultMailbox, with: client)
             return AccountCheck(account: account, capabilities: capabilities, inboxMessageCount: inbox.messageCount)
         }
     }
@@ -51,7 +51,7 @@ public struct MailReader: Sendable {
             throw IrisError.invalidLimit(limit)
         }
         return try await withClient { client in
-            let status = try await client.examine(mailbox: mailbox)
+            let status = try await examine(mailbox, with: client)
             var messages: [MessageSummary] = []
             var hasMore = false
             if let range = MessagePage.sequenceRange(messageCount: status.messageCount, page: page, limit: limit) {
@@ -79,13 +79,18 @@ public struct MailReader: Sendable {
             throw IrisError.unknownUID(uid: uid, mailbox: mailbox)
         }
         return try await withClient { client in
-            _ = try await client.examine(mailbox: mailbox)
+            _ = try await examine(mailbox, with: client)
             let data = try await client.fetchRawMessage(uid: uid)
             guard !data.isEmpty else {
                 throw IrisError.unknownUID(uid: uid, mailbox: mailbox)
             }
             return data
         }
+    }
+
+    /// Opens `mailbox`, a name as `mailboxes()` shows it, by its wire name in modified UTF-7.
+    private func examine(_ mailbox: String, with client: any MailClient) async throws -> MailboxStatus {
+        try await client.examine(mailbox: ModifiedUTF7.encode(mailbox))
     }
 
     /// Runs `body` with a logged-in client, and logs out after it, also when
