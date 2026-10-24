@@ -9,7 +9,9 @@ import Foundation
 /// The account is the text before the first `/` (an account name cannot have
 /// one), the UID is the text after the last `/`, and the mailbox is all the
 /// text between them, so a mailbox name can have `/` in it. The mailbox is the
-/// decoded name, as `iris mailboxes` shows it.
+/// decoded name as the caller gave it. Only INBOX is made canonical, so a
+/// name typed in a different case than `iris mailboxes` shows gives a second
+/// ID for the same message.
 public struct IrisID: Sendable, Hashable, CustomStringConvertible {
     /// The account name, lowercased, as `iris accounts` shows it.
     public let account: String

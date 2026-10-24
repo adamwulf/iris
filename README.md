@@ -111,7 +111,9 @@ in each mailbox and in each account.
 The account is the text before the first `/`, the UID is the text after the
 last `/`, and the mailbox is all the text between them, so a mailbox name
 can have `/` in it (`personal/[Gmail]/All Mail/77`). The account is in
-lowercase, and INBOX in any case is `INBOX`, so one message has one iris ID.
+lowercase, and INBOX in any case is `INBOX`. Type other mailbox names as
+`iris mailboxes` shows them: some servers open a name in any case, but a name
+in a different case gives a different iris ID for the same message.
 
 Always put an iris ID in single quotes on the command line. A mailbox name
 can have spaces, which split the ID into two arguments, and `[ ]`, which zsh

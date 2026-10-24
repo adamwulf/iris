@@ -19,7 +19,7 @@ final class MailModelsTests: XCTestCase {
         hasMore: Bool
     ) -> MessagePage {
         let messages = (0..<count).map {
-            MessageSummary(irisID:id(UInt32(500 - $0), mailbox: mailbox), from: nil, subject: "", date: nil)
+            MessageSummary(irisID: id(UInt32(500 - $0), mailbox: mailbox), from: nil, subject: "", date: nil)
         }
         return MessagePage(
             mailbox: mailbox, messages: messages, totalCount: totalCount, page: page, limit: limit, hasMore: hasMore
@@ -137,9 +137,9 @@ final class MailModelsTests: XCTestCase {
     }
 
     func testTableFromFallsBackToTheAddressAndEmptyValuesStayEmpty() {
-        let noName = MessageSummary(irisID:id(1), from: MailAddress(name: nil, address: "bot@example.com"), subject: "", date: nil)
-        let emptyName = MessageSummary(irisID:id(2), from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil)
-        let noSender = MessageSummary(irisID:id(3), from: nil, subject: "", date: nil)
+        let noName = MessageSummary(irisID: id(1), from: MailAddress(name: nil, address: "bot@example.com"), subject: "", date: nil)
+        let emptyName = MessageSummary(irisID: id(2), from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil)
+        let noSender = MessageSummary(irisID: id(3), from: nil, subject: "", date: nil)
         XCTAssertEqual(noName.tableValues, ["work/INBOX/1", "", "bot@example.com", ""])
         XCTAssertEqual(emptyName.tableValues, ["work/INBOX/2", "", "x@example.com", ""])
         XCTAssertEqual(noSender.tableValues, ["work/INBOX/3", "", "", ""])
@@ -168,8 +168,8 @@ final class MailModelsTests: XCTestCase {
 
     func testTableColumnsAndIDFormat() throws {
         let rows = [
-            MessageSummary(irisID:id(7), from: nil, subject: "Hi", date: nil),
-            MessageSummary(irisID:id(12, mailbox: "Sent Items"), from: nil, subject: "Re: Hi", date: nil),
+            MessageSummary(irisID: id(7), from: nil, subject: "Hi", date: nil),
+            MessageSummary(irisID: id(12, mailbox: "Sent Items"), from: nil, subject: "Re: Hi", date: nil),
         ]
         XCTAssertEqual(try OutputFormatter.render(rows, format: .table), """
         IRIS ID             DATE  FROM  SUBJECT
