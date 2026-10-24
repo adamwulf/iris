@@ -20,8 +20,13 @@ protocol MailClient: Sendable {
     /// Opens a mailbox read-only (EXAMINE, never SELECT). Later fetches read from it.
     /// `mailbox` is the wire name, and an `unknownMailbox` error holds it.
     func examine(mailbox: String) async throws -> MailboxStatus
+    /// The UIDs of the messages in the open mailbox that match every condition
+    /// of `filter` (UID SEARCH), in any order. `filter` is not empty.
+    func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32]
     /// UID, flags, envelope, and internal date of the messages with these sequence numbers.
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope]
+    /// The same for the messages with these UIDs (UID FETCH). `uids` is not empty.
+    func fetchEnvelopes(uids: [UInt32]) async throws -> [MessageEnvelope]
     /// The raw RFC 822 bytes of one message, fetched with `BODY.PEEK[]` so `\Seen`
     /// is never set. Empty when the open mailbox has no message with this UID.
     func fetchRawMessage(uid: UInt32) async throws -> Data

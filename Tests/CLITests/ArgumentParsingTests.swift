@@ -41,17 +41,44 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertEqual(command.limit, 25)
         XCTAssertEqual(command.format, .table)
         XCTAssertNil(command.accountOptions.account)
+        XCTAssertEqual(command.filter, MessageFilter())
     }
 
     func testListParsesEveryOption() throws {
         let command = try List.parse([
             "--mailbox", "[Gmail]/All Mail", "--page", "3", "--limit", "10", "--format", "id", "--account", "personal",
+            "--unread", "--flagged", "--from", "jane@example.com", "--subject", "Q4 plan",
+            "--since", "2026-10-01", "--before", "2026-11-01",
         ])
         XCTAssertEqual(command.mailbox, "[Gmail]/All Mail")
         XCTAssertEqual(command.page, 3)
         XCTAssertEqual(command.limit, 10)
         XCTAssertEqual(command.format, .id)
         XCTAssertEqual(command.accountOptions.account, "personal")
+        XCTAssertEqual(command.filter, MessageFilter(
+            unread: true,
+            flagged: true,
+            from: "jane@example.com",
+            subject: "Q4 plan",
+            since: try CalendarDay(parsing: "2026-10-01"),
+            before: try CalendarDay(parsing: "2026-11-01")
+        ))
+    }
+
+    func testListFilterFlagsTakeNoValue() throws {
+        XCTAssertEqual(try List.parse(["--unread"]).filter, MessageFilter(unread: true))
+        XCTAssertEqual(try List.parse(["--flagged"]).filter, MessageFilter(flagged: true))
+        XCTAssertThrowsError(try List.parse(["--unread", "yes"]))
+    }
+
+    func testListExplainsABadDate() {
+        for option in ["--since", "--before"] {
+            XCTAssertThrowsError(try List.parse([option, "10/24/2026"])) { error in
+                let message = List.message(for: error)
+                XCTAssertTrue(message.contains("\"10/24/2026\" is not a date"), message)
+                XCTAssertTrue(message.contains("YYYY-MM-DD"), message)
+            }
+        }
     }
 
     func testListRejectsAPageThatIsNotANumber() {

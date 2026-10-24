@@ -40,6 +40,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case invalidPage(Int)
     /// `--limit` is less than 1.
     case invalidLimit(Int)
+    /// `--since` or `--before` is not a day iris can search for.
+    case invalidDate(String)
     /// The raw message did not arrive inside SwiftMail's fixed time limit.
     case messageDownloadTimedOut(seconds: Int)
     /// After a good login, the server did not answer a command in time.
@@ -107,6 +109,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "The page number must be 1 or more, not \(page). Page 1 has the newest messages."
         case .invalidLimit(let limit):
             return "The limit must be 1 or more, not \(limit)."
+        case .invalidDate(let text):
+            return "\"\(text)\" is not a date. Type a day as YYYY-MM-DD, for example 2026-10-24, "
+                + "from the year \(CalendarDay.years.lowerBound) to \(CalendarDay.years.upperBound)."
         case .messageDownloadTimedOut(let seconds):
             return "The message did not download in \(seconds) seconds. It may be large, or the connection "
                 + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "

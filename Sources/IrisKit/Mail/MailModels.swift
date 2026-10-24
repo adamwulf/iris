@@ -96,8 +96,10 @@ extension MailboxInfo: IrisRow {
 /// One page of `iris list`, newest message first.
 public struct MessagePage: Sendable, Equatable {
     public let mailbox: String
+    public let filter: MessageFilter
     public let messages: [MessageSummary]
-    /// The number of messages in the mailbox.
+    /// The number of messages in the mailbox that match `filter`: all of them
+    /// when it is empty.
     public let totalCount: Int
     /// One-based.
     public let page: Int
@@ -120,22 +122,29 @@ public struct MessagePage: Sendable, Equatable {
     /// The line `iris list` writes to stderr after the rows (in every format), such as
     /// `Showing 1-25 of 1234. Next page: iris list --page 2`.
     /// `account` is the `--account` value, if any, and `format` the `--format`
-    /// value, so the next-page command uses the same account and format.
+    /// value, so the next-page command uses the same account, filter, and format.
     public func hint(account: String?, format: OutputFormat) -> String {
         guard !messages.isEmpty else {
             if totalCount == 0 {
-                return "\"\(mailbox)\" has no messages."
+                return filter.isEmpty
+                    ? "\"\(mailbox)\" has no messages."
+                    : "No message in \"\(mailbox)\" matches the filter."
             }
             let lastPage = (totalCount - 1) / limit + 1
-            return "Page \(page) is past the end: \"\(mailbox)\" has \(Self.messageCount(totalCount)), "
-                + "and the last page is \(lastPage)."
+            let size = filter.isEmpty
+                ? "\"\(mailbox)\" has \(Self.messageCount(totalCount))"
+                : "\(Self.messageCount(totalCount)) in \"\(mailbox)\" \(totalCount == 1 ? "matches" : "match") the filter"
+            return "Page \(page) is past the end: \(size), and the last page is \(lastPage)."
         }
         let first = (page - 1) * limit + 1
         let last = first + messages.count - 1
-        var line = "Showing \(first)-\(last) of \(totalCount)."
+        var line = filter.isEmpty
+            ? "Showing \(first)-\(last) of \(totalCount)."
+            : "Showing \(first)-\(last) of \(totalCount) \(totalCount == 1 ? "match" : "matches")."
         if hasMore {
-            line += " Next page: "
-                + Self.listCommand(account: account, mailbox: mailbox, page: page + 1, limit: limit, format: format)
+            line += " Next page: " + Self.listCommand(
+                account: account, mailbox: mailbox, filter: filter, page: page + 1, limit: limit, format: format
+            )
         }
         return line
     }
@@ -144,6 +153,7 @@ public struct MessagePage: Sendable, Equatable {
     static func listCommand(
         account: String?,
         mailbox: String,
+        filter: MessageFilter = MessageFilter(),
         page: Int,
         limit: Int,
         format: OutputFormat
@@ -155,6 +165,7 @@ public struct MessagePage: Sendable, Equatable {
         if mailbox != MailReader.defaultMailbox {
             words += ["--mailbox", shellQuoted(mailbox)]
         }
+        words += filter.options
         if page != 1 {
             words += ["--page", String(page)]
         }

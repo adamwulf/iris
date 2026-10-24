@@ -74,7 +74,8 @@ All three need an **app-specific password**, not your normal password.
 - `iris mailboxes`: the mailbox names with their special-use attributes
   (`\Drafts`, `\Sent`, `\All`, ...).
 - `iris list`: a mailbox, newest first, one page at a time
-  (iris ID, unread, date, sender, subject).
+  (iris ID, unread, date, sender, subject). Filters: `--unread`,
+  `--flagged`, `--from`, `--subject`, `--since`, `--before`.
 - `iris show`: one full message, by its iris ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
@@ -90,6 +91,8 @@ iris check --account work
 iris list                          # newest 25 messages in INBOX
 iris list --page 2 --limit 50
 iris list --mailbox "[Gmail]/Sent Mail" --format json
+iris list --unread                 # only the unread messages in INBOX
+iris list --flagged --from jane@example.com --since 2026-10-01
 
 iris show 'work/INBOX/4821'                # one message, as Markdown
 iris show 'work/INBOX/4821' --body text    # the plain-text part instead of the HTML
@@ -99,6 +102,32 @@ iris show 'personal/[Gmail]/Sent Mail/77'
 
 List commands take `--format table|json|jsonl|id`. Hints and errors go to
 stderr, so stdout is safe to pipe.
+
+`iris list` shows `yes` in the `UNREAD` column (and `"unread": true` in
+JSON) for a message without the `\Seen` flag. Listing does not change the flag.
+
+### Filters
+
+These `iris list` options show only some messages:
+
+| Option | Shows only the messages that |
+|---|---|
+| `--unread` | have no `\Seen` flag |
+| `--flagged` | have the `\Flagged` flag (starred, in Gmail) |
+| `--from <text>` | have the text in the `From:` header, in the name or the address |
+| `--subject <text>` | have the text in the subject |
+| `--since <YYYY-MM-DD>` | the server received on that day or later |
+| `--before <YYYY-MM-DD>` | the server received before that day |
+
+The options combine: a message must match all of them. Paging works the
+same, and the next-page hint keeps the filter options.
+
+The server does the matching (IMAP SEARCH), so the details depend on the
+server. RFC 3501 says that text matches any part of the header and ignores
+case, but some servers match only whole words. `--since` and `--before`
+compare days, not times: the server uses the day it received the message
+and ignores the time and the time zone. That day can be different from the
+`DATE` column, which shows the sender's `Date:` header.
 
 ### Iris IDs
 

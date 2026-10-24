@@ -19,6 +19,7 @@ struct SwiftMailClient: MailClient {
         case list
         /// `mailbox` is the wire name, in modified UTF-7.
         case examine(mailbox: String)
+        case search
         case fetchEnvelopes
         case fetchRawMessage
 
@@ -29,6 +30,7 @@ struct SwiftMailClient: MailClient {
             case .capability: return "CAPABILITY"
             case .list: return "LIST"
             case .examine: return "EXAMINE"
+            case .search: return "SEARCH"
             case .fetchEnvelopes, .fetchRawMessage: return "FETCH"
             }
         }
@@ -97,10 +99,52 @@ struct SwiftMailClient: MailClient {
         )
     }
 
+    func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32] {
+        // extendedSearch sends ESEARCH when the server has it, which answers with
+        // ranges (101:250), else a plain SEARCH. Both give the matches in `all`.
+        let result: ExtendedSearchResult<UID> = try await run(.search) {
+            try await server.extendedSearch(criteria: Self.searchCriteria(for: filter), calendar: CalendarDay.calendar)
+        }
+        return result.all?.toArray().map(\.value) ?? []
+    }
+
+    /// The SEARCH keys for `filter`, one per condition; SEARCH needs all of them
+    /// to match. The days use `CalendarDay.calendar`, so pass it to SwiftMail.
+    static func searchCriteria(for filter: MessageFilter) -> [SearchCriteria] {
+        var criteria: [SearchCriteria] = []
+        if filter.unread {
+            criteria.append(.unseen)
+        }
+        if filter.flagged {
+            criteria.append(.flagged)
+        }
+        if let from = filter.from {
+            criteria.append(.from(from))
+        }
+        if let subject = filter.subject {
+            criteria.append(.subject(subject))
+        }
+        if let since = filter.since {
+            criteria.append(.since(since.start))
+        }
+        if let before = filter.before {
+            criteria.append(.before(before.start))
+        }
+        return criteria
+    }
+
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope] {
+        try await fetchEnvelopes(using: SequenceNumberSet(sequenceNumbers))
+    }
+
+    func fetchEnvelopes(uids: [UInt32]) async throws -> [MessageEnvelope] {
+        try await fetchEnvelopes(using: UIDSet(uids.map(UID.init)))
+    }
+
+    private func fetchEnvelopes<T: MessageIdentifier>(using identifiers: MessageIdentifierSet<T>) async throws -> [MessageEnvelope] {
         // The stream sends one FETCH per chunk, and each FETCH has its own deadline.
         let infos = server.fetchMessageInfos(
-            using: SequenceNumberSet(sequenceNumbers),
+            using: identifiers,
             options: [.envelope, .internalDate, .flags],
             chunkSize: Self.envelopeChunkSize
         )

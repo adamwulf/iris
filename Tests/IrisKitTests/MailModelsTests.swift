@@ -12,6 +12,7 @@ final class MailModelsTests: XCTestCase {
 
     private func page(
         mailbox: String = "INBOX",
+        filter: MessageFilter = MessageFilter(),
         count: Int,
         totalCount: Int,
         page: Int = 1,
@@ -22,8 +23,18 @@ final class MailModelsTests: XCTestCase {
             MessageSummary(irisID: id(UInt32(500 - $0), mailbox: mailbox), from: nil, subject: "", date: nil, unread: false)
         }
         return MessagePage(
-            mailbox: mailbox, messages: messages, totalCount: totalCount, page: page, limit: limit, hasMore: hasMore
+            mailbox: mailbox,
+            filter: filter,
+            messages: messages,
+            totalCount: totalCount,
+            page: page,
+            limit: limit,
+            hasMore: hasMore
         )
+    }
+
+    private func day(_ text: String) throws -> CalendarDay {
+        try CalendarDay(parsing: text)
     }
 
     // MARK: - Paging math
@@ -89,6 +100,51 @@ final class MailModelsTests: XCTestCase {
         XCTAssertEqual(
             page(count: 0, totalCount: 1, page: 2, hasMore: false).hint(account: nil, format: .table),
             "Page 2 is past the end: \"INBOX\" has 1 message, and the last page is 1."
+        )
+    }
+
+    func testHintWithAFilterCountsMatchesAndKeepsTheFilterInTheNextPageCommand() throws {
+        let filter = MessageFilter(unread: true, from: "Jane Doe", since: try day("2026-10-01"))
+        XCTAssertEqual(
+            page(filter: filter, count: 25, totalCount: 40, hasMore: true).hint(account: "work", format: .json),
+            "Showing 1-25 of 40 matches. Next page: "
+                + "iris list --account work --unread --from 'Jane Doe' --since 2026-10-01 --page 2 --format json"
+        )
+        XCTAssertEqual(
+            page(filter: filter, count: 1, totalCount: 1, hasMore: false).hint(account: nil, format: .table),
+            "Showing 1-1 of 1 match."
+        )
+    }
+
+    func testHintWithAFilterForNoMatchesAndForAPagePastTheEnd() {
+        let filter = MessageFilter(flagged: true)
+        XCTAssertEqual(
+            page(filter: filter, count: 0, totalCount: 0, hasMore: false).hint(account: nil, format: .table),
+            "No message in \"INBOX\" matches the filter."
+        )
+        XCTAssertEqual(
+            page(filter: filter, count: 0, totalCount: 60, page: 9, hasMore: false).hint(account: nil, format: .table),
+            "Page 9 is past the end: 60 messages in \"INBOX\" match the filter, and the last page is 3."
+        )
+        XCTAssertEqual(
+            page(filter: filter, count: 0, totalCount: 1, page: 2, hasMore: false).hint(account: nil, format: .table),
+            "Page 2 is past the end: 1 message in \"INBOX\" matches the filter, and the last page is 1."
+        )
+    }
+
+    func testListCommandHasEveryFilterOptionInHelpOrder() throws {
+        let filter = MessageFilter(
+            unread: true,
+            flagged: true,
+            from: "jane@example.com",
+            subject: "Bob's plan",
+            since: try day("2026-01-05"),
+            before: try day("2026-02-01")
+        )
+        XCTAssertEqual(
+            MessagePage.listCommand(account: nil, mailbox: "Sent", filter: filter, page: 3, limit: 10, format: .id),
+            "iris list --mailbox Sent --unread --flagged --from jane@example.com --subject 'Bob'\\''s plan' "
+                + "--since 2026-01-05 --before 2026-02-01 --page 3 --limit 10 --format id"
         )
     }
 

@@ -70,7 +70,9 @@ final class SwiftMailClientTests: XCTestCase {
     }
 
     func testTimeoutAfterLoginBecomesServerTimedOut() {
-        let commands: [SwiftMailClient.Command] = [.capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes]
+        let commands: [SwiftMailClient.Command] = [
+            .capability, .list, .examine(mailbox: "INBOX"), .search, .fetchEnvelopes,
+        ]
         for command in commands {
             XCTAssertEqual(
                 irisError(IMAPError.timeout, command),
@@ -97,7 +99,7 @@ final class SwiftMailClientTests: XCTestCase {
 
     func testConnectionFailureAfterLoginBecomesConnectionLostWithoutThePassword() {
         let commands: [SwiftMailClient.Command] = [
-            .capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes, .fetchRawMessage,
+            .capability, .list, .examine(mailbox: "INBOX"), .search, .fetchEnvelopes, .fetchRawMessage,
         ]
         for command in commands {
             XCTAssertEqual(
@@ -139,7 +141,7 @@ final class SwiftMailClientTests: XCTestCase {
             var description: String { "read(descriptor:pointer:size:): Connection reset by peer (secret)" }
         }
         let commands: [SwiftMailClient.Command] = [
-            .capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes, .fetchRawMessage,
+            .capability, .list, .examine(mailbox: "INBOX"), .search, .fetchEnvelopes, .fetchRawMessage,
         ]
         for command in commands {
             XCTAssertEqual(
@@ -159,8 +161,40 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.Command.capability.name, "CAPABILITY")
         XCTAssertEqual(SwiftMailClient.Command.list.name, "LIST")
         XCTAssertEqual(SwiftMailClient.Command.examine(mailbox: "INBOX").name, "EXAMINE")
+        XCTAssertEqual(SwiftMailClient.Command.search.name, "SEARCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchEnvelopes.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchRawMessage.name, "FETCH")
+    }
+
+    // MARK: - Search
+
+    /// SearchCriteria is not Equatable, so the tests compare descriptions.
+    private func assertCriteria(
+        _ filter: MessageFilter,
+        _ expected: [SearchCriteria],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            "\(SwiftMailClient.searchCriteria(for: filter))", "\(expected)", file: file, line: line
+        )
+    }
+
+    func testSearchCriteriaHaveOneKeyPerConditionInHelpOrder() throws {
+        let since = try CalendarDay(parsing: "2026-10-01")
+        let before = try CalendarDay(parsing: "2026-11-01")
+        assertCriteria(
+            MessageFilter(unread: true, flagged: true, from: "jane", subject: "Q4 plan", since: since, before: before),
+            [.unseen, .flagged, .from("jane"), .subject("Q4 plan"), .since(since.start), .before(before.start)]
+        )
+    }
+
+    func testSearchCriteriaLeaveOutConditionsThatAreNotSet() throws {
+        assertCriteria(MessageFilter(unread: true), [.unseen])
+        assertCriteria(MessageFilter(flagged: true), [.flagged])
+        assertCriteria(MessageFilter(from: "Jürgen"), [.from("Jürgen")])
+        let since = try CalendarDay(parsing: "2026-10-01")
+        assertCriteria(MessageFilter(since: since), [.since(since.start)])
     }
 
     // MARK: - Mailboxes
