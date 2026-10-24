@@ -7,35 +7,60 @@ struct SwiftMailClient: MailClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
 
+    /// The IMAP commands iris sends. The command decides how its errors read.
+    enum Command: Equatable {
+        case login
+        case capability
+        case list
+        case examine(mailbox: String)
+        case fetchEnvelopes
+        case fetchRawMessage(uid: UInt32)
+
+        /// The command's name in error messages.
+        var name: String {
+            switch self {
+            case .login: return "LOGIN"
+            case .capability: return "CAPABILITY"
+            case .list: return "LIST"
+            case .examine: return "EXAMINE"
+            case .fetchEnvelopes, .fetchRawMessage: return "FETCH"
+            }
+        }
+    }
+
     private let account: Account
     private let server: IMAPServer
 
     init(account: Account) {
         self.account = account
-        // Never send the password in clear text: port 143 must upgrade with
-        // STARTTLS, and every other port uses TLS from the first byte.
-        // SwiftMail's `.automatic` goes on in plain text on 143 when the server
-        // has no STARTTLS, and refuses every port but 143 and 993.
         self.server = IMAPServer(
             host: account.host,
             port: account.port,
-            transportSecurity: account.port == 143 ? .startTLS : .implicitTLS
+            transportSecurity: Self.transportSecurity(forPort: account.port)
         )
+    }
+
+    /// Never send the password in clear text: port 143 must upgrade with
+    /// STARTTLS, and every other port uses TLS from the first byte.
+    /// SwiftMail's `.automatic` goes on in plain text on 143 when the server
+    /// has no STARTTLS, and refuses every port but 143 and 993.
+    static func transportSecurity(forPort port: Int) -> MailTransportSecurity {
+        port == 143 ? .startTLS : .implicitTLS
     }
 
     func login() async throws {
         do {
             try await server.connect()
         } catch {
-            throw connectionFailed(error)
+            throw Self.connectionFailed(reason: Self.reason(of: error), account: account)
         }
-        try await run("LOGIN") {
+        try await run(.login) {
             try await server.login(username: account.username, password: account.password)
         }
     }
 
     func capabilities() async throws -> [String] {
-        let capabilities = try await run("CAPABILITY") {
+        let capabilities = try await run(.capability) {
             try await server.fetchCapabilities()
         }
         return capabilities.map { capability in
@@ -48,7 +73,7 @@ struct SwiftMailClient: MailClient {
         // section 2). listSpecialUseMailboxes sends LIST and keeps its result in
         // `mailboxes`, then sends LIST RETURN (SPECIAL-USE) when the server has
         // SPECIAL-USE; else SwiftMail guesses from names such as "Sent".
-        let specialUse = try await run("LIST") {
+        let specialUse = try await run(.list) {
             try await server.listSpecialUseMailboxes()
         }
         let all = await server.mailboxes
@@ -56,23 +81,19 @@ struct SwiftMailClient: MailClient {
     }
 
     func examine(mailbox: String) async throws -> MailboxStatus {
-        do {
-            let selection = try await server.examineMailbox(mailbox)
-            return MailboxStatus(
-                messageCount: selection.messageCount,
-                uidValidity: selection.uidValidity.value,
-                uidNext: selection.uidNext.value
-            )
-        } catch IMAPError.selectFailed(let reason) {
-            throw IrisError.unknownMailbox(name: mailbox, reason: Self.redacting(account.password, in: reason))
-        } catch {
-            throw irisError(for: error, command: "EXAMINE")
+        let selection = try await run(.examine(mailbox: mailbox)) {
+            try await server.examineMailbox(mailbox)
         }
+        return MailboxStatus(
+            messageCount: selection.messageCount,
+            uidValidity: selection.uidValidity.value,
+            uidNext: selection.uidNext.value
+        )
     }
 
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope] {
         let range = SequenceNumber(sequenceNumbers.lowerBound)...SequenceNumber(sequenceNumbers.upperBound)
-        let infos = try await run("FETCH") {
+        let infos = try await run(.fetchEnvelopes) {
             try await server.fetchMessageInfos(sequenceRange: range, options: [.envelope, .internalDate])
         }
         // FETCH always asks for the UID, so a message without one is a server bug. Skip it.
@@ -93,14 +114,10 @@ struct SwiftMailClient: MailClient {
     }
 
     func fetchRawMessage(uid: UInt32) async throws -> Data {
-        do {
-            // SwiftMail 88c45cbd (1.16.0) fixes FetchRawMessageCommand.timeoutSeconds
-            // at 10, and no public API sends BODY.PEEK[] with a longer timeout.
-            return try await server.fetchRawMessage(identifier: UID(uid))
-        } catch IMAPError.timeout {
-            throw IrisError.messageDownloadTimedOut(uid: uid, seconds: Self.rawMessageTimeoutSeconds)
-        } catch {
-            throw irisError(for: error, command: "FETCH")
+        // SwiftMail 88c45cbd (1.16.0) fixes FetchRawMessageCommand.timeoutSeconds
+        // at 10, and no public API sends BODY.PEEK[] with a longer timeout.
+        try await run(.fetchRawMessage(uid: uid)) {
+            try await server.fetchRawMessage(identifier: UID(uid))
         }
     }
 
@@ -122,47 +139,50 @@ struct SwiftMailClient: MailClient {
     // MARK: - Errors
 
     /// Runs one IMAP command and turns its errors into `IrisError`s.
-    private func run<T>(_ command: String, _ operation: () async throws -> T) async throws -> T {
+    private func run<T>(_ command: Command, _ operation: () async throws -> T) async throws -> T {
         do {
             return try await operation()
         } catch {
-            throw irisError(for: error, command: command)
+            throw Self.irisError(for: error, command: command, account: account)
         }
     }
 
-    private func irisError(for error: any Error, command: String) -> IrisError {
-        switch error {
-        case let error as IrisError:
+    /// The `IrisError` for an error that SwiftMail threw while iris sent `command`.
+    /// Server text never keeps the account's password.
+    static func irisError(for error: any Error, command: Command, account: Account) -> IrisError {
+        let password = account.password
+        switch (command, error) {
+        case (_, let error as IrisError):
             return error
-        case IMAPError.loginFailed(let reason), IMAPError.authFailed(let reason):
+        case (_, IMAPError.loginFailed(let reason)), (_, IMAPError.authFailed(let reason)):
             return .loginFailed(
                 account: account.name,
                 username: account.username,
                 host: account.host,
-                reason: Self.redacting(account.password, in: reason)
+                reason: redacting(password, in: reason)
             )
-        case IMAPError.timeout:
-            return connectionFailed(reason: "the server did not answer \(command) in time")
-        case IMAPError.connectionFailed, IMAPError.greetingFailed:
-            return connectionFailed(error)
-        case let error as IMAPError:
-            return .serverError(command: command, reason: Self.redacting(account.password, in: error.description))
+        case (.examine(let mailbox), IMAPError.selectFailed(let reason)):
+            return .unknownMailbox(name: mailbox, reason: redacting(password, in: reason))
+        case (.fetchRawMessage(let uid), IMAPError.timeout):
+            return .messageDownloadTimedOut(uid: uid, seconds: rawMessageTimeoutSeconds)
+        case (_, IMAPError.timeout):
+            return connectionFailed(reason: "the server did not answer \(command.name) in time", account: account)
+        case (_, IMAPError.connectionFailed), (_, IMAPError.greetingFailed):
+            return connectionFailed(reason: reason(of: error), account: account)
+        case (_, let error as IMAPError):
+            return .serverError(command: command.name, reason: redacting(password, in: error.description))
         default:
             // SwiftNIO errors: DNS, TCP, and TLS failures.
-            return connectionFailed(error)
+            return connectionFailed(reason: reason(of: error), account: account)
         }
     }
 
-    private func connectionFailed(_ error: any Error) -> IrisError {
-        connectionFailed(reason: Self.reason(of: error))
-    }
-
-    private func connectionFailed(reason: String) -> IrisError {
+    private static func connectionFailed(reason: String, account: Account) -> IrisError {
         .connectionFailed(
             account: account.name,
             host: account.host,
             port: account.port,
-            reason: Self.redacting(account.password, in: reason)
+            reason: redacting(account.password, in: reason)
         )
     }
 
@@ -183,10 +203,10 @@ struct SwiftMailClient: MailClient {
     }
 }
 
-private extension MailboxInfo {
+extension MailboxInfo {
     /// The special-use attributes iris shows. SwiftMail's `.inbox` is left out:
     /// SwiftMail adds it to INBOX itself, and it is not an RFC 6154 attribute.
-    static let specialUseNames: [(attribute: Mailbox.Info.Attributes, name: String)] = [
+    private static let specialUseNames: [(attribute: Mailbox.Info.Attributes, name: String)] = [
         (.all, #"\All"#),
         (.archive, #"\Archive"#),
         (.drafts, #"\Drafts"#),
