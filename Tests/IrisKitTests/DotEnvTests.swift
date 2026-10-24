@@ -18,13 +18,55 @@ final class DotEnvTests: XCTestCase {
     func testParseSkipsCommentsBlankLinesAndMalformedLines() {
         let values = DotEnv.parse("""
         # a comment
+          # an indented comment
 
         PLAIN=value
-        export EXPORTED=skipped
         SPACED = skipped
+        export SPACED_TOO = skipped
         NO_EQUALS
+        export
         """)
         XCTAssertEqual(values, ["PLAIN": "value"])
+    }
+
+    func testParseAcceptsAnExportPrefix() {
+        let values = DotEnv.parse("""
+        export A=1
+        export   B="2"
+        export\tC=3
+        exportD=4
+        """)
+        XCTAssertEqual(values, ["A": "1", "B": "2", "C": "3", "exportD": "4"])
+    }
+
+    func testParseRemovesAnInlineCommentFromAnUnquotedValue() {
+        let values = DotEnv.parse("""
+        HOST=imap.gmail.com  # Gmail
+        PORT=993\t# TLS
+        PASSWORD=p#ss
+        TWO=a # b # c
+        ONLY_A_COMMENT= # nothing here
+        """)
+        XCTAssertEqual(values["HOST"], "imap.gmail.com")
+        XCTAssertEqual(values["PORT"], "993")
+        XCTAssertEqual(values["PASSWORD"], "p#ss", "a # with no whitespace before it is part of the value")
+        XCTAssertEqual(values["TWO"], "a")
+        XCTAssertNil(values["ONLY_A_COMMENT"])
+    }
+
+    func testParseKeepsAHashInAQuotedValueAndAllowsACommentAfterIt() {
+        let values = DotEnv.parse("""
+        DOUBLE="p # ss"
+        SINGLE='a # b'
+        COMMENTED="secret" # personal
+        QUOTES_IN_COMMENT="abc" # say "hi"
+        GLUED="abc"#not a comment
+        """)
+        XCTAssertEqual(values["DOUBLE"], "p # ss")
+        XCTAssertEqual(values["SINGLE"], "a # b")
+        XCTAssertEqual(values["COMMENTED"], "secret")
+        XCTAssertEqual(values["QUOTES_IN_COMMENT"], "abc")
+        XCTAssertEqual(values["GLUED"], "\"abc\"#not a comment")
     }
 
     func testParseRemovesOnePairOfMatchingQuotes() {
@@ -33,27 +75,32 @@ final class DotEnvTests: XCTestCase {
         SINGLE='c d'
         MISMATCHED="e'
         NESTED=""f""
+        INNER="ab"cd"
         """)
         XCTAssertEqual(values["DOUBLE"], "a b")
         XCTAssertEqual(values["SINGLE"], "c d")
         XCTAssertEqual(values["MISMATCHED"], "\"e'")
         XCTAssertEqual(values["NESTED"], "\"f\"")
+        XCTAssertEqual(values["INNER"], "ab\"cd")
     }
 
     func testParseKeepsEqualsSignsInTheValue() {
         XCTAssertEqual(DotEnv.parse("PASSWORD=a=b=c")["PASSWORD"], "a=b=c")
     }
 
-    func testParseTreatsEmptyValuesAsNotSetAndFirstValueWins() {
+    func testParseTreatsEmptyValuesAsNotSetAndTheLastLineWins() {
         let values = DotEnv.parse("""
         EMPTY=
         QUOTED_EMPTY=""
         TWICE=first
         TWICE=second
+        CLEARED=value
+        CLEARED=
         """)
         XCTAssertNil(values["EMPTY"])
         XCTAssertNil(values["QUOTED_EMPTY"])
-        XCTAssertEqual(values["TWICE"], "first")
+        XCTAssertEqual(values["TWICE"], "second")
+        XCTAssertNil(values["CLEARED"], "an empty last line unsets the key, as `source` does")
     }
 
     func testParseHandlesWindowsLineEndings() {
