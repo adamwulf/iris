@@ -13,6 +13,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// A setting has a value that iris cannot use.
     case invalidSetting(key: String, reason: String)
 
+    // Message rendering
+
+    /// The raw message bytes could not be parsed as an email.
+    case messageNotParsed(reason: String)
+    /// The HTML body could not be converted to Markdown.
+    case htmlNotConverted(reason: String)
+
     public var errorDescription: String? {
         switch self {
         case .noAccountsConfigured:
@@ -32,6 +39,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "or add the line \"\(key)=...\" to a .env file in this directory or a parent directory."
         case .invalidSetting(let key, let reason):
             return "The setting \(key) is not valid: \(reason)"
+        // Message rendering
+        case .messageNotParsed(let reason):
+            return "The message could not be read as an email (\(reason)). "
+                + "Check that the UID belongs to a message in this mailbox. If it does, the message may be damaged."
+        case .htmlNotConverted(let reason):
+            return "The HTML body of the message could not be converted to Markdown (\(reason)). "
+                + "Choose the plain-text body instead."
         }
     }
 
