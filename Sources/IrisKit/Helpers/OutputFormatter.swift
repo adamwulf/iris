@@ -49,7 +49,9 @@ public enum OutputFormatter {
         }
         return allRows.map { row in
             let line = row.enumerated().map { index, value in
-                value.padding(toLength: widths[index], withPad: " ", startingAt: 0)
+                // Pad by Characters, as the widths count them. padding(toLength:)
+                // counts UTF-16 units, so it would cut an emoji in half.
+                value + String(repeating: " ", count: widths[index] - value.count)
             }
             .joined(separator: "  ")
             // Drop the padding after the last value, so no line ends in whitespace.

@@ -30,6 +30,16 @@ final class OutputFormatterTests: XCTestCase {
         """)
     }
 
+    func testTablePadsEmojiAndCombiningCharactersByCharacter() throws {
+        let rows = [Row(id: "Lunch 🍕", name: "x"), Row(id: "Cafe\u{301}", name: "y")]
+        XCTAssertEqual(
+            try OutputFormatter.render(rows, format: .table),
+            "ID" + String(repeating: " ", count: 7) + "NAME\n"
+                + "Lunch 🍕  x\n"
+                + "Cafe\u{301}" + String(repeating: " ", count: 5) + "y\n"
+        )
+    }
+
     func testJSONIsPrettyAndSorted() throws {
         XCTAssertEqual(try OutputFormatter.render([rows[0]], format: .json), """
         [
