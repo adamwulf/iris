@@ -37,6 +37,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case invalidLimit(Int)
     /// The raw message did not arrive inside SwiftMail's fixed time limit.
     case messageDownloadTimedOut(uid: UInt32, seconds: Int)
+    /// After a good login, the server did not answer a command in time.
+    case serverTimedOut(account: String, command: String)
     /// The server answered a command with NO or BAD.
     case serverError(command: String, reason: String)
 
@@ -96,6 +98,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "Message UID \(uid) did not download in \(seconds) seconds. It may be large, or the connection "
                 + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
                 + "every raw-message download after \(seconds) seconds. Try again on a faster connection."
+        case .serverTimedOut(let account, let command):
+            return "The server did not answer \(command) in time (account \"\(account)\"). "
+                + "The connection may be slow, or the server may be busy. Try again. "
+                + "If `iris list` timed out, try a smaller --limit."
         case .serverError(let command, let reason):
             return "The server answered \(command) with an error: \(reason). "
                 + "Run `iris check` to test the account settings."

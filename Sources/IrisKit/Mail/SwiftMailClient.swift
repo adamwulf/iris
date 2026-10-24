@@ -7,6 +7,11 @@ struct SwiftMailClient: MailClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
 
+    /// The most envelopes one FETCH asks for. SwiftMail gives every FETCH 10
+    /// seconds (`FetchMessageInfoCommand.timeoutSeconds`), so a page is fetched
+    /// in chunks. 100 envelopes are tens of kilobytes, which a slow link moves in time.
+    static let envelopeChunkSize = 100
+
     /// The IMAP commands iris sends. The command decides how its errors read.
     enum Command: Equatable {
         case login
@@ -92,24 +97,30 @@ struct SwiftMailClient: MailClient {
     }
 
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope] {
-        let range = SequenceNumber(sequenceNumbers.lowerBound)...SequenceNumber(sequenceNumbers.upperBound)
-        let infos = try await run(.fetchEnvelopes) {
-            try await server.fetchMessageInfos(sequenceRange: range, options: [.envelope, .internalDate])
-        }
-        // FETCH always asks for the UID, so a message without one is a server bug. Skip it.
-        return infos.compactMap { info in
-            guard let uid = info.uid else {
-                return nil
+        // The stream sends one FETCH per chunk, and each FETCH has its own deadline.
+        let infos = server.fetchMessageInfos(
+            using: SequenceNumberSet(sequenceNumbers),
+            options: [.envelope, .internalDate],
+            chunkSize: Self.envelopeChunkSize
+        )
+        return try await run(.fetchEnvelopes) {
+            var envelopes: [MessageEnvelope] = []
+            for try await info in infos {
+                // FETCH always asks for the UID, so a message without one is a server bug. Skip it.
+                guard let uid = info.uid else {
+                    continue
+                }
+                let sender = info.fromAddresses.mailboxes.first
+                envelopes.append(MessageEnvelope(
+                    sequenceNumber: Int(info.sequenceNumber.value),
+                    uid: uid.value,
+                    from: sender.map { MailAddress(name: $0.name, address: $0.address) },
+                    subject: info.subject,
+                    date: info.date,
+                    internalDate: info.internalDate
+                ))
             }
-            let sender = info.fromAddresses.mailboxes.first
-            return MessageEnvelope(
-                sequenceNumber: Int(info.sequenceNumber.value),
-                uid: uid.value,
-                from: sender.map { MailAddress(name: $0.name, address: $0.address) },
-                subject: info.subject,
-                date: info.date,
-                internalDate: info.internalDate
-            )
+            return envelopes
         }
     }
 
@@ -165,8 +176,11 @@ struct SwiftMailClient: MailClient {
             return .unknownMailbox(name: mailbox, reason: redacting(password, in: reason))
         case (.fetchRawMessage(let uid), IMAPError.timeout):
             return .messageDownloadTimedOut(uid: uid, seconds: rawMessageTimeoutSeconds)
-        case (_, IMAPError.timeout):
+        case (.login, IMAPError.timeout):
             return connectionFailed(reason: "the server did not answer \(command.name) in time", account: account)
+        case (_, IMAPError.timeout):
+            // The login worked, so the host and port are right.
+            return .serverTimedOut(account: account.name, command: command.name)
         case (_, IMAPError.connectionFailed), (_, IMAPError.greetingFailed):
             return connectionFailed(reason: reason(of: error), account: account)
         case (_, let error as IMAPError):

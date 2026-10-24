@@ -57,6 +57,16 @@ final class MailErrorTests: XCTestCase {
         XCTAssertTrue(message.contains("known limit of SwiftMail"))
     }
 
+    func testServerTimeoutAdvisesRetryingAndASmallerLimitNotTheHostAndPort() throws {
+        let message = try XCTUnwrap(IrisError.serverTimedOut(account: "work", command: "FETCH").errorDescription)
+        XCTAssertTrue(message.contains("did not answer FETCH in time"))
+        XCTAssertTrue(message.contains("\"work\""))
+        XCTAssertTrue(message.contains("Try again"))
+        XCTAssertTrue(message.contains("smaller --limit"))
+        XCTAssertFalse(message.contains("IRIS_WORK_IMAP_HOST"))
+        XCTAssertFalse(message.contains("IRIS_WORK_IMAP_PORT"))
+    }
+
     func testRedactingRemovesEveryCopyOfTheSecret() {
         XCTAssertEqual(
             SwiftMailClient.redacting("hunter2", in: "LOGIN me hunter2 failed: hunter2"),

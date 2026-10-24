@@ -64,6 +64,17 @@ final class SwiftMailClientTests: XCTestCase {
         )
     }
 
+    func testTimeoutAfterLoginBecomesServerTimedOut() {
+        let commands: [SwiftMailClient.Command] = [.capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes]
+        for command in commands {
+            XCTAssertEqual(
+                irisError(IMAPError.timeout, command),
+                .serverTimedOut(account: "work", command: command.name),
+                "\(command)"
+            )
+        }
+    }
+
     func testConnectionAndGreetingFailuresBecomeConnectionFailedWithoutThePassword() {
         for error in [IMAPError.connectionFailed("reset secret"), IMAPError.greetingFailed("reset secret")] {
             XCTAssertEqual(
