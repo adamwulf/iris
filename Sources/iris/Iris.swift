@@ -8,7 +8,7 @@ struct Iris: AsyncParsableCommand {
         commandName: "iris",
         abstract: "A command-line tool for reading email over IMAP.",
         version: "0.1.0",
-        subcommands: [Accounts.self]
+        subcommands: [Accounts.self, Check.self, Mailboxes.self, List.self]
     )
 
     static func main() async {

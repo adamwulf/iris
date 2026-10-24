@@ -7,8 +7,13 @@ enum CLI {
     /// Library log lines go to stderr, so stdout stays clean for piping.
     static func installLogHandler() {
         IrisLog.handler = { message in
-            FileHandle.standardError.write(Data("iris: \(message)\n".utf8))
+            printToStderr("iris: \(message)")
         }
+    }
+
+    /// Writes one line to stderr: hints and notes that must not mix with the data on stdout.
+    static func printToStderr(_ line: String) {
+        FileHandle.standardError.write(Data("\(line)\n".utf8))
     }
 
     /// SwiftMail logs through swift-log, whose default handler writes `.info`

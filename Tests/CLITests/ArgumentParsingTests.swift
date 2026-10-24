@@ -15,4 +15,49 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertEqual(try AccountOptions.parse(["-a", "work"]).account, "work")
         XCTAssertNil(try AccountOptions.parse([]).account)
     }
+
+    func testCheckTakesTheAccountOption() throws {
+        XCTAssertNil(try Check.parse([]).accountOptions.account)
+        XCTAssertEqual(try Check.parse(["--account", "work"]).accountOptions.account, "work")
+    }
+
+    func testMailboxesDefaultsToTableFormat() throws {
+        let command = try Mailboxes.parse([])
+        XCTAssertEqual(command.format, .table)
+        XCTAssertNil(command.accountOptions.account)
+    }
+
+    func testMailboxesParsesFormatAndAccount() throws {
+        let command = try Mailboxes.parse(["--format", "jsonl", "-a", "work"])
+        XCTAssertEqual(command.format, .jsonl)
+        XCTAssertEqual(command.accountOptions.account, "work")
+    }
+
+    func testListDefaults() throws {
+        let command = try List.parse([])
+        XCTAssertEqual(command.mailbox, "INBOX")
+        XCTAssertEqual(command.page, 1)
+        XCTAssertEqual(command.limit, 25)
+        XCTAssertEqual(command.format, .table)
+        XCTAssertNil(command.accountOptions.account)
+    }
+
+    func testListParsesEveryOption() throws {
+        let command = try List.parse([
+            "--mailbox", "[Gmail]/All Mail", "--page", "3", "--limit", "10", "--format", "id", "--account", "personal",
+        ])
+        XCTAssertEqual(command.mailbox, "[Gmail]/All Mail")
+        XCTAssertEqual(command.page, 3)
+        XCTAssertEqual(command.limit, 10)
+        XCTAssertEqual(command.format, .id)
+        XCTAssertEqual(command.accountOptions.account, "personal")
+    }
+
+    func testListRejectsAPageThatIsNotANumber() {
+        XCTAssertThrowsError(try List.parse(["--page", "two"]))
+    }
+
+    func testListRejectsAnUnknownFormat() {
+        XCTAssertThrowsError(try List.parse(["--format", "csv"]))
+    }
 }
