@@ -20,6 +20,8 @@ let package = Package(
         .package(url: "https://github.com/Cocoanetics/SwiftMail", revision: "88c45cbd31b347b373f7c87e197be63eb95efbc2"),
         // The HTML trait gives HTML-to-Markdown without SwiftText's PDF/OCR parts.
         .package(url: "https://github.com/Cocoanetics/SwiftText", from: "2.4.0", traits: ["HTML"]),
+        // SwiftMail logs through swift-log. Only the executable picks the backend.
+        .package(url: "https://github.com/apple/swift-log", from: "1.6.0"),
     ],
     targets: [
         // The library holds all logic and never prints: it logs through the
@@ -36,6 +38,7 @@ let package = Package(
             dependencies: [
                 "IrisKit",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Logging", package: "swift-log"),
             ]
         ),
         .testTarget(name: "IrisKitTests", dependencies: ["IrisKit"]),

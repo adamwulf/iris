@@ -13,6 +13,7 @@ struct Iris: AsyncParsableCommand {
 
     static func main() async {
         CLI.installLogHandler()
+        CLI.bootstrapSwiftLog()
         do {
             var command = try parseAsRoot()
             if var asyncCommand = command as? AsyncParsableCommand {
