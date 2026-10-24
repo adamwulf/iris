@@ -27,9 +27,9 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(MessageFormatter.markdown(document, timeZone: chicago), """
         # Lunch on Tuesday?
 
-        **From:** André Martin <andre@example.com>
-        **To:** Adam Wulf <adam@example.com>, jane@example.com
-        **Cc:** Team Lead <lead@example.com>
+        **From:** André Martin <andre@example.com>\u{20}\u{20}
+        **To:** Adam Wulf <adam@example.com>, jane@example.com\u{20}\u{20}
+        **Cc:** Team Lead <lead@example.com>\u{20}\u{20}
         **Date:** 2026-10-24 13:42 CDT
 
         ---
@@ -55,8 +55,8 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(MessageFormatter.markdown(empty, timeZone: chicago), """
         # (no subject)
 
-        **From:** (unknown)
-        **To:** (none)
+        **From:** (unknown)\u{20}\u{20}
+        **To:** (none)\u{20}\u{20}
         **Date:** (unknown)
 
         ---

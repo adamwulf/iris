@@ -2,20 +2,25 @@ import Foundation
 
 /// Prints a `MessageDocument` the way `iris show` does.
 public enum MessageFormatter {
-    /// The message as Markdown: a subject heading, the From/To/Cc/Date lines,
-    /// the body, and the attachments (only when there are any). It has no
-    /// trailing newline.
+    /// The message as Markdown: a subject heading, the From/To/Cc/Date lines
+    /// (each but the last ends in a hard break), the body, and the attachments
+    /// (only when there are any). It has no trailing newline.
     ///
     /// - Parameter timeZone: The zone for the date line. Tests pass a fixed zone.
     public static func markdown(_ document: MessageDocument, timeZone: TimeZone = .current) -> String {
         let subject = document.subject.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-        var lines = ["# \(subject ?? "(no subject)")", ""]
-        lines.append("**From:** \(addressList(document.from) ?? "(unknown)")")
-        lines.append("**To:** \(addressList(document.to) ?? "(none)")")
+        var headers = [
+            "**From:** \(addressList(document.from) ?? "(unknown)")",
+            "**To:** \(addressList(document.to) ?? "(none)")",
+        ]
         if let cc = addressList(document.cc) {
-            lines.append("**Cc:** \(cc)")
+            headers.append("**Cc:** \(cc)")
         }
-        lines.append("**Date:** \(document.date.map { dateText($0, timeZone: timeZone) } ?? "(unknown)")")
+        headers.append("**Date:** \(document.date.map { dateText($0, timeZone: timeZone) } ?? "(unknown)")")
+
+        // A hard break after each header line except the last, so that a
+        // Markdown renderer keeps one header per line.
+        var lines = ["# \(subject ?? "(no subject)")", "", headers.joined(separator: "  \n")]
         lines += ["", "---", "", document.body.isEmpty ? "(no body)" : document.body]
 
         if !document.attachments.isEmpty {
