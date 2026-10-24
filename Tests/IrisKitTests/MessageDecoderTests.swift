@@ -566,6 +566,131 @@ final class MessageDecoderTests: XCTestCase {
         )
     }
 
+    func testAnAMPRenditionOfTheBodyIsNotListed() async throws {
+        let document = try await MessageDecoder.decode(eml("""
+        From: Google Docs <comments-noreply@docs.google.com>
+        Subject: New comment
+        Content-Type: multipart/alternative; boundary="000000000000amp"
+
+        --000000000000amp
+        Content-Type: text/plain; charset="UTF-8"
+
+        Jane added a comment.
+        --000000000000amp
+        Content-Type: text/x-amp-html; charset="UTF-8"
+
+        <!doctype html><html amp4email><body>Jane added a comment.</body></html>
+        --000000000000amp
+        Content-Type: text/html; charset="UTF-8"
+
+        <p>Jane added a comment.</p>
+        --000000000000amp--
+        """))
+
+        XCTAssertEqual(document.body, "Jane added a comment.")
+        XCTAssertEqual(document.bodySource, .html)
+        XCTAssertEqual(document.attachments, [])
+    }
+
+    func testACalendarInviteNextToTheBodyIsListed() async throws {
+        let invite = "BEGIN:VCALENDAR\nMETHOD:REQUEST\nEND:VCALENDAR"
+        let document = try await MessageDecoder.decode(eml("""
+        Subject: Invitation: Lunch
+        Content-Type: multipart/mixed; boundary="m"
+
+        --m
+        Content-Type: multipart/alternative; boundary="a"
+
+        --a
+        Content-Type: text/plain; charset="UTF-8"
+
+        Lunch on Tuesday.
+        --a
+        Content-Type: text/html; charset="UTF-8"
+
+        <p>Lunch on Tuesday.</p>
+        --a
+        Content-Type: text/calendar; charset="UTF-8"; method=REQUEST
+
+        \(invite)
+        --a--
+
+        --m
+        Content-Type: application/ics; name="invite.ics"
+        Content-Disposition: attachment; filename="invite.ics"
+        Content-Transfer-Encoding: base64
+
+        SGVsbG8=
+        --m--
+        """))
+
+        XCTAssertEqual(document.body, "Lunch on Tuesday.")
+        XCTAssertEqual(document.attachments, [
+            MessageAttachment(filename: nil, contentType: "text/calendar", size: eml(invite).count, inline: false),
+            MessageAttachment(filename: "invite.ics", contentType: "application/ics", size: 5, inline: false),
+        ])
+    }
+
+    func testTheReturnedHeadersOfABounceAreListed() async throws {
+        let returnedHeaders = "From: adam@example.com\nSubject: Hello"
+        let document = try await MessageDecoder.decode(eml("""
+        From: MAILER-DAEMON@example.com
+        Subject: Undelivered Mail Returned to Sender
+        Content-Type: multipart/report; report-type=delivery-status; boundary="r"
+
+        --r
+        Content-Type: text/plain
+
+        The message could not be delivered.
+        --r
+        Content-Type: message/delivery-status
+
+        Action: failed
+        --r
+        Content-Type: text/rfc822-headers
+
+        \(returnedHeaders)
+        --r--
+        """))
+
+        XCTAssertEqual(document.body, "The message could not be delivered.")
+        XCTAssertEqual(document.attachments, [
+            MessageAttachment(filename: nil, contentType: "message/delivery-status", size: 14, inline: false),
+            MessageAttachment(filename: nil, contentType: "text/rfc822-headers", size: eml(returnedHeaders).count, inline: false),
+        ])
+    }
+
+    func testAMailingListFooterOutsideTheAlternativeStaysInTheTextBody() async throws {
+        let message = eml("""
+        Subject: [list] Hello
+        Content-Type: multipart/mixed; boundary="m"
+
+        --m
+        Content-Type: multipart/alternative; boundary="a"
+
+        --a
+        Content-Type: text/plain; charset="UTF-8"
+
+        Hello list.
+        --a
+        Content-Type: text/html; charset="UTF-8"
+
+        <p>Hello list.</p>
+        --a--
+
+        --m
+        Content-Type: text/plain; charset="us-ascii"
+        Content-Disposition: inline
+
+        To unsubscribe, write to list-leave@example.com.
+        --m--
+        """)
+
+        let text = try await MessageDecoder.decode(message, body: .text)
+        XCTAssertEqual(text.body, "Hello list.\n\nTo unsubscribe, write to list-leave@example.com.")
+        XCTAssertEqual(text.attachments, [])
+    }
+
     func testGmailQuoteBecomesMarkdownQuote() async throws {
         let document = try await MessageDecoder.decode(eml("""
         From: Adam <adam@example.com>

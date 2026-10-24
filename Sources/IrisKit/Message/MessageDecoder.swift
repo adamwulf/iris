@@ -50,9 +50,14 @@ public enum MessageDecoder {
     /// of the message goes unseen. SwiftMail's `attachments` leaves out inline
     /// images (iPhone photos, images that the HTML body shows) and parts such
     /// as the returned `message/rfc822` of a bounce, so iris does not use it here.
+    /// The only other parts left out are other renditions of the body, such as
+    /// Gmail's AMP HTML (see `isOtherRendition(_:bodyParents:)`).
     static func attachments(of message: Message) -> [MessageAttachment] {
         let bodySections = Set(bodyParts(of: message).map(\.section))
-        return message.parts.filter { !bodySections.contains($0.section) }.map { part in
+        let bodyParents = Set(bodySections.map(parentSection(of:)))
+        return message.parts.filter { part in
+            !bodySections.contains(part.section) && !isOtherRendition(part, bodyParents: bodyParents)
+        }.map { part in
             MessageAttachment(
                 filename: part.filename.flatMap { $0.isEmpty ? nil : $0 },
                 contentType: mimeType(of: part.contentType),
@@ -60,6 +65,37 @@ public enum MessageDecoder {
                 inline: part.disposition?.lowercased() == "inline"
             )
         }
+    }
+
+    /// The content types that senders use only for another rendition of the
+    /// body, next to text/plain and text/html in a multipart/alternative: Gmail's
+    /// AMP HTML (Google Docs comment notifications, for example), Apple Watch
+    /// HTML, and the old enriched and rich text formats.
+    static let otherRenditionTypes: Set<String> = [
+        "text/x-amp-html", "text/watch-html", "text/enriched", "text/richtext",
+    ]
+
+    /// Whether a part is another rendition of the body: a part of one of the
+    /// `otherRenditionTypes`, with no filename and no Content-Disposition, that
+    /// has a body part as a sibling (the same parent section).
+    ///
+    /// SwiftMail keeps only the leaf parts, not the multipart types, so a
+    /// sibling can also be in a multipart/mixed or multipart/report. The type
+    /// list is what keeps parts such as text/calendar and text/rfc822-headers
+    /// next to the body in the list.
+    ///
+    /// - Parameter bodyParents: The parent section of each body part.
+    static func isOtherRendition(_ part: MessagePart, bodyParents: Set<[Int]>) -> Bool {
+        otherRenditionTypes.contains(mimeType(of: part.contentType))
+            && (part.filename?.isEmpty ?? true)
+            && part.disposition == nil
+            && bodyParents.contains(parentSection(of: part.section))
+    }
+
+    /// The section numbers of the multipart that holds a part: `[1, 2]` for
+    /// part 1.2.3, and `[]` for a part of the top-level multipart.
+    static func parentSection(of section: Section) -> [Int] {
+        Array(section.components.dropLast())
     }
 
     /// The body as Markdown, and the part it came from. When the message has
