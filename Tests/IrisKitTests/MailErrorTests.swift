@@ -1,0 +1,67 @@
+import Foundation
+import XCTest
+@testable import IrisKit
+
+final class MailErrorTests: XCTestCase {
+    func testLoginFailureNamesTheKeysAndExplainsAppPasswords() throws {
+        let error = IrisError.loginFailed(
+            account: "my_gmail", username: "me@gmail.com", host: "imap.gmail.com", reason: "NO [AUTHENTICATIONFAILED] Invalid credentials"
+        )
+        let message = try XCTUnwrap(error.errorDescription)
+        XCTAssertTrue(message.contains("imap.gmail.com"))
+        XCTAssertTrue(message.contains("me@gmail.com"))
+        XCTAssertTrue(message.contains("[AUTHENTICATIONFAILED] Invalid credentials"))
+        XCTAssertTrue(message.contains("IRIS_MY_GMAIL_IMAP_USERNAME"))
+        XCTAssertTrue(message.contains("IRIS_MY_GMAIL_IMAP_PASSWORD"))
+        XCTAssertTrue(message.contains("app-specific password"))
+        XCTAssertTrue(message.contains("Gmail and iCloud"))
+        XCTAssertTrue(message.contains("Zoho needs one when two-factor authentication is on"))
+        XCTAssertTrue(message.contains("Zoho also needs IMAP turned on"))
+    }
+
+    func testConnectionFailureNamesHostPortAndKeys() throws {
+        let error = IrisError.connectionFailed(account: "work", host: "imap.example.com", port: 143, reason: "timed out")
+        let message = try XCTUnwrap(error.errorDescription)
+        XCTAssertTrue(message.contains("imap.example.com:143"))
+        XCTAssertTrue(message.contains("IRIS_WORK_IMAP_HOST"))
+        XCTAssertTrue(message.contains("IRIS_WORK_IMAP_PORT"))
+        XCTAssertTrue(message.contains("993"))
+    }
+
+    func testUnknownMailboxPointsToTheMailboxesCommand() throws {
+        let message = try XCTUnwrap(IrisError.unknownMailbox(name: "Nope", reason: "NO no such mailbox").errorDescription)
+        XCTAssertTrue(message.contains("\"Nope\""))
+        XCTAssertTrue(message.contains("iris mailboxes"))
+    }
+
+    func testUnknownUIDPointsToTheListCommandForThatMailbox() throws {
+        let inbox = try XCTUnwrap(IrisError.unknownUID(uid: 999, mailbox: "INBOX").errorDescription)
+        XCTAssertEqual(inbox, "There is no message with UID 999 in \"INBOX\". Run `iris list` to see the UIDs.")
+        let sent = try XCTUnwrap(IrisError.unknownUID(uid: 5, mailbox: "Sent Items").errorDescription)
+        XCTAssertTrue(sent.contains("`iris list --mailbox 'Sent Items'`"))
+    }
+
+    func testPageAndLimitErrorsGiveTheValue() {
+        XCTAssertEqual(
+            IrisError.invalidPage(0).errorDescription,
+            "The page number must be 1 or more, not 0. Page 1 has the newest messages."
+        )
+        XCTAssertEqual(IrisError.invalidLimit(-2).errorDescription, "The limit must be 1 or more, not -2.")
+    }
+
+    func testDownloadTimeoutExplainsTheSwiftMailLimit() throws {
+        let message = try XCTUnwrap(IrisError.messageDownloadTimedOut(uid: 42, seconds: 10).errorDescription)
+        XCTAssertTrue(message.contains("UID 42"))
+        XCTAssertTrue(message.contains("10 seconds"))
+        XCTAssertTrue(message.contains("large"))
+        XCTAssertTrue(message.contains("known limit of SwiftMail"))
+    }
+
+    func testRedactingRemovesEveryCopyOfTheSecret() {
+        XCTAssertEqual(
+            SwiftMailClient.redacting("hunter2", in: "LOGIN me hunter2 failed: hunter2"),
+            "LOGIN me <password> failed: <password>"
+        )
+        XCTAssertEqual(SwiftMailClient.redacting("", in: "NO login failed"), "NO login failed")
+    }
+}

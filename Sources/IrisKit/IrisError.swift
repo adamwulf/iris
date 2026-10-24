@@ -20,6 +20,25 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// The HTML body could not be converted to Markdown.
     case htmlNotConverted(reason: String)
 
+    // IMAP
+
+    /// The server refused the username or password.
+    case loginFailed(account: String, username: String, host: String, reason: String)
+    /// iris could not reach the server, or the connection broke.
+    case connectionFailed(account: String, host: String, port: Int, reason: String)
+    /// EXAMINE failed: the mailbox does not exist, or the server cannot open it.
+    case unknownMailbox(name: String, reason: String)
+    /// The open mailbox has no message with this UID.
+    case unknownUID(uid: UInt32, mailbox: String)
+    /// `--page` is less than 1.
+    case invalidPage(Int)
+    /// `--limit` is less than 1.
+    case invalidLimit(Int)
+    /// The raw message did not arrive inside SwiftMail's fixed time limit.
+    case messageDownloadTimedOut(uid: UInt32, seconds: Int)
+    /// The server answered a command with NO or BAD.
+    case serverError(command: String, reason: String)
+
     public var errorDescription: String? {
         switch self {
         case .noAccountsConfigured:
@@ -46,6 +65,36 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .htmlNotConverted(let reason):
             return "The HTML body of the message could not be converted to Markdown (\(reason)). "
                 + "Run the command again with --body text."
+        // IMAP
+        case .loginFailed(let account, let username, let host, let reason):
+            return "The server \(host) refused the login for \(username) (account \"\(account)\"): \(reason). "
+                + "Check \(AccountResolver.key(.username, account: account)) and "
+                + "\(AccountResolver.key(.password, account: account)). "
+                + "Gmail and iCloud need an app-specific password, not your account password, "
+                + "and Zoho needs one when two-factor authentication is on. "
+                + "Zoho also needs IMAP turned on in Settings > Mail Accounts."
+        case .connectionFailed(let account, let host, let port, let reason):
+            return "Could not connect to \(host):\(port) (account \"\(account)\"): \(reason). "
+                + "Check your network connection, and check \(AccountResolver.key(.host, account: account)) and "
+                + "\(AccountResolver.key(.port, account: account)) (IMAP over TLS uses port 993)."
+        case .unknownMailbox(let name, let reason):
+            return "The server could not open the mailbox \"\(name)\": \(reason). "
+                + "Run `iris mailboxes` to see the mailbox names."
+        case .unknownUID(let uid, let mailbox):
+            return "There is no message with UID \(uid) in \"\(mailbox)\". "
+                + "Run `\(MessagePage.listCommand(account: nil, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit))` "
+                + "to see the UIDs."
+        case .invalidPage(let page):
+            return "The page number must be 1 or more, not \(page). Page 1 has the newest messages."
+        case .invalidLimit(let limit):
+            return "The limit must be 1 or more, not \(limit)."
+        case .messageDownloadTimedOut(let uid, let seconds):
+            return "Message UID \(uid) did not download in \(seconds) seconds. It may be large, or the connection "
+                + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
+                + "every raw-message download after \(seconds) seconds. Try again on a faster connection."
+        case .serverError(let command, let reason):
+            return "The server answered \(command) with an error: \(reason). "
+                + "Run `iris check` to test the account settings."
         }
     }
 
