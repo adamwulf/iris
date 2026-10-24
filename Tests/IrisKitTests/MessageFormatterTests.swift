@@ -8,10 +8,10 @@ final class MessageFormatterTests: XCTestCase {
     private let document = MessageDocument(
         messageID: "<reply-2@example.com>",
         subject: "Lunch on Tuesday?",
-        from: [MessageAddress(name: "André Martin", email: "andre@example.com")],
-        to: [MessageAddress(name: "Adam Wulf", email: "adam@example.com"), MessageAddress(name: nil, email: "jane@example.com")],
-        cc: [MessageAddress(name: "Team Lead", email: "lead@example.com")],
-        replyTo: [MessageAddress(name: nil, email: "lunch@example.com")],
+        from: [MailAddress(name: "André Martin", address: "andre@example.com")],
+        to: [MailAddress(name: "Adam Wulf", address: "adam@example.com"), MailAddress(name: nil, address: "jane@example.com")],
+        cc: [MailAddress(name: "Team Lead", address: "lead@example.com")],
+        replyTo: [MailAddress(name: nil, address: "lunch@example.com")],
         date: ISO8601DateFormatter().date(from: "2026-10-24T18:42:00Z"),
         inReplyTo: "<first@example.com>",
         references: ["<root@example.com>", "<first@example.com>"],
@@ -145,14 +145,14 @@ final class MessageFormatterTests: XCTestCase {
           "bodySource" : "html",
           "cc" : [
             {
-              "email" : "lead@example.com",
+              "address" : "lead@example.com",
               "name" : "Team Lead"
             }
           ],
           "date" : "2026-10-24T18:42:00Z",
           "from" : [
             {
-              "email" : "andre@example.com",
+              "address" : "andre@example.com",
               "name" : "André Martin"
             }
           ],
@@ -164,17 +164,17 @@ final class MessageFormatterTests: XCTestCase {
           ],
           "replyTo" : [
             {
-              "email" : "lunch@example.com"
+              "address" : "lunch@example.com"
             }
           ],
           "subject" : "Lunch on Tuesday?",
           "to" : [
             {
-              "email" : "adam@example.com",
+              "address" : "adam@example.com",
               "name" : "Adam Wulf"
             },
             {
-              "email" : "jane@example.com"
+              "address" : "jane@example.com"
             }
           ]
         }

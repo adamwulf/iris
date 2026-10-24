@@ -6,10 +6,10 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
     /// The `Message-ID` with angle brackets, for example `<abc@example.com>`.
     public let messageID: String?
     public let subject: String?
-    public let from: [MessageAddress]
-    public let to: [MessageAddress]
-    public let cc: [MessageAddress]
-    public let replyTo: [MessageAddress]
+    public let from: [MailAddress]
+    public let to: [MailAddress]
+    public let cc: [MailAddress]
+    public let replyTo: [MailAddress]
     /// The `Date` header, set by the sender.
     public let date: Date?
     /// The first message ID in `In-Reply-To`, with angle brackets.
@@ -25,10 +25,10 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
     public init(
         messageID: String?,
         subject: String?,
-        from: [MessageAddress],
-        to: [MessageAddress],
-        cc: [MessageAddress],
-        replyTo: [MessageAddress],
+        from: [MailAddress],
+        to: [MailAddress],
+        cc: [MailAddress],
+        replyTo: [MailAddress],
         date: Date?,
         inReplyTo: String?,
         references: [String],
@@ -48,20 +48,6 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
         self.body = body
         self.bodySource = bodySource
         self.attachments = attachments
-    }
-}
-
-/// One mailbox from an address header.
-public struct MessageAddress: Sendable, Equatable, Encodable {
-    /// The display name, already decoded from RFC 2047. `nil` when the header has none.
-    public let name: String?
-    /// The address. When the header text is not a valid address (for example
-    /// `MAILER-DAEMON`), this is that text, so that nothing the sender wrote is lost.
-    public let email: String
-
-    public init(name: String?, email: String) {
-        self.name = name
-        self.email = email
     }
 }
 

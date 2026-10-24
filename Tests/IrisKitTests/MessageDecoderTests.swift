@@ -204,15 +204,15 @@ final class MessageDecoderTests: XCTestCase {
         """))
 
         XCTAssertEqual(document.subject, "Café and Échantillon")
-        XCTAssertEqual(document.from, [MessageAddress(name: "André", email: "andre@example.com")])
+        XCTAssertEqual(document.from, [MailAddress(name: "André", address: "andre@example.com")])
         XCTAssertEqual(document.to, [
-            MessageAddress(name: "René Dupont", email: "rene@example.com"),
-            MessageAddress(name: nil, email: "plain@example.com"),
+            MailAddress(name: "René Dupont", address: "rene@example.com"),
+            MailAddress(name: nil, address: "plain@example.com"),
         ])
-        XCTAssertEqual(document.cc, [MessageAddress(name: "Doe, Jane", email: "jane@example.com")])
+        XCTAssertEqual(document.cc, [MailAddress(name: "Doe, Jane", address: "jane@example.com")])
         XCTAssertEqual(document.replyTo, [
-            MessageAddress(name: nil, email: "a@example.com"),
-            MessageAddress(name: "B", email: "b@example.com"),
+            MailAddress(name: nil, address: "a@example.com"),
+            MailAddress(name: "B", address: "b@example.com"),
         ])
     }
 
@@ -224,7 +224,7 @@ final class MessageDecoderTests: XCTestCase {
         Bounce
         """))
 
-        XCTAssertEqual(document.from, [MessageAddress(name: nil, email: "MAILER-DAEMON")])
+        XCTAssertEqual(document.from, [MailAddress(name: nil, address: "MAILER-DAEMON")])
         XCTAssertEqual(document.to, [])
     }
 
@@ -257,8 +257,8 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(document, MessageDocument(
             messageID: "<reply-2@example.com>",
             subject: "CV",
-            from: [MessageAddress(name: "Jane Doe", email: "jane@example.com")],
-            to: [MessageAddress(name: "Adam", email: "adam@example.com")],
+            from: [MailAddress(name: "Jane Doe", address: "jane@example.com")],
+            to: [MailAddress(name: "Adam", address: "adam@example.com")],
             cc: [],
             replyTo: [],
             date: ISO8601DateFormatter().date(from: "2026-10-24T18:42:00Z"),

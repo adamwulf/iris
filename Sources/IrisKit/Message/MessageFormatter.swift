@@ -68,11 +68,11 @@ public enum MessageFormatter {
         try OutputFormatter.json(document, pretty: true)
     }
 
-    /// `Name <email>, email`, or `nil` for an empty list.
-    static func addressList(_ addresses: [MessageAddress]) -> String? {
+    /// `Name <address>, address`, or `nil` for an empty list.
+    static func addressList(_ addresses: [MailAddress]) -> String? {
         guard !addresses.isEmpty else { return nil }
         return addresses.map { address in
-            address.name.map { "\($0) <\(address.email)>" } ?? address.email
+            address.name.map { "\($0) <\(address.address)>" } ?? address.address
         }
         .joined(separator: ", ")
     }

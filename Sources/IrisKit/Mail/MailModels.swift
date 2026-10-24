@@ -1,24 +1,5 @@
 import Foundation
 
-/// One mailbox of an address header, such as `Jane Doe <jane@example.com>`.
-public struct MailAddress: Sendable, Equatable, Encodable {
-    public let name: String?
-    public let address: String
-
-    public init(name: String?, address: String) {
-        self.name = name
-        self.address = address
-    }
-
-    /// The display name, else the address.
-    public var displayName: String {
-        if let name, !name.isEmpty {
-            return name
-        }
-        return address
-    }
-}
-
 /// One row of `iris list`.
 public struct MessageSummary: Sendable, Equatable, Encodable {
     /// The IMAP UID. It is valid only inside the mailbox the message was listed from.

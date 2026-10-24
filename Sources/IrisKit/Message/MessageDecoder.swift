@@ -155,16 +155,16 @@ public enum MessageDecoder {
     }
 
     /// Every mailbox in an address header. Groups are replaced by their
-    /// members, and text that is not a valid address is kept as the email.
-    static func addresses(_ entries: [AddressListEntry]) -> [MessageAddress] {
-        entries.flatMap { entry -> [MessageAddress] in
+    /// members, and text that is not a valid address is kept as the address.
+    static func addresses(_ entries: [AddressListEntry]) -> [MailAddress] {
+        entries.flatMap { entry -> [MailAddress] in
             switch entry {
             case .mailbox(let address):
-                return [MessageAddress(name: address.name, email: address.address)]
+                return [MailAddress(name: address.name, address: address.address)]
             case .group(_, let members):
-                return members.map { MessageAddress(name: $0.name, email: $0.address) }
+                return members.map { MailAddress(name: $0.name, address: $0.address) }
             case .invalid(let text):
-                return [MessageAddress(name: nil, email: text)]
+                return [MailAddress(name: nil, address: text)]
             }
         }
     }
