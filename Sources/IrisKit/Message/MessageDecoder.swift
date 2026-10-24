@@ -8,8 +8,18 @@ public enum MessageDecoder {
     /// Decodes `data`, the full message as the server sends it for `BODY[]`.
     ///
     /// - Parameter preference: Which part becomes the body. When that part is
-    ///   missing, the other one is used.
+    ///   missing, the other one is used. With `.auto`, the text part is also
+    ///   used when the HTML part cannot be converted.
     public static func decode(_ data: Data, body preference: BodyPreference = .auto) async throws -> MessageDocument {
+        try await decode(data, body: preference, convertingHTMLWith: markdown(fromHTML:))
+    }
+
+    /// `decode(_:body:)` with the HTML converter as a parameter, so that tests can make it fail.
+    static func decode(
+        _ data: Data,
+        body preference: BodyPreference,
+        convertingHTMLWith htmlToMarkdown: (String) async throws -> String
+    ) async throws -> MessageDocument {
         let message: Message
         do {
             message = try EMLParser.parse(data)
@@ -17,7 +27,7 @@ public enum MessageDecoder {
             throw IrisError.messageNotParsed(reason: error.localizedDescription)
         }
 
-        let (body, bodySource) = try await body(of: message, preference: preference)
+        let (body, bodySource) = try await body(of: message, preference: preference, htmlToMarkdown: htmlToMarkdown)
         // EMLParser leaves In-Reply-To and References in the additional fields.
         let additionalFields = message.header.additionalFields ?? [:]
         return MessageDocument(
@@ -43,27 +53,34 @@ public enum MessageDecoder {
     }
 
     /// The body as Markdown, and the part it came from.
-    static func body(of message: Message, preference: BodyPreference) async throws -> (String, BodySource?) {
-        let order: [BodySource] = preference == .text ? [.text, .html] : [.html, .text]
-        for source in order {
-            switch source {
-            case .text:
-                guard let part = message.findTextBodyPart(), let text = part.textContent else { continue }
-                logFallback(preference: preference, used: source, wanted: order[0])
-                return (plainText(text, contentType: part.contentType), .text)
-            case .html:
-                guard let part = message.findHtmlBodyPart(), let html = part.textContent else { continue }
-                logFallback(preference: preference, used: source, wanted: order[0])
-                return (try await markdown(fromHTML: html), .html)
+    static func body(
+        of message: Message,
+        preference: BodyPreference,
+        htmlToMarkdown: (String) async throws -> String
+    ) async throws -> (String, BodySource?) {
+        let textPart = message.findTextBodyPart()
+        let text = textPart.flatMap { part in part.textContent.map { plainText($0, contentType: part.contentType) } }
+        let html = message.findHtmlBodyPart()?.textContent
+
+        if preference != .text, let html {
+            do {
+                return (try await htmlToMarkdown(html), .html)
+            } catch IrisError.htmlNotConverted(let reason) where preference == .auto && text != nil {
+                IrisLog.log("The HTML part could not be converted to Markdown (\(reason)), so the text part is shown.")
             }
         }
-        return ("", nil)
-    }
-
-    private static func logFallback(preference: BodyPreference, used: BodySource, wanted: BodySource) {
-        if preference != .auto && used != wanted {
-            IrisLog.log("The message has no \(wanted.rawValue) part, so the \(used.rawValue) part is shown.")
+        if let text {
+            if preference == .html && html == nil {
+                IrisLog.log("The message has no html part, so the text part is shown.")
+            }
+            return (text, .text)
         }
+        guard let html else {
+            return ("", nil)
+        }
+        // Only `.text` gets here with an HTML part: the other choices returned or threw above.
+        IrisLog.log("The message has no text part, so the html part is shown.")
+        return (try await htmlToMarkdown(html), .html)
     }
 
     /// A text/plain body, with `format=flowed` soft breaks joined. It is not

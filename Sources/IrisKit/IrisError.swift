@@ -45,7 +45,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "Check that the UID belongs to a message in this mailbox. If it does, the message may be damaged."
         case .htmlNotConverted(let reason):
             return "The HTML body of the message could not be converted to Markdown (\(reason)). "
-                + "Choose the plain-text body instead."
+                + "Run the command again with --body text."
         }
     }
 

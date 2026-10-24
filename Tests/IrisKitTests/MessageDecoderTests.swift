@@ -2,6 +2,18 @@ import Foundation
 import XCTest
 @testable import IrisKit
 
+/// Collects the lines that IrisKit logs during one test.
+private final class LogRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+
+    var lines: [String] { lock.withLock { recorded } }
+
+    func record(_ line: String) {
+        lock.withLock { recorded.append(line) }
+    }
+}
+
 final class MessageDecoderTests: XCTestCase {
     /// Raw message bytes from text with `\n` line ends, sent as CRLF the way a server sends them.
     private func eml(_ text: String) -> Data {
@@ -92,6 +104,50 @@ final class MessageDecoderTests: XCTestCase {
         """), body: .text)
         XCTAssertEqual(htmlOnly.body, "Just *HTML*.")
         XCTAssertEqual(htmlOnly.bodySource, .html)
+    }
+
+    private func failingConverter(_ html: String) async throws -> String {
+        throw IrisError.htmlNotConverted(reason: "broken")
+    }
+
+    func testAutoUsesTheTextPartWhenHTMLConversionFails() async throws {
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+
+        let document = try await MessageDecoder.decode(eml(alternative), body: .auto, convertingHTMLWith: failingConverter)
+
+        XCTAssertEqual(document.body, "Hello *world*")
+        XCTAssertEqual(document.bodySource, .text)
+        XCTAssertEqual(recorder.lines, ["The HTML part could not be converted to Markdown (broken), so the text part is shown."])
+    }
+
+    func testExplicitHTMLThrowsWhenHTMLConversionFails() async {
+        do {
+            _ = try await MessageDecoder.decode(eml(alternative), body: .html, convertingHTMLWith: failingConverter)
+            XCTFail("Expected an error")
+        } catch {
+            XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken"))
+            XCTAssertEqual(
+                error.localizedDescription,
+                "The HTML body of the message could not be converted to Markdown (broken). Run the command again with --body text."
+            )
+        }
+    }
+
+    func testAutoThrowsWhenHTMLConversionFailsAndThereIsNoTextPart() async {
+        let htmlOnly = eml("""
+        Subject: HTML only
+        Content-Type: text/html
+
+        <p>Only HTML</p>
+        """)
+        do {
+            _ = try await MessageDecoder.decode(htmlOnly, body: .auto, convertingHTMLWith: failingConverter)
+            XCTFail("Expected an error")
+        } catch {
+            XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken"))
+        }
     }
 
     func testQuotedPrintableISO88591AndAStaleMetaCharset() async throws {
