@@ -40,8 +40,9 @@ enum ModifiedUTF7 {
 
     /// The name that `wireName` stands for, or `wireName` unchanged when it is
     /// not valid modified UTF-7. Only the form that `encode` gives is valid (RFC
-    /// 3501 allows no other), so typing the decoded name always reaches the
-    /// same mailbox.
+    /// 3501 allows no other), so for every valid wire name, typing the decoded
+    /// name reaches the same mailbox. An invalid one, such as a raw `R&D` from a
+    /// server that does not follow RFC 3501, encodes to a different wire name.
     static func decode(_ wireName: String) -> String {
         guard let name = decodedRuns(wireName), encode(name) == wireName else {
             return wireName
