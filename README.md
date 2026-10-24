@@ -9,7 +9,11 @@ against a live server.
 
 ## Install
 
-Build from source (macOS 15 or later, Swift 6.3 or later):
+```sh
+mint install adamwulf/iris@main --force
+```
+
+Or build from source (macOS 15 or later, Swift 6.3 or later):
 
 ```sh
 swift build -c release

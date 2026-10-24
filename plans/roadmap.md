@@ -61,9 +61,6 @@ done; README.md describes it.
 - A live smoke test (`iris test`) against a real account, like graham's.
 - A file log (FellerBuncher) like graham's.
 - `skill/iris/SKILL.md` for agents.
-- Publish the repo on GitHub, then install with
-  `mint install adamwulf/iris@main --force` (like graham and hunch) and add
-  that line to README.md.
 
 ## Known limits
 
