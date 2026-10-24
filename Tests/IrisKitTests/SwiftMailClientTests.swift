@@ -122,7 +122,7 @@ final class SwiftMailClientTests: XCTestCase {
         )
     }
 
-    func testOtherErrorsAreNetworkFailuresAndBecomeConnectionFailed() {
+    func testOtherErrorsOnLoginAreNetworkFailuresAndBecomeConnectionFailed() {
         struct TLSFailure: Error, CustomStringConvertible {
             var description: String { "handshake failed for secret" }
         }
@@ -132,6 +132,26 @@ final class SwiftMailClientTests: XCTestCase {
                 account: "work", host: "imap.example.com", port: 993, reason: "handshake failed for <password>"
             )
         )
+    }
+
+    func testOtherErrorsAfterLoginBecomeConnectionLostWithoutThePassword() {
+        struct ConnectionReset: Error, CustomStringConvertible {
+            var description: String { "read(descriptor:pointer:size:): Connection reset by peer (secret)" }
+        }
+        let commands: [SwiftMailClient.Command] = [
+            .capability, .list, .examine(mailbox: "INBOX"), .fetchEnvelopes, .fetchRawMessage(uid: 42),
+        ]
+        for command in commands {
+            XCTAssertEqual(
+                irisError(ConnectionReset(), command),
+                .connectionLost(
+                    account: "work",
+                    command: command.name,
+                    reason: "read(descriptor:pointer:size:): Connection reset by peer (<password>)"
+                ),
+                "\(command)"
+            )
+        }
     }
 
     func testCommandNames() {

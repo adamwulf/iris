@@ -187,20 +187,19 @@ struct SwiftMailClient: MailClient {
         case (_, IMAPError.connectionFailed):
             // The login worked, so the host and port are right. SwiftMail
             // reports a closed connection and a BYE this way.
-            return .connectionLost(
-                account: account.name,
-                command: command.name,
-                reason: redacting(password, in: reason(of: error))
-            )
+            return connectionLost(reason: reason(of: error), command: command, account: account)
         case (_, let error as IMAPError):
             return .serverError(
                 account: account.name,
                 command: command.name,
                 reason: redacting(password, in: error.description)
             )
-        default:
-            // SwiftNIO errors: DNS, TCP, and TLS failures.
+        case (.login, _):
+            // SwiftNIO errors: TCP and TLS failures.
             return connectionFailed(reason: reason(of: error), account: account)
+        default:
+            // SwiftNIO errors after login, such as a connection reset by the server.
+            return connectionLost(reason: reason(of: error), command: command, account: account)
         }
     }
 
@@ -211,6 +210,10 @@ struct SwiftMailClient: MailClient {
             port: account.port,
             reason: redacting(account.password, in: reason)
         )
+    }
+
+    private static func connectionLost(reason: String, command: Command, account: Account) -> IrisError {
+        .connectionLost(account: account.name, command: command.name, reason: redacting(account.password, in: reason))
     }
 
     private static func reason(of error: any Error) -> String {
