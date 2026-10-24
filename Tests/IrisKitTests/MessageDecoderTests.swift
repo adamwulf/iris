@@ -200,6 +200,52 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(recorder.lines, ["The message has no html part, so the text part is shown."])
     }
 
+    func testAnEmptyTextPartIsNoTextPart() async throws {
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+
+        let emptyTextOnly = try await MessageDecoder.decode(eml("""
+        Subject: Empty
+
+        \u{20}\u{20}
+
+        """))
+        XCTAssertEqual(emptyTextOnly.body, "")
+        XCTAssertNil(emptyTextOnly.bodySource)
+
+        let withHTML = eml("""
+        Subject: Empty text
+        Content-Type: multipart/alternative; boundary="b"
+
+        --b
+        Content-Type: text/plain
+
+        \u{20}
+
+        --b
+        Content-Type: text/html
+
+        <p>The <b>HTML</b>.</p>
+        --b--
+        """)
+        let text = try await MessageDecoder.decode(withHTML, body: .text)
+        XCTAssertEqual(text.body, "The **HTML**.")
+        XCTAssertEqual(text.bodySource, .html)
+        XCTAssertEqual(recorder.lines, ["The message has no text part, so the html part is shown."])
+
+        // When the HTML part cannot be converted, there is no text part to fall
+        // back to, so the error does not tell the user to try --body text.
+        for preference in [BodyPreference.auto, .html] {
+            do {
+                _ = try await MessageDecoder.decode(withHTML, body: preference, convertingHTMLWith: failingConverter)
+                XCTFail("Expected an error for --body \(preference)")
+            } catch {
+                XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken", hasTextPart: false))
+            }
+        }
+    }
+
     func testQuotedPrintableISO88591AndAStaleMetaCharset() async throws {
         let message = eml("""
         Subject: Dessert

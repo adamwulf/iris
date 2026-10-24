@@ -73,7 +73,11 @@ public enum MessageDecoder {
         let texts = parts.filter { isPlainText($0) }.compactMap { part in
             part.textContent.map { plainText($0, contentType: part.contentType) }
         }
-        let text = texts.isEmpty ? nil : joinedPieces(texts)
+        // A text part that is empty or only whitespace has nothing to show
+        // (some marketing tools and iPhone photo mails send one next to the
+        // HTML part), so it counts as no text part, and the HTML part is used instead.
+        let joinedText = joinedPieces(texts)
+        let text = joinedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : joinedText
         // An HTML part that is empty or only whitespace has nothing to show,
         // so it counts as no HTML part, and the text part is used instead.
         let htmls = parts.filter { !isPlainText($0) }.compactMap(\.textContent).filter { html in
