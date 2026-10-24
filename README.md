@@ -18,9 +18,11 @@ swift build -c release
 
 ## Setup
 
-iris reads its settings from environment variables, or from a `.env` file in
-the current directory or any parent directory (the nearest file wins, and the
-environment wins over `.env`).
+iris reads its settings from environment variables and from `.env` files. It
+reads every `.env` from the current directory up to `/` and merges them key by
+key: when two files set a key, the nearer file wins, and the environment wins
+over every `.env`. So keys in a parent `.env` (for example `~/.env`) still
+apply in a folder that has its own `.env`.
 
 Each account has a name, and its keys have the name in the middle. You can
 add as many accounts as you need. In the keys, a name is UPPERCASE letters,
@@ -29,7 +31,9 @@ you can type it in any case.
 
 `.env` rules: one `KEY=value` per line; `export KEY=value` also works; `#`
 starts a comment (in a value, only after a space, and not inside quotes);
-when a file sets a key two times, the last line wins.
+when a file sets a key two times, the last line wins. Quotes keep the text
+exactly, with no backslash escapes: put a value that has a `"` in single
+quotes, and a value that has a `'` in double quotes.
 
 ```sh
 IRIS_PERSONAL_IMAP_HOST=imap.gmail.com

@@ -82,10 +82,17 @@ done; README.md describes it.
 - SwiftMail's full-message fetch keeps only the first FETCH answer. If the
   server sends an unsolicited `* n FETCH (FLAGS ...)` first, iris reports
   that the UID does not exist. Rare in a short session; fix upstream.
+- A server that sends a mailbox name that is not valid modified UTF-7 (raw
+  `R&D` instead of `R&-D`) shows it unchanged, but typing it sends `R&-D`,
+  so that mailbox cannot be opened. RFC 3501 servers do not do this.
+- When the HTML body is shown, a text/plain part outside the
+  multipart/alternative (for example a mailing-list footer) is listed as an
+  attachment, not shown in the body.
 
 ## Open questions
 
 - Paging: page numbers (`--page 2`) are simple but shift when new mail
   arrives; a cursor (`--before <uid>`) is stable. Possibly both.
-- How the message ID is shown to users: the IMAP UID (only valid in one
-  mailbox) or a provider ID such as Gmail's `X-GM-MSGID`.
+- Messages are named by IMAP UID, which is valid in one mailbox only. A
+  thread spans mailboxes (INBOX and Sent), so `iris thread` output may need a
+  mailbox per message, or Gmail's `X-GM-MSGID`.
