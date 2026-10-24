@@ -6,21 +6,16 @@ and describe it in README.md.
 Providers that must work: Gmail, Zoho Mail, iCloud Mail. Auth is an
 app-specific password over TLS on port 993.
 
-## Milestone 1: inbox reader (in progress)
+Milestone 1 (the inbox reader: accounts, check, mailboxes, list, show) is
+done; README.md describes it.
 
-- [x] Package skeleton: `IrisKit` (all logic) + thin `iris` CLI.
-- [x] Many named accounts in `.env` (`IRIS_<NAME>_IMAP_*`), `--account`,
-      `IRIS_DEFAULT_ACCOUNT`, and `iris accounts`.
-- [x] IMAP library choice: SwiftMail (pinned by revision) + SwiftText for
-      HTML to Markdown (research: `plans/research/imap-libraries.md`).
-- [ ] Connect: a command that logs in and reports the server's capabilities
-      and the INBOX message count, to check an account's settings.
-- [ ] List: newest first, with paging. Columns: UID, sender, subject, date.
-      Formats: table (default), json, jsonl, id.
-- [ ] Show: one full message, decoded (MIME parts, base64, quoted-printable,
-      charsets, encoded headers) and printed as Markdown. HTML-only mail is
-      converted to Markdown. Also `--format json`.
-- [ ] README.md (setup per provider), AGENTS.md (architecture, recipes).
+## Next: live check against real accounts
+
+- Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` once per
+  provider (Gmail, iCloud, Zoho), and once each with a wrong password and a
+  wrong host. Nothing has run against a real server yet.
+- Record the post-login CAPABILITY and the Drafts/Sent names per provider
+  (open in `plans/research/imap-libraries.md`, section 5).
 
 ## Milestone 2: threads
 
@@ -71,6 +66,13 @@ app-specific password over TLS on port 993.
   revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. Large
   messages may fail. Fix: an upstream SwiftMail change that adds a timeout
   parameter, then a pin bump (ask Adam before opening an upstream PR).
+- A quoted non-Latin charset (`charset="koi8-r"`) is not recognized by
+  SwiftMail's `declaredCharset`, so such a body may decode wrong. UTF-8 and
+  Latin-1 are correct. Upstream: SwiftMail PR #268.
+- On a server without SPECIAL-USE (iCloud, by SwiftMail's table), SwiftMail
+  guesses the special-use attributes from mailbox names by substring, so a
+  mailbox named "Consent forms" shows `\Sent`.
+- `inReplyTo` keeps only the first message ID (the same as SwiftMail's model).
 
 ## Open questions
 
