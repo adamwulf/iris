@@ -110,4 +110,5 @@ done; README.md describes it.
 ## Open questions
 
 - Paging: page numbers (`--page 2`) are simple but shift when new mail
-  arrives; a cursor (`--before <iris-id>`) is stable. Possibly both.
+  arrives; a cursor (for example `--older-than <iris-id>`) is stable.
+  Possibly both. (`--before` is taken: it is the date filter.)

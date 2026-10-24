@@ -1,5 +1,5 @@
-import IrisKit
 import XCTest
+@testable import IrisKit
 @testable import iris
 
 final class ArgumentParsingTests: XCTestCase {
@@ -63,6 +63,19 @@ final class ArgumentParsingTests: XCTestCase {
             since: try CalendarDay(parsing: "2026-10-01"),
             before: try CalendarDay(parsing: "2026-11-01")
         ))
+    }
+
+    /// The next-page hint writes the filter options as text, so they must parse back to the same filter.
+    func testFilterOptionsInTheNextPageHintParseBackToTheSameFilter() throws {
+        let filter = MessageFilter(
+            unread: true,
+            flagged: true,
+            from: "jane@example.com",
+            subject: "Q4",
+            since: try CalendarDay(parsing: "2026-10-01"),
+            before: try CalendarDay(parsing: "2026-11-01")
+        )
+        XCTAssertEqual(try List.parse(filter.options).filter, filter)
     }
 
     func testListFilterFlagsTakeNoValue() throws {
