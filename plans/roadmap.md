@@ -11,7 +11,8 @@ app-specific password over TLS on port 993.
 - [x] Package skeleton: `IrisKit` (all logic) + thin `iris` CLI.
 - [x] Many named accounts in `.env` (`IRIS_<NAME>_IMAP_*`), `--account`,
       `IRIS_DEFAULT_ACCOUNT`, and `iris accounts`.
-- [ ] IMAP library choice (research: `plans/research/imap-libraries.md`).
+- [x] IMAP library choice: SwiftMail (pinned by revision) + SwiftText for
+      HTML to Markdown (research: `plans/research/imap-libraries.md`).
 - [ ] Connect: a command that logs in and reports the server's capabilities
       and the INBOX message count, to check an account's settings.
 - [ ] List: newest first, with paging. Columns: UID, sender, subject, date.
