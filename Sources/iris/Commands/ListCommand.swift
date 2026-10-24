@@ -18,7 +18,7 @@ struct List: AsyncParsableCommand {
     @Option(help: "The number of messages on a page.")
     var limit: Int = MailReader.defaultPageLimit
 
-    @Option(help: "The output format: table, json, jsonl, or id.")
+    @Option(help: "The output format.")
     var format: OutputFormat = .table
 
     func run() async throws {

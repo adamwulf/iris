@@ -9,7 +9,7 @@ struct Mailboxes: AsyncParsableCommand {
 
     @OptionGroup var accountOptions: AccountOptions
 
-    @Option(help: "The output format: table, json, jsonl, or id.")
+    @Option(help: "The output format.")
     var format: OutputFormat = .table
 
     func run() async throws {

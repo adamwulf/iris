@@ -15,10 +15,10 @@ struct Show: AsyncParsableCommand {
     @Option(help: "The mailbox that holds the message. UIDs belong to one mailbox.")
     var mailbox: String = MailReader.defaultMailbox
 
-    @Option(help: "The part to show: auto (HTML as Markdown when there is one, else plain text), text, or html.")
+    @Option(help: "The part to show. auto shows the HTML part as Markdown when there is one, else the plain text.")
     var body: BodyPreference = .auto
 
-    @Option(help: "The output format: markdown, json, or raw (the message source, as an .eml file).")
+    @Option(help: "The output format. raw is the message source, as an .eml file.")
     var format: MessageOutputFormat = .markdown
 
     func run() async throws {

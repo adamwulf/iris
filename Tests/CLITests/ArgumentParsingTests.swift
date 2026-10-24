@@ -86,4 +86,21 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertThrowsError(try Show.parse(["abc"]))
         XCTAssertThrowsError(try Show.parse(["-1"]))
     }
+
+    /// ArgumentParser adds "(values: ...)" to an option's help, so our help strings do not list the values too.
+    func testHelpListsTheValuesOfEachOptionOnce() {
+        let listFormats = "table, json, jsonl, id"
+        let cases: [(help: String, valueLists: [String])] = [
+            (Accounts.helpMessage(columns: 1000), [listFormats]),
+            (Mailboxes.helpMessage(columns: 1000), [listFormats]),
+            (List.helpMessage(columns: 1000), [listFormats]),
+            (Show.helpMessage(columns: 1000), ["auto, text, html", "markdown, json, raw"]),
+        ]
+        for (help, valueLists) in cases {
+            for values in valueLists {
+                XCTAssertEqual(help.components(separatedBy: "(values: \(values);").count - 1, 1, help)
+            }
+            XCTAssertFalse(help.contains(", or "), help)
+        }
+    }
 }
