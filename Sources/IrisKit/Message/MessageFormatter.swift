@@ -12,30 +12,36 @@ public enum MessageOutputFormat: String, CaseIterable, Sendable {
 
 /// Prints a `MessageDocument` the way `iris show` does.
 public enum MessageFormatter {
-    /// The bytes `iris show` writes to stdout for the raw message `data`.
-    /// `raw` gives the bytes unchanged; the other formats decode the message
-    /// and end with a newline.
+    /// The bytes `iris show` writes to stdout for the raw message `data`, read
+    /// from `irisID`. `raw` gives the bytes unchanged, so that it stays the
+    /// exact message source. The other formats decode the message, show the
+    /// iris ID, and end with a newline.
     public static func render(
         rawMessage data: Data,
+        irisID: IrisID,
         format: MessageOutputFormat,
         body preference: BodyPreference = .auto,
         timeZone: TimeZone = .current
     ) async throws -> Data {
+        func decoded() async throws -> MessageDocument {
+            var document = try await MessageDecoder.decode(data, body: preference)
+            document.irisID = irisID
+            return document
+        }
         switch format {
         case .raw:
             return data
         case .markdown:
-            let document = try await MessageDecoder.decode(data, body: preference)
-            return Data((markdown(document, timeZone: timeZone) + "\n").utf8)
+            return Data((markdown(try await decoded(), timeZone: timeZone) + "\n").utf8)
         case .json:
-            let document = try await MessageDecoder.decode(data, body: preference)
-            return Data((try json(document) + "\n").utf8)
+            return Data((try json(try await decoded()) + "\n").utf8)
         }
     }
 
-    /// The message as Markdown: a subject heading, the From/To/Cc/Date lines
-    /// (each but the last ends in a hard break), the body, and the attachments
-    /// and inline parts (only when there are any). It has no trailing newline.
+    /// The message as Markdown: a subject heading, the From/To/Cc/Date lines and
+    /// the iris ID line when `irisID` is set (each but the last ends in a hard
+    /// break), the body, and the attachments and inline parts (only when there
+    /// are any). It has no trailing newline.
     ///
     /// - Parameter timeZone: The zone for the date line. Tests pass a fixed zone.
     public static func markdown(_ document: MessageDocument, timeZone: TimeZone = .current) -> String {
@@ -49,6 +55,10 @@ public enum MessageFormatter {
         }
         let date = document.date.map { DateText.string(from: $0, timeZone: timeZone, showingZone: true) }
         headers.append("**Date:** \(date ?? "(unknown)")")
+        if let irisID = document.irisID {
+            // In code, so that Markdown does not read `_` or `[ ]` in the ID.
+            headers.append("**Iris ID:** `\(irisID)`")
+        }
 
         // A hard break after each header line except the last, so that a
         // Markdown renderer keeps one header per line.

@@ -4,7 +4,7 @@ import Foundation
 public enum IrisError: Error, Equatable, LocalizedError {
     /// No `IRIS_<NAME>_IMAP_*` setting was found.
     case noAccountsConfigured
-    /// `--account` named an account that has no settings. A bad
+    /// `--account`, or the account in an iris ID, named an account that has no settings. A bad
     /// `IRIS_DEFAULT_ACCOUNT` gives `invalidSetting` instead.
     case unknownAccount(name: String, available: [String])
     /// Two or more accounts are configured and none was chosen.
@@ -32,14 +32,16 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case connectionLost(account: String, command: String, reason: String)
     /// EXAMINE failed: the mailbox does not exist, or the server cannot open it.
     case unknownMailbox(account: String, name: String, reason: String)
-    /// The open mailbox has no message with this UID.
-    case unknownUID(account: String, uid: UInt32, mailbox: String)
+    /// The mailbox has no message with this iris ID's UID.
+    case unknownMessage(IrisID)
+    /// The text is not an iris ID, `<account>/<mailbox>/<UID>`.
+    case invalidIrisID(String)
     /// `--page` is less than 1.
     case invalidPage(Int)
     /// `--limit` is less than 1.
     case invalidLimit(Int)
     /// The raw message did not arrive inside SwiftMail's fixed time limit.
-    case messageDownloadTimedOut(uid: UInt32, seconds: Int)
+    case messageDownloadTimedOut(seconds: Int)
     /// After a good login, the server did not answer a command in time.
     case serverTimedOut(account: String, command: String)
     /// The server answered a command with NO or BAD.
@@ -67,7 +69,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
         // Message rendering
         case .messageNotParsed(let reason):
             return "The message could not be read as an email (\(reason)). "
-                + "Check that the UID belongs to a message in this mailbox. If it does, the message may be damaged."
+                + "Check that the iris ID is correct. If it is, the message may be damaged."
         case .htmlNotConverted(let reason, let hasTextPart):
             let problem = "The HTML body of the message could not be converted to Markdown (\(reason))"
             return hasTextPart
@@ -92,18 +94,21 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .unknownMailbox(let account, let name, let reason):
             return "The server could not open the mailbox \"\(name)\" (account \"\(account)\"): \(reason). "
                 + "Run `iris mailboxes --account \(MessagePage.shellQuoted(account))` to see the mailbox names."
-        case .unknownUID(let account, let uid, let mailbox):
+        case .unknownMessage(let id):
             let list = MessagePage.listCommand(
-                account: account, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit, format: .listDefault
+                account: id.account, mailbox: id.mailbox, page: 1, limit: MailReader.defaultPageLimit, format: .listDefault
             )
-            return "There is no message with UID \(uid) in \"\(mailbox)\" (account \"\(account)\"). "
-                + "Run `\(list)` to see the UIDs."
+            return "There is no message \"\(id)\". Run `\(list)` to see the iris IDs."
+        case .invalidIrisID(let text):
+            return "\"\(text)\" is not an iris ID. An iris ID is <account>/<mailbox>/<UID>, "
+                + "for example 'work/INBOX/4821'. Put the iris ID in single quotes: a mailbox name can have spaces "
+                + "or [ ], which the shell would change. Run `iris list` to see the iris IDs."
         case .invalidPage(let page):
             return "The page number must be 1 or more, not \(page). Page 1 has the newest messages."
         case .invalidLimit(let limit):
             return "The limit must be 1 or more, not \(limit)."
-        case .messageDownloadTimedOut(let uid, let seconds):
-            return "Message UID \(uid) did not download in \(seconds) seconds. It may be large, or the connection "
+        case .messageDownloadTimedOut(let seconds):
+            return "The message did not download in \(seconds) seconds. It may be large, or the connection "
                 + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
                 + "every raw-message download after \(seconds) seconds. Try again on a faster connection."
         case .serverTimedOut(let account, let command):

@@ -35,7 +35,8 @@ enum CLI {
     }
 }
 
-/// The `--account` option that every command which talks to a server takes.
+/// The `--account` option for the commands that talk to a server and take no iris ID.
+/// A command that takes an iris ID uses the account that the ID names.
 struct AccountOptions: ParsableArguments {
     @Option(name: .shortAndLong, help: "The account to use, by name. Omit to use the default account (run `iris accounts` to see them).")
     var account: String?

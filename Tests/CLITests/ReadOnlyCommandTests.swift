@@ -1,4 +1,5 @@
 import ArgumentParser
+import IrisKit
 import XCTest
 @testable import iris
 
@@ -37,9 +38,14 @@ final class ReadOnlyCommandTests: XCTestCase {
     }
 
     func testRoShowParsesTheSameAsShow() throws {
-        let readOnly = try XCTUnwrap(try Iris.parseAsRoot(["ro", "show", "42", "--format", "raw"]) as? Show)
-        XCTAssertEqual(readOnly.uid, 42)
-        XCTAssertEqual(readOnly.format, .raw)
+        let arguments = ["show", "work/INBOX/42", "--format", "raw"]
+        let plain = try XCTUnwrap(try Iris.parseAsRoot(arguments) as? Show)
+        let readOnly = try XCTUnwrap(try Iris.parseAsRoot(["ro"] + arguments) as? Show)
+
+        for command in [plain, readOnly] {
+            XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+            XCTAssertEqual(command.format, .raw)
+        }
     }
 
     func testRoRejectsACommandThatIsNotReadOnly() {

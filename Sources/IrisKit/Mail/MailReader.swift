@@ -59,7 +59,7 @@ public struct MailReader: Sendable {
             if let range = MessagePage.sequenceRange(messageCount: status.messageCount, page: page, limit: limit) {
                 messages = try await client.fetchEnvelopes(sequenceNumbers: range)
                     .sorted { $0.sequenceNumber > $1.sequenceNumber }
-                    .map(MessageSummary.init(envelope:))
+                    .map { MessageSummary(envelope: $0, account: account.name, mailbox: mailbox) }
                 hasMore = range.lowerBound > 1
             }
             return MessagePage(
@@ -73,18 +73,20 @@ public struct MailReader: Sendable {
         }
     }
 
-    /// The raw RFC 822 bytes of the message with `uid` in `mailbox`. Reading it
-    /// does not mark the message as read.
-    public func rawMessage(uid: UInt32, mailbox: String = defaultMailbox) async throws -> Data {
+    /// The raw RFC 822 bytes of the message `id`. Reading it does not mark the
+    /// message as read. A missing message throws `unknownMessage`. `id` must
+    /// name this reader's account: resolve the reader's account from `id.account`.
+    public func rawMessage(_ id: IrisID) async throws -> Data {
+        precondition(id.account == account.name, "\(id) is not in the account \(account.name)")
         // UIDs start at 1; the server would answer UID 0 with BAD.
-        guard uid >= 1 else {
-            throw IrisError.unknownUID(account: account.name, uid: uid, mailbox: mailbox)
+        guard id.uid >= 1 else {
+            throw IrisError.unknownMessage(id)
         }
         return try await withClient { client in
-            _ = try await examine(mailbox, with: client)
-            let data = try await client.fetchRawMessage(uid: uid)
+            _ = try await examine(id.mailbox, with: client)
+            let data = try await client.fetchRawMessage(uid: id.uid)
             guard !data.isEmpty else {
-                throw IrisError.unknownUID(account: account.name, uid: uid, mailbox: mailbox)
+                throw IrisError.unknownMessage(id)
             }
             return data
         }
