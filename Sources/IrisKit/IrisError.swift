@@ -4,7 +4,8 @@ import Foundation
 public enum IrisError: Error, Equatable, LocalizedError {
     /// No `IRIS_<NAME>_IMAP_*` setting was found.
     case noAccountsConfigured
-    /// `--account` or `IRIS_DEFAULT_ACCOUNT` named an account that has no settings.
+    /// `--account` named an account that has no settings. A bad
+    /// `IRIS_DEFAULT_ACCOUNT` gives `invalidSetting` instead.
     case unknownAccount(name: String, available: [String])
     /// Two or more accounts are configured and none was chosen.
     case accountNotChosen(available: [String])
@@ -82,7 +83,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .connectionFailed(let account, let host, let port, let reason):
             return "Could not connect to \(host):\(port) (account \"\(account)\"): \(reason). "
                 + "Check your network connection, and check \(AccountResolver.key(.host, account: account)) and "
-                + "\(AccountResolver.key(.port, account: account)) (IMAP over TLS uses port 993)."
+                + "\(AccountResolver.key(.port, account: account)) (IMAP over TLS uses port \(AccountResolver.defaultPort))."
         case .unknownMailbox(let account, let name, let reason):
             return "The server could not open the mailbox \"\(name)\" (account \"\(account)\"): \(reason). "
                 + "Run `iris mailboxes --account \(MessagePage.shellQuoted(account))` to see the mailbox names."
