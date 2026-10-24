@@ -70,7 +70,8 @@ final class MailErrorTests: XCTestCase {
         XCTAssertEqual(
             IrisError.invalidMessageID("4821").errorDescription,
             "\"4821\" is not a message ID. A message ID is <account>/<mailbox>/<UID>, "
-                + "for example work/INBOX/4821. Run `iris list` to see the message IDs."
+                + "for example 'work/INBOX/4821'. Put the ID in single quotes: a mailbox name can have spaces "
+                + "or [ ], which the shell would change. Run `iris list` to see the message IDs."
         )
     }
 

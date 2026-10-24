@@ -90,10 +90,10 @@ iris list                          # newest 25 messages in INBOX
 iris list --page 2 --limit 50
 iris list --mailbox "[Gmail]/Sent Mail" --format json
 
-iris show work/INBOX/4821                  # one message, as Markdown
-iris show work/INBOX/4821 --body text      # the plain-text part instead of the HTML
-iris show work/INBOX/4821 --format raw > message.eml
-iris show 'personal/[Gmail]/Sent Mail/77'  # quote an ID that has spaces
+iris show 'work/INBOX/4821'                # one message, as Markdown
+iris show 'work/INBOX/4821' --body text    # the plain-text part instead of the HTML
+iris show 'work/INBOX/4821' --format raw > message.eml
+iris show 'personal/[Gmail]/Sent Mail/77'
 ```
 
 List commands take `--format table|json|jsonl|id`. Hints and errors go to
@@ -110,6 +110,16 @@ is a different message in each mailbox and in each account.
 The account is the text before the first `/`, the UID is the text after the
 last `/`, and the mailbox is all the text between them, so a mailbox name
 can have `/` in it (`personal/[Gmail]/All Mail/77`).
+
+Always put an ID in single quotes on the command line. A mailbox name can
+have spaces, which split the ID into two arguments, and `[ ]`, which zsh
+reads as a file pattern: `iris show personal/[Gmail]/Drafts/7` fails in zsh
+with "no matches found". Double quotes are not enough when a name has `$`,
+`` ` ``, or `!`. In a script, pass each ID as one quoted value:
+
+```sh
+iris list --format id | while IFS= read -r id; do iris show "$id"; done
+```
 
 An ID stays valid while the message stays in that mailbox. When a message
 moves to a different mailbox, it gets a new UID and a new ID. The `Message-ID`

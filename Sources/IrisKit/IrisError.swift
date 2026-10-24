@@ -101,7 +101,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "There is no message \"\(id)\". Run `\(list)` to see the message IDs."
         case .invalidMessageID(let text):
             return "\"\(text)\" is not a message ID. A message ID is <account>/<mailbox>/<UID>, "
-                + "for example work/INBOX/4821. Run `iris list` to see the message IDs."
+                + "for example 'work/INBOX/4821'. Put the ID in single quotes: a mailbox name can have spaces "
+                + "or [ ], which the shell would change. Run `iris list` to see the message IDs."
         case .invalidPage(let page):
             return "The page number must be 1 or more, not \(page). Page 1 has the newest messages."
         case .invalidLimit(let limit):

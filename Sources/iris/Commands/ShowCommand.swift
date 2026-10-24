@@ -9,7 +9,7 @@ struct Show: ReadOnlyCommand {
 
     // The ID names the account and the mailbox, so `show` has no --account or --mailbox.
     @Argument(
-        help: "The message ID from `iris list`: <account>/<mailbox>/<UID>, for example work/INBOX/4821. Quote it when the mailbox name has spaces.",
+        help: "The message ID from `iris list`: <account>/<mailbox>/<UID>, for example 'work/INBOX/4821'. Put it in single quotes: a mailbox name can have spaces or [ ], which the shell would change.",
         transform: IrisID.init(parsing:)
     )
     var id: IrisID
