@@ -74,6 +74,23 @@ final class MailReaderTests: XCTestCase {
         XCTAssertEqual(calls, [.login, .listMailboxes, .logout])
     }
 
+    func testMailboxesDecodesTheWireNamesBeforeMerging() async throws {
+        let fake = FakeMailClient(mailboxes: [
+            MailboxInfo(name: "[Gmail]/Entw&APw-rfe", attributes: []),
+            MailboxInfo(name: "R&-D", attributes: []),
+            MailboxInfo(name: "[Gmail]/Entw&APw-rfe", attributes: [#"\Drafts"#]),
+            MailboxInfo(name: "Bad&Name", attributes: []),
+        ])
+
+        let mailboxes = try await reader(fake).mailboxes()
+
+        XCTAssertEqual(mailboxes, [
+            MailboxInfo(name: "[Gmail]/Entwürfe", attributes: [#"\Drafts"#]),
+            MailboxInfo(name: "Bad&Name", attributes: []),
+            MailboxInfo(name: "R&D", attributes: []),
+        ], "a name that is not valid modified UTF-7 stays as the server sent it")
+    }
+
     // MARK: - list paging
 
     func testFirstPageHasTheNewestMessagesNewestFirst() async throws {
@@ -208,7 +225,7 @@ final class MailReaderTests: XCTestCase {
         XCTAssertEqual(calls, [.login, .examine("[Gmail]/Entw&APw-rfe"), .fetchEnvelopes(1...1), .logout])
     }
 
-    func testUnknownMailboxErrorHasTheDecodedName() async {
+    func testUnknownMailboxErrorHasTheNameTheUserTypedNotTheWireName() async {
         let fake = FakeMailClient.inbox(count: 1)
 
         await assertThrows(.unknownMailbox(account: "work", name: "R&D", reason: "NO no such mailbox")) {
@@ -217,6 +234,13 @@ final class MailReaderTests: XCTestCase {
 
         let calls = await fake.calls
         XCTAssertEqual(calls, [.login, .examine("R&-D"), .logout])
+    }
+
+    func testOtherExamineErrorsPassThrough() async {
+        let failure = IrisError.serverTimedOut(account: "work", command: "EXAMINE")
+        let fake = FakeMailClient(errors: [.examine: failure])
+
+        await assertThrows(failure) { try await self.reader(fake).list(mailbox: "R&D") }
     }
 
     func testListUsesTheDateHeaderElseTheInternalDate() async throws {

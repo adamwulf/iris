@@ -48,8 +48,8 @@ final class SwiftMailClientTests: XCTestCase {
         )
         XCTAssertEqual(
             irisError(IMAPError.selectFailed("NO"), .examine(mailbox: "[Gmail]/Entw&APw-rfe")),
-            .unknownMailbox(account: "work", name: "[Gmail]/Entwürfe", reason: "NO"),
-            "the error holds the name the user typed, not the wire name"
+            .unknownMailbox(account: "work", name: "[Gmail]/Entw&APw-rfe", reason: "NO"),
+            "the error holds the wire name; MailReader puts back the name the user typed"
         )
     }
 
@@ -136,16 +136,10 @@ final class SwiftMailClientTests: XCTestCase {
         )
     }
 
-    func testMailboxInfoDecodesTheModifiedUTF7Name() {
-        let names = [
-            "[Gmail]/Entw&APw-rfe": "[Gmail]/Entwürfe",
-            "R&-D": "R&D",
-            "INBOX": "INBOX",
-            "R&D": "R&D",
-        ]
-        for (wire, name) in names {
+    func testMailboxInfoKeepsTheWireName() {
+        for wire in ["[Gmail]/Entw&APw-rfe", "R&-D", "INBOX", "R&D"] {
             let info = Mailbox.Info(name: wire, attributes: [], hierarchyDelimiter: "/")
-            XCTAssertEqual(MailboxInfo(swiftMail: info).name, name, wire)
+            XCTAssertEqual(MailboxInfo(swiftMail: info).name, wire, "MailReader decodes the name, not the client")
         }
     }
 

@@ -29,12 +29,14 @@ public struct MailReader: Sendable {
         }
     }
 
-    /// Every mailbox with its special-use attributes, sorted by name.
+    /// Every mailbox with its special-use attributes, sorted by name. The names
+    /// are decoded from modified UTF-7, so they are what `--mailbox` takes.
     public func mailboxes() async throws -> [MailboxInfo] {
         let listed = try await withClient { client in
             try await client.listMailboxes()
         }
-        return MailboxInfo.merged(listed).sorted(by: MailboxInfo.areInNameOrder)
+        let decoded = listed.map { MailboxInfo(name: ModifiedUTF7.decode($0.name), attributes: $0.attributes) }
+        return MailboxInfo.merged(decoded).sorted(by: MailboxInfo.areInNameOrder)
     }
 
     /// One page of `mailbox`, newest message first. Page 1 holds the newest
@@ -88,9 +90,15 @@ public struct MailReader: Sendable {
         }
     }
 
-    /// Opens `mailbox`, a name as `mailboxes()` shows it, by its wire name in modified UTF-7.
+    /// Opens `mailbox`, a name as `mailboxes()` shows it, by its wire name in
+    /// modified UTF-7. An `unknownMailbox` error holds `mailbox`, the name the
+    /// user typed, not the wire name.
     private func examine(_ mailbox: String, with client: any MailClient) async throws -> MailboxStatus {
-        try await client.examine(mailbox: ModifiedUTF7.encode(mailbox))
+        do {
+            return try await client.examine(mailbox: ModifiedUTF7.encode(mailbox))
+        } catch IrisError.unknownMailbox(let account, _, let reason) {
+            throw IrisError.unknownMailbox(account: account, name: mailbox, reason: reason)
+        }
     }
 
     /// Runs `body` with a logged-in client, and logs out after it, also when

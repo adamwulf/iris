@@ -174,11 +174,7 @@ struct SwiftMailClient: MailClient {
                 reason: redacting(password, in: reason)
             )
         case (.examine(let mailbox), IMAPError.selectFailed(let reason)):
-            return .unknownMailbox(
-                account: account.name,
-                name: ModifiedUTF7.decode(mailbox),
-                reason: redacting(password, in: reason)
-            )
+            return .unknownMailbox(account: account.name, name: mailbox, reason: redacting(password, in: reason))
         case (.fetchRawMessage(let uid), IMAPError.timeout):
             return .messageDownloadTimedOut(uid: uid, seconds: rawMessageTimeoutSeconds)
         case (.login, IMAPError.timeout):
@@ -240,10 +236,10 @@ extension MailboxInfo {
         (.trash, #"\Trash"#),
     ]
 
-    /// `info` with its name decoded from modified UTF-7.
+    /// `info` with its wire name, in modified UTF-7, as `MailClient` gives names.
     init(swiftMail info: Mailbox.Info) {
         self.init(
-            name: ModifiedUTF7.decode(info.name),
+            name: info.name,
             attributes: Self.specialUseNames.filter { info.attributes.contains($0.attribute) }.map(\.name)
         )
     }
