@@ -73,17 +73,18 @@ public struct MailReader: Sendable {
         }
     }
 
-    /// The raw RFC 822 bytes of the message with `uid` in `mailbox`. Reading it
-    /// does not mark the message as read. A missing message throws `unknownMessage`.
-    public func rawMessage(uid: UInt32, mailbox: String) async throws -> Data {
-        let id = IrisID(account: account.name, mailbox: mailbox, uid: uid)
+    /// The raw RFC 822 bytes of the message `id`. Reading it does not mark the
+    /// message as read. A missing message throws `unknownMessage`. `id` must
+    /// name this reader's account: resolve the reader's account from `id.account`.
+    public func rawMessage(_ id: IrisID) async throws -> Data {
+        precondition(id.account == account.name, "\(id) is not in the account \(account.name)")
         // UIDs start at 1; the server would answer UID 0 with BAD.
-        guard uid >= 1 else {
+        guard id.uid >= 1 else {
             throw IrisError.unknownMessage(id)
         }
         return try await withClient { client in
-            _ = try await examine(mailbox, with: client)
-            let data = try await client.fetchRawMessage(uid: uid)
+            _ = try await examine(id.mailbox, with: client)
+            let data = try await client.fetchRawMessage(uid: id.uid)
             guard !data.isEmpty else {
                 throw IrisError.unknownMessage(id)
             }

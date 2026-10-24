@@ -11,6 +11,11 @@ final class MailReaderTests: XCTestCase {
         MailReader(account: account, makeClient: { _ in fake })
     }
 
+    /// The iris ID of `uid` in `mailbox` of the test account.
+    private func id(_ uid: UInt32, in mailbox: String = "INBOX") -> IrisID {
+        IrisID(account: account.name, mailbox: mailbox, uid: uid)
+    }
+
     /// The UIDs in `range`, newest (largest) first.
     private func uidsNewestFirst(_ range: ClosedRange<Int>) -> [UInt32] {
         range.reversed().map { UInt32($0) }
@@ -370,7 +375,7 @@ final class MailReaderTests: XCTestCase {
             rawMessages: [150: bytes]
         )
 
-        let data = try await reader(fake).rawMessage(uid: 150, mailbox: "Archive")
+        let data = try await reader(fake).rawMessage(id(150, in: "Archive"))
 
         XCTAssertEqual(data, bytes)
         let calls = await fake.calls
@@ -384,7 +389,7 @@ final class MailReaderTests: XCTestCase {
             rawMessages: [150: bytes]
         )
 
-        let data = try await reader(fake).rawMessage(uid: 150, mailbox: "~peter/mail/台北/日本語")
+        let data = try await reader(fake).rawMessage(id(150, in: "~peter/mail/台北/日本語"))
 
         XCTAssertEqual(data, bytes)
         let calls = await fake.calls
@@ -394,8 +399,8 @@ final class MailReaderTests: XCTestCase {
     func testRawMessageForAMissingUIDThrowsUnknownMessageAndLogsOut() async {
         let fake = FakeMailClient.inbox(count: 1)
 
-        await assertThrows(.unknownMessage(IrisID(account: "work", mailbox: "INBOX", uid: 999))) {
-            try await self.reader(fake).rawMessage(uid: 999, mailbox: "INBOX")
+        await assertThrows(.unknownMessage(id(999))) {
+            try await self.reader(fake).rawMessage(self.id(999))
         }
 
         let calls = await fake.calls
@@ -407,16 +412,16 @@ final class MailReaderTests: XCTestCase {
             statuses: ["[Gmail]/Entw&APw-rfe": MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)]
         )
 
-        await assertThrows(.unknownMessage(IrisID(account: "work", mailbox: "[Gmail]/Entwürfe", uid: 999))) {
-            try await self.reader(fake).rawMessage(uid: 999, mailbox: "[Gmail]/Entwürfe")
+        await assertThrows(.unknownMessage(id(999, in: "[Gmail]/Entwürfe"))) {
+            try await self.reader(fake).rawMessage(self.id(999, in: "[Gmail]/Entwürfe"))
         }
     }
 
     func testRawMessageForUIDZeroIsRejectedBeforeConnecting() async {
         let fake = FakeMailClient.inbox(count: 1)
 
-        await assertThrows(.unknownMessage(IrisID(account: "work", mailbox: "INBOX", uid: 0))) {
-            try await self.reader(fake).rawMessage(uid: 0, mailbox: "INBOX")
+        await assertThrows(.unknownMessage(id(0))) {
+            try await self.reader(fake).rawMessage(self.id(0))
         }
 
         let calls = await fake.calls
@@ -430,7 +435,7 @@ final class MailReaderTests: XCTestCase {
             errors: [.fetchRawMessage: failure]
         )
 
-        await assertThrows(failure) { try await self.reader(fake).rawMessage(uid: 101, mailbox: "INBOX") }
+        await assertThrows(failure) { try await self.reader(fake).rawMessage(self.id(101)) }
 
         let calls = await fake.calls
         XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchRawMessage(101), .logout])

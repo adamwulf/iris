@@ -104,7 +104,9 @@ stderr, so stdout is safe to pipe.
 iris names each message with one iris ID, `<account>/<mailbox>/<UID>`, for
 example `work/INBOX/4821`. `iris list` shows it (the `IRIS ID` column, the
 `irisID` key in JSON, and each line of `--format id`), and `iris show` takes
-it, so `iris show` needs no `--account` or `--mailbox`. iris never shows a UID
+it, so `iris show` needs no `--account` or `--mailbox`. `iris show` also
+shows it: an `Iris ID` line under the date in Markdown, and the `irisID` key
+in JSON (`--format raw` is the message source, unchanged). iris never shows a UID
 alone: each mailbox has its own UIDs, so the same UID is a different message
 in each mailbox and in each account.
 

@@ -97,7 +97,9 @@ Never put a password in an error message, a log line, or JSON output.
   whitespace in tables, and cells padded by `Character` (emoji are safe).
 - The next-page hint keeps `--account`, `--mailbox`, `--limit`, and
   `--format`, and is written to stderr for every format.
-- `show` takes `--format markdown|json|raw`, default `markdown`.
+- `show` takes `--format markdown|json|raw`, default `markdown`. Markdown and
+  JSON show the iris ID (`MessageFormatter.render` sets
+  `MessageDocument.irisID`); `raw` is the exact message source, never changed.
 - Hints (such as the next-page command) and errors go to stderr. stdout holds
   only data.
 

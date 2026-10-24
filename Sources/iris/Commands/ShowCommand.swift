@@ -17,12 +17,12 @@ struct Show: ReadOnlyCommand {
     @Option(help: "The part to show. auto shows the HTML part as Markdown when there is one, else the plain text.")
     var body: BodyPreference = .auto
 
-    @Option(help: "The output format. raw is the message source, as an .eml file. json has the iris ID as irisID, and the Message-ID header as messageID.")
+    @Option(help: "The output format. markdown and json show the iris ID (json as irisID, next to the Message-ID header as messageID). raw is the message source exactly as the server sent it, as an .eml file.")
     var format: MessageOutputFormat = .markdown
 
     func run() async throws {
         let account = try AccountResolver.resolve(name: irisID.account, settings: AccountResolver.settings())
-        let data = try await MailReader(account: account).rawMessage(uid: irisID.uid, mailbox: irisID.mailbox)
+        let data = try await MailReader(account: account).rawMessage(irisID)
         FileHandle.standardOutput.write(
             try await MessageFormatter.render(rawMessage: data, irisID: irisID, format: format, body: body)
         )

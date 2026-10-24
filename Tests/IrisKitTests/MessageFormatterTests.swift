@@ -6,6 +6,7 @@ final class MessageFormatterTests: XCTestCase {
     private let chicago = TimeZone(identifier: "America/Chicago")!
 
     private let document = MessageDocument(
+        irisID: IrisID(account: "my_gmail", mailbox: "[Gmail]/All Mail", uid: 77),
         messageID: "<reply-2@example.com>",
         subject: "Lunch on Tuesday?",
         from: [MailAddress(name: "André Martin", address: "andre@example.com")],
@@ -31,7 +32,8 @@ final class MessageFormatterTests: XCTestCase {
         **From:** André Martin <andre@example.com>\u{20}\u{20}
         **To:** Adam Wulf <adam@example.com>, jane@example.com\u{20}\u{20}
         **Cc:** Team Lead <lead@example.com>\u{20}\u{20}
-        **Date:** 2026-10-24 13:42 CDT
+        **Date:** 2026-10-24 13:42 CDT\u{20}\u{20}
+        **Iris ID:** `my_gmail/[Gmail]/All Mail/77`
 
         ---
 
@@ -48,7 +50,8 @@ final class MessageFormatterTests: XCTestCase {
         """)
     }
 
-    func testMarkdownForAnEmptyDocument() {
+    /// Only a document from `MessageDecoder` alone has no iris ID; `render` always sets it.
+    func testMarkdownForAnEmptyDocumentWithoutAnIrisID() {
         let empty = MessageDocument(
             messageID: nil, subject: " ", from: [], to: [], cc: [], replyTo: [], date: nil,
             inReplyTo: nil, references: [], body: "", bodySource: nil, attachments: []
@@ -96,13 +99,15 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(output, latin1Message)
     }
 
-    func testRenderMarkdownDecodesAndEndsWithANewline() async throws {
+    func testRenderMarkdownDecodesShowsTheIrisIDAndEndsWithANewline() async throws {
         let output = try await MessageFormatter.render(
             rawMessage: latin1Message, irisID: irisID, format: .markdown, timeZone: chicago
         )
-        let document = try await MessageDecoder.decode(latin1Message)
+        var document = try await MessageDecoder.decode(latin1Message)
+        document.irisID = irisID
         XCTAssertEqual(String(decoding: output, as: UTF8.self), MessageFormatter.markdown(document, timeZone: chicago) + "\n")
         XCTAssertTrue(String(decoding: output, as: UTF8.self).contains("Café"))
+        XCTAssertTrue(String(decoding: output, as: UTF8.self).contains("**Iris ID:** `work/INBOX/42`"))
     }
 
     func testRenderJSONDecodesAddsTheIrisIDAndEndsWithANewline() async throws {
@@ -137,8 +142,6 @@ final class MessageFormatterTests: XCTestCase {
     }
 
     func testJSONIsDeterministicAndHasNoAttachmentBytes() throws {
-        var document = document
-        document.irisID = IrisID(account: "personal", mailbox: "[Gmail]/All Mail", uid: 77)
         XCTAssertEqual(try MessageFormatter.json(document), """
         {
           "attachments" : [
@@ -176,7 +179,7 @@ final class MessageFormatterTests: XCTestCase {
             }
           ],
           "inReplyTo" : "<first@example.com>",
-          "irisID" : "personal/[Gmail]/All Mail/77",
+          "irisID" : "my_gmail/[Gmail]/All Mail/77",
           "messageID" : "<reply-2@example.com>",
           "references" : [
             "<root@example.com>",
