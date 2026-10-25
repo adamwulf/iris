@@ -155,6 +155,15 @@ Next:
   works. The conversion also keeps only the `charset` parameter of a
   Content-Type, so a `format=flowed` text body keeps its soft line breaks.
   Fix upstream (decode `filename*`, keep the parameters).
+- A large message, shown in parts, takes its date from SwiftMail's ENVELOPE
+  date parser (`FetchMessageInfoHandler.parseEnvelopeDate`), which reads no
+  date without seconds (`Sat, 24 Oct 2026 13:42 -0500`), and SwiftMail
+  keeps no raw `Date` value (it leaves Date out of `additionalFields`), so
+  `HeaderDate` cannot read it either. Such a date shows as `(unknown)`, and
+  the attribution line of a draft that quotes it loses its date
+  ("Jane Doe wrote:" instead of "On ..., Jane Doe wrote:"). Fix upstream:
+  accept a time without seconds in the ENVELOPE date parser, or keep the
+  raw `Date` value in `additionalFields`.
 - `iris download` fetches one part with SwiftMail's `fetchPart`, whose
   `FetchMessagePartCommand.timeoutSeconds` is hard-coded at 60 at the
   pinned revision, so an attachment that takes more than 60 seconds to
