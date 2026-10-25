@@ -1,10 +1,12 @@
 import Foundation
 import SwiftMail
 
-/// The real `MailClient` and `MailWriteClient`, over SwiftMail's `IMAPServer`.
-/// It only converts types and errors. The logic is in `MailReader` and
-/// `MailWriter`, where the tests cover it. For an account that signs in with
-/// Google, `login()` first gets an access token from `GoogleTokenEndpoint`.
+/// The real `MailClient`, `MailWriteClient`, and `DraftClient`, over SwiftMail's
+/// `IMAPServer`. It only converts types and errors. The logic is in
+/// `MailReader`, `MailWriter`, and `DraftWriter`, where the tests cover it.
+/// `MailReader` holds it as `any MailClient`, which has no write calls. For an
+/// account that signs in with Google, `login()` first gets an access token
+/// from `GoogleTokenEndpoint`.
 struct SwiftMailClient: MailWriteClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
@@ -39,6 +41,8 @@ struct SwiftMailClient: MailWriteClient {
         /// `mailbox` is the wire name, in modified UTF-7.
         case select(mailbox: String)
         case store
+        /// `mailbox` is the wire name, in modified UTF-7.
+        case append(mailbox: String)
 
         /// The command's name in error messages.
         var name: String {
@@ -52,6 +56,7 @@ struct SwiftMailClient: MailWriteClient {
             case .fetchEnvelopes, .fetchThreadHeaders, .fetchRawMessage: return "FETCH"
             case .select: return "SELECT"
             case .store: return "STORE"
+            case .append: return "APPEND"
             }
         }
     }
@@ -356,6 +361,13 @@ struct SwiftMailClient: MailWriteClient {
             return .unknownMailbox(account: account.name, name: mailbox, reason: redacted(reason))
         case (.fetchRawMessage, IMAPError.timeout):
             return .messageDownloadTimedOut(seconds: rawMessageTimeoutSeconds)
+        case (.append, IMAPError.appendLimitExceeded(let size, let limit)):
+            return .draftTooLarge(account: account.name, size: size, limit: limit)
+        case (.append(let mailbox), IMAPError.timeout):
+            // The server may have stored the message before the answer was due.
+            return .draftMayBeSaved(
+                account: account.name, mailbox: mailbox, reason: "the server did not answer APPEND in time"
+            )
         case (.login, IMAPError.timeout), (.authenticate, IMAPError.timeout):
             return connectionFailed(
                 reason: "the server did not answer \(command.name) in time", account: account, secrets: secrets
@@ -366,6 +378,8 @@ struct SwiftMailClient: MailWriteClient {
         case (.login, IMAPError.connectionFailed), (.authenticate, IMAPError.connectionFailed),
              (_, IMAPError.greetingFailed):
             return connectionFailed(reason: reason(of: error), account: account, secrets: secrets)
+        case (.append(let mailbox), IMAPError.connectionFailed):
+            return draftMayBeSaved(reason: reason(of: error), mailbox: mailbox, account: account, secrets: secrets)
         case (_, IMAPError.connectionFailed):
             // The login worked, so the host and port are right. SwiftMail
             // reports a closed connection and a BYE this way.
@@ -381,6 +395,9 @@ struct SwiftMailClient: MailWriteClient {
         case (.login, _), (.authenticate, _):
             // SwiftNIO errors: TCP and TLS failures.
             return connectionFailed(reason: reason(of: error), account: account, secrets: secrets)
+        case (.append(let mailbox), _):
+            // SwiftNIO errors during APPEND, such as a connection reset by the server.
+            return draftMayBeSaved(reason: reason(of: error), mailbox: mailbox, account: account, secrets: secrets)
         default:
             // SwiftNIO errors after login, such as a connection reset by the server.
             return connectionLost(reason: reason(of: error), command: command, account: account, secrets: secrets)
@@ -409,6 +426,15 @@ struct SwiftMailClient: MailWriteClient {
         )
     }
 
+    private static func draftMayBeSaved(
+        reason: String,
+        mailbox: String,
+        account: Account,
+        secrets: [String]
+    ) -> IrisError {
+        .draftMayBeSaved(account: account.name, mailbox: mailbox, reason: Redaction.redacting(secrets, in: reason))
+    }
+
     private static func reason(of error: any Error) -> String {
         switch error {
         case IMAPError.connectionFailed(let reason), IMAPError.greetingFailed(let reason):
@@ -418,6 +444,39 @@ struct SwiftMailClient: MailWriteClient {
         default:
             return String(describing: error)
         }
+    }
+}
+
+/// The draft calls. `login()`, `listMailboxes()`, and `logout()` are the same
+/// as for `MailClient`.
+extension SwiftMailClient: DraftClient {
+    func appendDraft(_ draft: DraftMessage, to mailbox: String) async throws -> UInt32? {
+        // createDraft adds the \Draft flag and X-Uniform-Type-Identifier:
+        // com.apple.mail-draft, which makes Apple Mail treat it as its own draft.
+        let result = try await run(.append(mailbox: mailbox)) {
+            try await server.createDraft(from: Email(draft: draft), in: mailbox)
+        }
+        return result.firstUID?.value
+    }
+}
+
+extension Email {
+    /// `draft` as SwiftMail writes it. `constructContent` adds Date (now), a new
+    /// Message-ID, and multipart/alternative with the text and HTML parts.
+    init(draft: DraftMessage) {
+        func emailAddress(_ address: MailAddress) -> EmailAddress {
+            EmailAddress(name: address.name, address: address.address)
+        }
+        self.init(
+            sender: emailAddress(draft.from),
+            recipients: draft.to.map(emailAddress),
+            ccRecipients: draft.cc.map(emailAddress),
+            subject: draft.subject,
+            textBody: draft.markdown,
+            htmlBody: draft.html
+        )
+        let headers = draft.threadingHeaders
+        additionalHeaders = headers.isEmpty ? nil : headers
     }
 }
 

@@ -300,6 +300,115 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.Command.fetchRawMessage.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.select(mailbox: "INBOX").name, "SELECT")
         XCTAssertEqual(SwiftMailClient.Command.store.name, "STORE")
+        XCTAssertEqual(SwiftMailClient.Command.append(mailbox: "Drafts").name, "APPEND")
+    }
+
+    // MARK: - APPEND errors
+
+    func testAppendLimitExceededBecomesDraftTooLarge() {
+        XCTAssertEqual(
+            irisError(IMAPError.appendLimitExceeded(2_000_000, 1_000_000), .append(mailbox: "Drafts")),
+            .draftTooLarge(account: "work", size: 2_000_000, limit: 1_000_000)
+        )
+    }
+
+    /// The server may have saved the draft, so the error must not just say "try again".
+    func testTimeoutDuringAppendBecomesDraftMayBeSavedWithTheWireName() {
+        XCTAssertEqual(
+            irisError(IMAPError.timeout, .append(mailbox: "[Gmail]/Entw&APw-rfe")),
+            .draftMayBeSaved(
+                account: "work", mailbox: "[Gmail]/Entw&APw-rfe", reason: "the server did not answer APPEND in time"
+            ),
+            "the error holds the wire name; DraftWriter puts back the decoded name"
+        )
+    }
+
+    func testBrokenConnectionDuringAppendBecomesDraftMayBeSavedWithoutThePassword() {
+        struct ConnectionReset: Error, CustomStringConvertible {
+            var description: String { "Connection reset by peer (secret)" }
+        }
+        XCTAssertEqual(
+            irisError(IMAPError.connectionFailed("Server terminated connection: secret"), .append(mailbox: "Drafts")),
+            .draftMayBeSaved(account: "work", mailbox: "Drafts", reason: "Server terminated connection: <redacted>")
+        )
+        XCTAssertEqual(
+            irisError(ConnectionReset(), .append(mailbox: "Drafts")),
+            .draftMayBeSaved(account: "work", mailbox: "Drafts", reason: "Connection reset by peer (<redacted>)")
+        )
+    }
+
+    func testRefusedAppendBecomesAServerErrorNamingAPPEND() {
+        XCTAssertEqual(
+            irisError(IMAPError.commandFailed("NO [OVERQUOTA] secret"), .append(mailbox: "Drafts")),
+            .serverError(account: "work", command: "APPEND", reason: "Command failed: NO [OVERQUOTA] <redacted>")
+        )
+    }
+
+    func testAppendErrorsOfAGoogleAccountNeverShowTheRefreshTokenOrClientSecret() {
+        struct ConnectionReset: Error, CustomStringConvertible {
+            var description: String { "reset: client-secret 1//refresh-token" }
+        }
+        let echo = "client-secret 1//refresh-token"
+        for error in [IMAPError.connectionFailed(echo), IMAPError.commandFailed(echo), ConnectionReset()] as [any Error] {
+            let mapped = SwiftMailClient.irisError(for: error, command: .append(mailbox: "Drafts"), account: googleAccount)
+            let message = mapped.errorDescription ?? ""
+            XCTAssertTrue(message.contains("<redacted> <redacted>"), message)
+            for secret in ["client-secret", "1//refresh-token"] {
+                XCTAssertFalse(message.contains(secret), "\(secret) in \(message)")
+            }
+        }
+    }
+
+    // MARK: - Drafts
+
+    private let reply = DraftMessage(
+        from: MailAddress(name: "Me", address: "me@example.com"),
+        to: [MailAddress(name: "Jane Doe", address: "jane@example.com")],
+        cc: [MailAddress(name: nil, address: "bob@example.com")],
+        subject: "Re: Q4 plan",
+        inReplyTo: "<m3@example.com>",
+        references: (1...3).map { "<message-\($0)-0123456789@mail.example.com>" },
+        markdown: "Looks *good*.\n\nOn 2026-10-24 13:42 CDT, Jane Doe wrote:\n> Can you look?",
+        html: "<p>Looks <em>good</em>.</p>\n"
+    )
+
+    func testEmailFromADraftHasItsHeadersAndBothParts() {
+        // As IMAPServer.append(email:to:flags:internalDate:) writes it.
+        let content = Email(draft: reply).constructContent(use8BitMIME: true)
+
+        XCTAssertTrue(content.contains("From: Me <me@example.com>\r\n"), content)
+        XCTAssertTrue(content.contains("To: Jane Doe <jane@example.com>\r\n"), content)
+        XCTAssertTrue(content.contains("Cc: bob@example.com\r\n"), content)
+        XCTAssertTrue(content.contains("Subject: Re: Q4 plan\r\n"), content)
+        XCTAssertTrue(content.contains("In-Reply-To: <m3@example.com>\r\n"), content)
+        XCTAssertTrue(
+            content.contains(
+                "References: <message-1-0123456789@mail.example.com>\r\n"
+                    + " <message-2-0123456789@mail.example.com>\r\n"
+                    + " <message-3-0123456789@mail.example.com>\r\n"
+            ),
+            "SwiftMail writes the folded value as it is: \(content)"
+        )
+        XCTAssertTrue(content.contains("Content-Type: multipart/alternative;"), content)
+        XCTAssertTrue(content.contains("Content-Type: text/plain; charset=UTF-8\r\n"), content)
+        XCTAssertTrue(content.contains("Looks *good*.\n\nOn 2026-10-24 13:42 CDT, Jane Doe wrote:\n> Can you look?"), content)
+        XCTAssertTrue(content.contains("Content-Type: text/html; charset=UTF-8\r\n"), content)
+        XCTAssertTrue(content.contains("<p>Looks <em>good</em>.</p>"), content)
+        XCTAssertTrue(content.contains("Message-Id: <"), "SwiftMail makes a new Message-ID")
+        XCTAssertTrue(content.contains("\r\nDate: "), "SwiftMail dates the draft now")
+    }
+
+    func testEmailFromADraftWithoutThreadingHasNoThreadingHeaders() {
+        let first = DraftMessage(
+            from: reply.from, to: reply.to, cc: [], subject: "Re:", inReplyTo: nil, references: [],
+            markdown: "Hi", html: "<p>Hi</p>\n"
+        )
+        let email = Email(draft: first)
+        XCTAssertNil(email.additionalHeaders)
+        let content = email.constructContent()
+        XCTAssertFalse(content.contains("In-Reply-To:"), content)
+        XCTAssertFalse(content.contains("References:"), content)
+        XCTAssertFalse(content.contains("\r\nCc:"), content)
     }
 
     func testRefusedHeaderSearchIsAServerErrorNotAFilterError() {
