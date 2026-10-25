@@ -324,8 +324,8 @@ final class MailWriterTests: XCTestCase {
         )
         let calls = await fake.calls
         XCTAssertEqual(calls, [
-            // Reading: EXAMINE and BODY.PEEK[], so the original stays unread.
-            .login, .examine("INBOX"), .fetchRawMessage(9), .logout,
+            // Reading: EXAMINE, the size, and BODY.PEEK[], so the original stays unread.
+            .login, .examine("INBOX"), .fetchOutline(9), .fetchRawMessage(9), .logout,
             .login, .listMailboxes, .appendDraft(expected, "Drafts"), .logout,
         ])
     }
@@ -361,6 +361,65 @@ final class MailWriterTests: XCTestCase {
         }
 
         let calls = await fake.calls
-        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchRawMessage(10), .logout])
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchOutline(10), .logout])
+    }
+
+    /// A 20 MB original: its header fields and body come from the outline and
+    /// its one body part, and its attachment stays on the server.
+    func testSaveReplyQuotesALargeOriginalFromItsBodyPart() async throws {
+        let part = AttachmentID(components: [1])
+        let fake = FakeMailClient(
+            mailboxes: [MailboxInfo(name: "INBOX", attributes: []), drafts],
+            statuses: ["INBOX": MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 10)],
+            outlines: [9: MessageOutline(
+                size: 20_000_000,
+                headers: MessageHeaders(
+                    messageID: "<m3@example.com>",
+                    subject: "Q4 plan",
+                    from: [MailAddress(name: "Jane Doe", address: "jane@example.com")],
+                    to: [MailAddress(name: "Me", address: "me@example.com"), MailAddress(name: "Bob", address: "bob@example.com")],
+                    date: ISO8601DateFormatter().date(from: "2026-10-24T18:42:00Z"),
+                    references: ["<m1@example.com>"]
+                ),
+                parts: [
+                    PartOutline(id: part, contentType: "text/plain; charset=utf-8", encoding: "7BIT", size: 25),
+                    PartOutline(
+                        id: AttachmentID(components: [2]), contentType: "application/pdf", disposition: "attachment",
+                        encoding: "BASE64", filename: "plan.pdf", size: 27_000_000
+                    ),
+                ]
+            )],
+            parts: [9: [part: Data("Can you look at the plan?".utf8)]],
+            appendedUID: 43
+        )
+
+        let saved = try await writer(fake).saveReply(
+            to: id(9),
+            body: "Looks good.",
+            from: me,
+            replyAll: true,
+            quote: true,
+            timeZone: TimeZone(identifier: "America/Chicago")!
+        )
+
+        XCTAssertEqual(saved.irisID, id(43, in: "Drafts"))
+        let expected = DraftMessage(
+            from: me,
+            to: [MailAddress(name: "Jane Doe", address: "jane@example.com")],
+            cc: [MailAddress(name: "Bob", address: "bob@example.com")],
+            subject: "Re: Q4 plan",
+            inReplyTo: "<m3@example.com>",
+            references: ["<m1@example.com>", "<m3@example.com>"],
+            markdown: "Looks good.\n\nOn 2026-10-24 13:42 CDT, Jane Doe wrote:\n> Can you look at the plan?",
+            html: "<p>Looks good.</p>\n<p>On 2026-10-24 13:42 CDT, Jane Doe wrote:</p>\n"
+                + "<blockquote type=\"cite\">\nCan you look at the plan?\n</blockquote>\n",
+            attachments: []
+        )
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [
+            // Reading: EXAMINE, the outline, and BODY.PEEK[1]: never the whole message or the PDF.
+            .login, .examine("INBOX"), .fetchOutline(9), .fetchBodyPart(part, 9), .logout,
+            .login, .listMailboxes, .appendDraft(expected, "Drafts"), .logout,
+        ])
     }
 }

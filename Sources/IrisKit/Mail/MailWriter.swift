@@ -60,7 +60,8 @@ public struct MailWriter: Sendable {
     /// with `quote`, the original's body as a quote (see `ReplyComposer`),
     /// with `attachments` attached. `id` must name this writer's account. It
     /// takes two sessions: a `MailReader` reads the original (without marking
-    /// it as read), then `saveDraft(_:)` saves the reply.
+    /// it as read), then `saveDraft(_:)` saves the reply. A large original is
+    /// read as `show` reads it, in parts: the reply needs only its headers and body.
     public func saveReply(
         to id: IrisID,
         body: String,
@@ -71,9 +72,9 @@ public struct MailWriter: Sendable {
         timeZone: TimeZone = .current
     ) async throws -> SavedDraft {
         let reader = MailReader(account: account, makeClient: { makeClient($0) })
-        // Decoded as `show` and `thread` decode a message.
+        // Downloaded and decoded as `show` and `thread` do it.
         let original = try await MessageFormatter.document(
-            rawMessage: try await reader.rawMessage(id), irisID: id, body: .auto
+            message: try await reader.message(id), irisID: id, body: .auto
         )
         let draft = ReplyComposer.reply(
             to: original,
