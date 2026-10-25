@@ -146,7 +146,7 @@ final class SwiftMailClientTests: XCTestCase {
         )
         XCTAssertEqual(
             irisError(IMAPError.storeFailed("NO [READ-ONLY] secret"), .store),
-            .serverError(account: "work", command: "STORE", reason: "Store failed: NO [READ-ONLY] <password>")
+            .serverError(account: "work", command: "STORE", reason: "Store failed: NO [READ-ONLY] <redacted>")
         )
     }
 
