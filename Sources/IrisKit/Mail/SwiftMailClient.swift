@@ -580,7 +580,7 @@ extension PartStructure {
     /// SwiftMail keeps a message/rfc822 part at its own section, so it can be
     /// fetched whole, and adds the parts inside it after it (`2`, then `2.1`, `2.2`).
     init(swiftMail part: MessagePart) {
-        self.init(id: AttachmentID(components: part.section.components), encoding: part.encoding)
+        self.init(id: AttachmentID(components: part.section.components), encoding: part.encoding, size: part.size)
     }
 }
 

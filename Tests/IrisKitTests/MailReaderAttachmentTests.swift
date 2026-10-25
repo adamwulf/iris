@@ -42,8 +42,8 @@ final class MailReaderAttachmentTests: XCTestCase {
     /// multipart/mixed(text/plain, application/pdf), as SwiftMail gives its BODYSTRUCTURE.
     private var report: [PartStructure] {
         [
-            PartStructure(id: part(1), encoding: "7BIT"),
-            PartStructure(id: part(2), encoding: "BASE64"),
+            PartStructure(id: part(1), encoding: "7BIT", size: 24),
+            PartStructure(id: part(2), encoding: "BASE64", size: 22),
         ]
     }
 
@@ -74,7 +74,7 @@ final class MailReaderAttachmentTests: XCTestCase {
     }
 
     func testAttachmentDecodesQuotedPrintable() async throws {
-        let structure = [PartStructure(id: part(2), encoding: "QUOTED-PRINTABLE")]
+        let structure = [PartStructure(id: part(2), encoding: "QUOTED-PRINTABLE", size: 24)]
         let fake = server(structure: structure, parts: [part(2): Data("caf=C3=A9 au =\r\nlait\r\n".utf8)])
 
         let attachment = try await reader(fake).attachment(part(2), of: id(150))
@@ -85,7 +85,7 @@ final class MailReaderAttachmentTests: XCTestCase {
     func testAttachmentWithoutATransferEncodingKeepsItsBytes() async throws {
         let bytes = Data([0x00, 0xFF, 0x0D, 0x0A, 0x41])
         for encoding in [nil, "7BIT", "8BIT", "BINARY"] {
-            let structure = [PartStructure(id: part(1), encoding: encoding)]
+            let structure = [PartStructure(id: part(1), encoding: encoding, size: bytes.count)]
             let fake = server(structure: structure, parts: [part(1): bytes])
 
             let attachment = try await reader(fake).attachment(part(1), of: id(150))
@@ -99,11 +99,11 @@ final class MailReaderAttachmentTests: XCTestCase {
     func testAForwardedMessageDownloadsWholeAsAnEMLFile() async throws {
         let forwarded = Data("From: jane@example.com\r\nSubject: Plans\r\n\r\nThe plans.\r\n".utf8)
         let structure = [
-            PartStructure(id: part(1), encoding: "7BIT"),
-            PartStructure(id: part(2), encoding: "7BIT"),
-            PartStructure(id: part(2, 1), encoding: "7BIT"),
-            PartStructure(id: part(2, 2), encoding: "BASE64"),
-            PartStructure(id: part(3), encoding: "BASE64"),
+            PartStructure(id: part(1), encoding: "7BIT", size: 12),
+            PartStructure(id: part(2), encoding: "7BIT", size: forwarded.count),
+            PartStructure(id: part(2, 1), encoding: "7BIT", size: 12),
+            PartStructure(id: part(2, 2), encoding: "BASE64", size: 8),
+            PartStructure(id: part(3), encoding: "BASE64", size: 8),
         ]
         let fake = server(structure: structure, parts: [part(2): forwarded, part(2, 2): Data("SGVsbG8=".utf8)])
 
@@ -112,6 +112,38 @@ final class MailReaderAttachmentTests: XCTestCase {
 
         let inner = try await reader(fake).attachment(part(2, 2), of: id(150))
         XCTAssertEqual(inner, Data("Hello".utf8), "a part inside the forwarded message downloads too")
+    }
+
+    /// SwiftMail keeps the first FETCH answer: an unsolicited FETCH (FLAGS)
+    /// before ours, or BODY[2] NIL, gives no bytes. That must not save an empty file.
+    func testNoBytesForAPartThatIsNotEmptyThrowsBeforeAnythingIsWritten() async {
+        let fake = server(structure: report, parts: [part(2): Data()])
+
+        await assertThrows(.attachmentNotReceived(id(150), part(2))) {
+            try await self.reader(fake).attachment(self.part(2), of: self.id(150))
+        }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls.suffix(2), [.fetchPart(part(2), 150), .logout])
+    }
+
+    func testAnEmptyPartDownloadsAsNoBytes() async throws {
+        for size in [0, nil] as [Int?] {
+            let fake = server(structure: [PartStructure(id: part(2), encoding: "BASE64", size: size)], parts: [part(2): Data()])
+
+            let attachment = try await reader(fake).attachment(part(2), of: id(150))
+
+            XCTAssertEqual(attachment, Data(), "BODYSTRUCTURE size \(size.map(String.init) ?? "unknown")")
+        }
+    }
+
+    func testTheBytesNeedNotMatchTheStructureSize() async throws {
+        // Servers count line ends differently; only no bytes at all is an error.
+        let fake = server(structure: [PartStructure(id: part(2), encoding: "BASE64", size: 99)], parts: [part(2): Data("SGVsbG8=".utf8)])
+
+        let attachment = try await reader(fake).attachment(part(2), of: id(150))
+
+        XCTAssertEqual(attachment, Data("Hello".utf8))
     }
 
     func testAnAttachmentIDThatTheMessageDoesNotHaveThrowsUnknownAttachmentAndLogsOut() async {

@@ -228,6 +228,18 @@ final class MailErrorTests: XCTestCase {
         )
     }
 
+    // MARK: - Attachments
+
+    func testNoBytesForAnAttachmentSaysNothingWasSavedAndToTryAgain() {
+        XCTAssertEqual(
+            IrisError.attachmentNotReceived(
+                IrisID(account: "work", mailbox: "INBOX", uid: 150), AttachmentID(components: [2])
+            ).errorDescription,
+            "The server sent no bytes for attachment 2 of the message \"work/INBOX/150\", which is not empty, "
+                + "so iris saved nothing. Try again."
+        )
+    }
+
     func testRedactingRemovesEveryCopyOfEverySecret() {
         XCTAssertEqual(
             Redaction.redacting(["hunter2"], in: "LOGIN me hunter2 failed: hunter2"),

@@ -117,8 +117,9 @@ public struct MailReader: Sendable {
     /// downloaded (`BODY.PEEK[<section>]`, with SwiftMail's 60-second limit),
     /// never the whole message, whose download stops after 10 seconds.
     /// Reading it does not mark the message as read. A missing message throws
-    /// `unknownMessage`, and a part that the message does not have
-    /// `unknownAttachment`. `id` must name this reader's account, as for `rawMessage(_:)`.
+    /// `unknownMessage`, a part that the message does not have
+    /// `unknownAttachment`, and no bytes for a part that is not empty
+    /// `attachmentNotReceived`. `id` must name this reader's account, as for `rawMessage(_:)`.
     ///
     /// Any part in the message's BODYSTRUCTURE can be downloaded: each ID that
     /// `iris show` lists, and also a part inside a forwarded message (`2.1`).
@@ -144,6 +145,12 @@ public struct MailReader: Sendable {
                 throw IrisError.unknownAttachment(id, attachmentID)
             }
             let data = try await client.fetchPart(attachmentID, uid: id.uid)
+            // SwiftMail keeps the first FETCH answer, so an unsolicited FETCH
+            // (FLAGS) before ours, or BODY[<section>] NIL, gives no bytes.
+            // Only a part that BODYSTRUCTURE says is empty may be.
+            if data.isEmpty, let size = part.size, size > 0 {
+                throw IrisError.attachmentNotReceived(id, attachmentID)
+            }
             return TransferEncoding.decoded(data, encoding: part.encoding)
         }
     }

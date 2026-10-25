@@ -98,6 +98,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case attachmentStructureMissing(IrisID)
     /// The part did not arrive inside SwiftMail's fixed time limit for one part.
     case attachmentDownloadTimedOut(seconds: Int)
+    /// The server sent no bytes for a part that BODYSTRUCTURE says is not empty.
+    case attachmentNotReceived(IrisID, AttachmentID)
     /// `iris download` has no `-o`, and stdout is a terminal, which the bytes would garble.
     case attachmentStdoutIsTerminal
     /// `iris download -o` names an existing folder, not the file to write.
@@ -275,6 +277,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "The attachment did not download in \(seconds) seconds. It may be large, or the connection "
                 + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
                 + "every attachment download after \(seconds) seconds. Try again on a faster connection."
+        case .attachmentNotReceived(let id, let attachment):
+            return "The server sent no bytes for attachment \(attachment) of the message \"\(id)\", which is not "
+                + "empty, so iris saved nothing. Try again."
         case .attachmentStdoutIsTerminal:
             return "iris writes the attachment's bytes to stdout, and stdout is a terminal, where they would garble "
                 + "the screen. Redirect stdout to a file, as in `iris download '<iris-id>' <attachment-id> > <file>`, "

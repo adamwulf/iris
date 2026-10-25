@@ -146,6 +146,11 @@ Next:
 - SwiftMail's full-message fetch keeps only the first FETCH answer. If the
   server sends an unsolicited `* n FETCH (FLAGS ...)` first, iris reports
   that the message does not exist. Rare in a short session; fix upstream.
+  `iris download` has the same risk for its one part (`fetchPart` without a
+  range), and a server that answers `BODY[<section>] NIL` gives no bytes
+  too. There BODYSTRUCTURE gives the part's size, so for a part that is not
+  empty iris says that the server sent no bytes (`attachmentNotReceived`)
+  instead of saving an empty file.
 - A filtered `iris list` gets every matching UID in one SEARCH reply, and
   SwiftMail reads at most 1 MiB per reply
   (`IMAPServer.defaultResponseBufferLimit`). A plain SEARCH reply takes

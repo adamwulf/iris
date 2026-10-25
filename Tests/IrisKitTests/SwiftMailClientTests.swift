@@ -709,28 +709,30 @@ final class SwiftMailClientTests: XCTestCase {
 
     // MARK: - Parts
 
-    func testPartStructureKeepsTheSectionAndEncoding() {
+    func testPartStructureKeepsTheSectionEncodingAndSize() {
         let part = MessagePart(
             sectionString: "1.2", contentType: "application/pdf; name=\"report.pdf\"", disposition: "attachment",
             encoding: "BASE64", filename: "report.pdf", size: 1234
         )
-        XCTAssertEqual(PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [1, 2]), encoding: "BASE64"))
+        XCTAssertEqual(
+            PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [1, 2]), encoding: "BASE64", size: 1234)
+        )
     }
 
     func testPartStructuresAreTheBodyStructureOfTheAnswerWithTheUID() {
         let parts = [
-            MessagePart(sectionString: "1", contentType: "text/plain", encoding: "7BIT"),
-            MessagePart(sectionString: "2", contentType: "message/rfc822", encoding: "7BIT"),
-            MessagePart(sectionString: "2.1", contentType: "text/plain", encoding: "QUOTED-PRINTABLE"),
+            MessagePart(sectionString: "1", contentType: "text/plain", encoding: "7BIT", size: 10),
+            MessagePart(sectionString: "2", contentType: "message/rfc822", encoding: "7BIT", size: 300),
+            MessagePart(sectionString: "2.1", contentType: "text/plain", encoding: "QUOTED-PRINTABLE", size: 0),
         ]
         // An unsolicited FETCH for another message, such as a flag change, can come first.
         let unsolicited = MessageInfo(sequenceNumber: SequenceNumber(3), flags: [.seen])
         let answer = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), parts: parts)
 
         XCTAssertEqual(SwiftMailClient.partStructures(in: [unsolicited, answer], uid: 150), [
-            PartStructure(id: AttachmentID(components: [1]), encoding: "7BIT"),
-            PartStructure(id: AttachmentID(components: [2]), encoding: "7BIT"),
-            PartStructure(id: AttachmentID(components: [2, 1]), encoding: "QUOTED-PRINTABLE"),
+            PartStructure(id: AttachmentID(components: [1]), encoding: "7BIT", size: 10),
+            PartStructure(id: AttachmentID(components: [2]), encoding: "7BIT", size: 300),
+            PartStructure(id: AttachmentID(components: [2, 1]), encoding: "QUOTED-PRINTABLE", size: 0),
         ])
     }
 
@@ -748,9 +750,9 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.partStructures(in: [answer], uid: 150), [])
     }
 
-    func testPartStructureWithoutAnEncodingHasNone() {
+    func testPartStructureWithoutAnEncodingOrSizeHasNone() {
         let part = MessagePart(sectionString: "3", contentType: "image/png")
-        XCTAssertEqual(PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [3]), encoding: nil))
+        XCTAssertEqual(PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [3]), encoding: nil, size: nil))
     }
 
     // MARK: - Transfer encoding

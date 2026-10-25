@@ -122,6 +122,9 @@ struct PartStructure: Sendable, Equatable {
     let id: AttachmentID
     /// The Content-Transfer-Encoding, such as `BASE64`. Nil when the part has none.
     let encoding: String?
+    /// The size of the part's body as the message holds it, transfer-encoded
+    /// (BODYSTRUCTURE's body-fld-octets). Nil when it is not known.
+    let size: Int?
 }
 
 /// The headers of one message that `iris thread` follows, as FETCH (UID

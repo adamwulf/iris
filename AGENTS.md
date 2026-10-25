@@ -102,14 +102,19 @@ EXAMINE, `fetchStructure(uid:)`, then `fetchPart(_:uid:)`
 "Gotchas"). `fetchStructure` is one UID FETCH (UID BODYSTRUCTURE), through
 SwiftMail's `fetchMessageInfosBulk(using:options: [.bodyStructure])`, not
 its `fetchStructure`, which fails for a missing UID and sends a second
-FETCH for filenames. It gives `[PartStructure]?` (the section and the
-transfer encoding of each part; `SwiftMailClient.partStructures(in:uid:)`
-takes them from the answer with that UID, skipping an unsolicited FETCH):
-nil for a missing message, which is `unknownMessage`, so it is also the
-existence check. Empty parts mean the answer had no BODYSTRUCTURE that
-SwiftMail could read (every message has a part): `attachmentStructureMissing`,
-not a wrong attachment ID. A section that is not in the structure is
-`unknownAttachment`, which names `iris show`. The bytes come back
+FETCH for filenames. It gives `[PartStructure]?` (the section, the
+transfer encoding, and the transfer-encoded size of each part;
+`SwiftMailClient.partStructures(in:uid:)` takes them from the answer with
+that UID, skipping an unsolicited FETCH): nil for a missing message, which
+is `unknownMessage`, so it is also the existence check. Empty parts mean
+the answer had no BODYSTRUCTURE that SwiftMail could read (every message
+has a part): `attachmentStructureMissing`, not a wrong attachment ID. A
+section that is not in the structure is `unknownAttachment`, which names
+`iris show`. `fetchPart` keeps SwiftMail's first FETCH answer, so an
+unsolicited FETCH before it, or `BODY[<section>] NIL`, gives no bytes: no
+bytes for a part whose size is above 0 is `attachmentNotReceived`, thrown
+before anything is written (the byte count need not match the size). The
+bytes come back
 transfer-encoded; `TransferEncoding.decoded(_:encoding:)` decodes base64 and
 quoted-printable with SwiftMail's public `Data.decoded(for:)`. Any section
 in the structure downloads, also one inside a forwarded message (`2.1`).
