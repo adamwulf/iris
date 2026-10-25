@@ -57,22 +57,24 @@ public struct MailWriter: Sendable {
     }
 
     /// Saves a reply to the message `id` as a draft: `body` (Markdown), then,
-    /// with `quote`, the original's body as a quote (see `ReplyComposer`).
-    /// `id` must name this writer's account. It takes two sessions: a
-    /// `MailReader` reads the original (without marking it as read), then
-    /// `saveDraft(_:)` saves the reply.
+    /// with `quote`, the original's body as a quote (see `ReplyComposer`),
+    /// with `attachments` attached. `id` must name this writer's account. It
+    /// takes two sessions: a `MailReader` reads the original (without marking
+    /// it as read), then `saveDraft(_:)` saves the reply. A large original is
+    /// read as `show` reads it, in parts: the reply needs only its headers and body.
     public func saveReply(
         to id: IrisID,
         body: String,
         from: MailAddress,
         replyAll: Bool,
         quote: Bool,
+        attachments: [DraftAttachment] = [],
         timeZone: TimeZone = .current
     ) async throws -> SavedDraft {
         let reader = MailReader(account: account, makeClient: { makeClient($0) })
-        // Decoded as `show` and `thread` decode a message.
+        // Downloaded and decoded as `show` and `thread` do it.
         let original = try await MessageFormatter.document(
-            rawMessage: try await reader.rawMessage(id), irisID: id, body: .auto
+            message: try await reader.message(id), irisID: id, body: .auto
         )
         let draft = ReplyComposer.reply(
             to: original,
@@ -81,13 +83,15 @@ public struct MailWriter: Sendable {
             username: account.username,
             replyAll: replyAll,
             quote: quote,
+            attachments: attachments,
             timeZone: timeZone
         )
         return try await saveDraft(draft)
     }
 
     /// Saves `draft` with the flags `\Seen \Draft` in the first mailbox that
-    /// LIST marks `\Drafts`. A `draftMayBeSaved` error holds the decoded name.
+    /// LIST marks `\Drafts`. A `draftMayBeSaved` or `draftRefused` error holds
+    /// the decoded name.
     func saveDraft(_ draft: DraftMessage) async throws -> SavedDraft {
         let client = makeClient(account)
         return try await client.session {
@@ -101,6 +105,8 @@ public struct MailWriter: Sendable {
                 uid = try await client.appendDraft(draft, to: drafts.name)
             } catch IrisError.draftMayBeSaved(let account, _, let reason) {
                 throw IrisError.draftMayBeSaved(account: account, mailbox: mailbox, reason: reason)
+            } catch IrisError.draftRefused(let account, _, let reason) {
+                throw IrisError.draftRefused(account: account, mailbox: mailbox, reason: reason)
             }
             return SavedDraft(
                 mailbox: mailbox,

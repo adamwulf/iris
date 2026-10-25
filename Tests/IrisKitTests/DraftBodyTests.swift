@@ -13,6 +13,7 @@ final class DraftBodyTests: XCTestCase {
     private func read(
         argument: String? = nil,
         file: String? = nil,
+        attaching: Bool = false,
         stdinIsTerminal: Bool = false,
         stdin: Data? = nil,
         files: [String: Data] = [:]
@@ -20,6 +21,7 @@ final class DraftBodyTests: XCTestCase {
         try DraftBody.read(
             argument: argument,
             file: file,
+            attaching: attaching,
             stdinIsTerminal: stdinIsTerminal,
             readStdin: {
                 guard let stdin else {
@@ -33,7 +35,8 @@ final class DraftBodyTests: XCTestCase {
                     throw NoSuchFile()
                 }
                 return data
-            }
+            },
+            fileExists: { files[$0] != nil }
         )
     }
 
@@ -117,6 +120,51 @@ final class DraftBodyTests: XCTestCase {
         assertThrows(.draftBodyNotRead(source: "the file \"missing.md\"", reason: "No such file.")) {
             try read(file: "missing.md")
         }
+    }
+
+    /// `--attach a.pdf b.pdf`, or `--attach *.pdf` that matched two files, makes
+    /// `b.pdf` the argument. The reply would be "b.pdf", and a reply piped on stdin would be lost.
+    func testWithAttachmentsAnArgumentThatNamesAFileIsRejected() {
+        assertThrows(.draftBodyNamesAFile(path: "b.pdf")) {
+            try read(argument: "b.pdf", attaching: true, files: ["b.pdf": Data("%PDF".utf8)])
+        }
+        assertThrows(.draftBodyNamesAFile(path: "docs/b.pdf")) {
+            try read(argument: "docs/b.pdf", attaching: true, files: ["docs/b.pdf": Data()])
+        }
+    }
+
+    /// `-F reply.md --attach a.pdf b.pdf` makes `b.pdf` the argument next to -F:
+    /// draftBodyNamesAFile says why, where draftBodyGivenTwice would not.
+    func testWithAttachmentsAnArgumentThatNamesAFileWinsOverGivenTwice() {
+        let files = ["reply.md": Data("From a file.".utf8), "b.pdf": Data("%PDF".utf8)]
+        assertThrows(.draftBodyNamesAFile(path: "b.pdf")) {
+            try read(argument: "b.pdf", file: "reply.md", attaching: true, files: files)
+        }
+        // stdin is nil, so the test fails if it is read.
+        assertThrows(.draftBodyNamesAFile(path: "b.pdf")) {
+            try read(argument: "b.pdf", file: "-", attaching: true, files: files)
+        }
+    }
+
+    func testWithAttachmentsAnArgumentThatNamesNoFileAndAFileAreStillGivenTwice() {
+        let files = ["reply.md": Data("From a file.".utf8)]
+        assertThrows(.draftBodyGivenTwice) { try read(argument: "Thanks!", file: "reply.md", attaching: true, files: files) }
+        assertThrows(.draftBodyGivenTwice) { try read(argument: "Thanks!", file: "-", attaching: true, stdin: Data("x".utf8)) }
+    }
+
+    func testWithAttachmentsAnArgumentThatNamesNoFileIsTheReply() throws {
+        XCTAssertEqual(try read(argument: "Thanks!", attaching: true, files: ["a.pdf": Data()]), "Thanks!")
+    }
+
+    func testWithAttachmentsAReplyFromAFileOrStdinIsRead() throws {
+        let files = ["reply.md": Data("From a file.".utf8)]
+        XCTAssertEqual(try read(file: "reply.md", attaching: true, files: files), "From a file.")
+        XCTAssertEqual(try read(attaching: true, stdin: Data("Piped.".utf8)), "Piped.")
+    }
+
+    /// Without --attach the check is off. (`-F a.md b.md` already fails as draftBodyGivenTwice.)
+    func testWithoutAttachmentsAnArgumentThatNamesAFileIsTheReply() throws {
+        XCTAssertEqual(try read(argument: "b.pdf", files: ["b.pdf": Data()]), "b.pdf")
     }
 
     func testAReplyThatIsNotUTF8IsRejected() {

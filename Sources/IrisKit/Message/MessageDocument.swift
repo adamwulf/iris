@@ -66,23 +66,58 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
 /// One part of the message that is not the body, described without its
 /// bytes: a file attachment, or an inline part that a terminal cannot show.
 public struct MessageAttachment: Sendable, Equatable, Encodable {
+    /// The part's MIME section number, which `iris download` takes to save the part.
+    public let attachmentID: AttachmentID
     /// The decoded filename. `nil` when the part has none.
     public let filename: String?
     /// The MIME type in lowercase, without parameters, for example `application/pdf`.
     public let contentType: String
-    /// The size after the transfer encoding (base64, quoted-printable) is removed.
+    /// The size after the transfer encoding (base64, quoted-printable) is
+    /// removed. It is an estimate when `sizeIsEstimate` is true.
     public let size: Int
+    /// Whether `size` is an estimate. iris downloads a large message in parts
+    /// and leaves its attachments on the server, so it knows only the size of
+    /// each one as the message holds it, with the transfer encoding (see
+    /// `MessageDecoder.decodedSize(of:)`). JSON has the key only when it is true.
+    public let sizeIsEstimate: Bool
     /// Whether the part's `Content-Disposition` is `inline`: the sender's mail
     /// app showed it inside the message, for example a photo or a PDF between
     /// two paragraphs. `false` for `attachment` and for a part with no
     /// `Content-Disposition`, such as the returned message in a bounce.
     public let inline: Bool
 
-    public init(filename: String?, contentType: String, size: Int, inline: Bool) {
+    public init(
+        attachmentID: AttachmentID,
+        filename: String?,
+        contentType: String,
+        size: Int,
+        sizeIsEstimate: Bool = false,
+        inline: Bool
+    ) {
+        self.attachmentID = attachmentID
         self.filename = filename
         self.contentType = contentType
         self.size = size
+        self.sizeIsEstimate = sizeIsEstimate
         self.inline = inline
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case attachmentID, filename, contentType, size, sizeIsEstimate, inline
+    }
+
+    /// The keys of the synthesized encoding, and `sizeIsEstimate` only when it
+    /// is true, so a message that iris downloaded whole has the JSON it always had.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(attachmentID, forKey: .attachmentID)
+        try container.encodeIfPresent(filename, forKey: .filename)
+        try container.encode(contentType, forKey: .contentType)
+        try container.encode(size, forKey: .size)
+        if sizeIsEstimate {
+            try container.encode(sizeIsEstimate, forKey: .sizeIsEstimate)
+        }
+        try container.encode(inline, forKey: .inline)
     }
 }
 

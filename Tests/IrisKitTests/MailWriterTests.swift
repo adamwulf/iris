@@ -157,7 +157,8 @@ final class MailWriterTests: XCTestCase {
             inReplyTo: nil,
             references: [],
             markdown: "Looks good.",
-            html: "<p>Looks good.</p>\n"
+            html: "<p>Looks good.</p>\n",
+            attachments: []
         )
     }
 
@@ -259,6 +260,20 @@ final class MailWriterTests: XCTestCase {
         XCTAssertEqual(calls.last, .logout)
     }
 
+    func testDraftRefusedGetsTheDecodedMailboxNameAndLogsOut() async {
+        let fake = FakeMailClient(
+            mailboxes: [MailboxInfo(name: "[Gmail]/Entw&APw-rfe", attributes: [#"\Drafts"#])],
+            errors: [.appendDraft: IrisError.draftRefused(account: "work", mailbox: "[Gmail]/Entw&APw-rfe", reason: "NO")]
+        )
+
+        await assertThrows(.draftRefused(account: "work", mailbox: "[Gmail]/Entwürfe", reason: "NO")) {
+            _ = try await self.writer(fake).saveDraft(self.draft)
+        }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls.last, .logout)
+    }
+
     private let original = """
         From: Jane Doe <jane@example.com>
         To: Me <me@example.com>, Bob <bob@example.com>
@@ -304,14 +319,38 @@ final class MailWriterTests: XCTestCase {
             markdown: markdown,
             // The original is text/plain, so the quote is its text, escaped.
             html: "<p>Looks good.</p>\n<p>On 2026-10-24 13:42 CDT, Jane Doe wrote:</p>\n"
-                + "<blockquote type=\"cite\">\nCan you look at the plan?\n</blockquote>\n"
+                + "<blockquote type=\"cite\">\nCan you look at the plan?\n</blockquote>\n",
+            attachments: []
         )
         let calls = await fake.calls
         XCTAssertEqual(calls, [
-            // Reading: EXAMINE and BODY.PEEK[], so the original stays unread.
-            .login, .examine("INBOX"), .fetchRawMessage(9), .logout,
+            // Reading: EXAMINE, the size, and BODY.PEEK[], so the original stays unread.
+            .login, .examine("INBOX"), .fetchOutline(9), .fetchRawMessage(9), .logout,
             .login, .listMailboxes, .appendDraft(expected, "Drafts"), .logout,
         ])
+    }
+
+    func testSaveReplyAppendsTheDraftWithItsAttachments() async throws {
+        let fake = server(holding: original, uid: 9)
+        let files = [
+            DraftAttachment(filename: "plan.pdf", mimeType: "application/pdf", data: Data("%PDF".utf8)),
+            DraftAttachment(filename: "empty.txt", mimeType: "text/plain", data: Data()),
+        ]
+
+        let saved = try await writer(fake).saveReply(
+            to: id(9), body: "See the files.", from: me, replyAll: false, quote: false, attachments: files
+        )
+
+        XCTAssertEqual(saved.irisID, id(43, in: "Drafts"))
+        let calls = await fake.calls
+        let appended = calls.compactMap { call -> DraftMessage? in
+            guard case .appendDraft(let draft, "Drafts") = call else {
+                return nil
+            }
+            return draft
+        }
+        XCTAssertEqual(appended.map(\.attachments), [files], "one APPEND, with the files in order")
+        XCTAssertEqual(appended.first?.markdown, "See the files.")
     }
 
     func testSaveReplyToAMissingMessageNeverStartsTheSaveSession() async {
@@ -322,6 +361,65 @@ final class MailWriterTests: XCTestCase {
         }
 
         let calls = await fake.calls
-        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchRawMessage(10), .logout])
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchOutline(10), .logout])
+    }
+
+    /// A 20 MB original: its header fields and body come from the outline and
+    /// its one body part, and its attachment stays on the server.
+    func testSaveReplyQuotesALargeOriginalFromItsBodyPart() async throws {
+        let part = AttachmentID(components: [1])
+        let fake = FakeMailClient(
+            mailboxes: [MailboxInfo(name: "INBOX", attributes: []), drafts],
+            statuses: ["INBOX": MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 10)],
+            outlines: [9: MessageOutline(
+                size: 20_000_000,
+                headers: MessageHeaders(
+                    messageID: "<m3@example.com>",
+                    subject: "Q4 plan",
+                    from: [MailAddress(name: "Jane Doe", address: "jane@example.com")],
+                    to: [MailAddress(name: "Me", address: "me@example.com"), MailAddress(name: "Bob", address: "bob@example.com")],
+                    date: ISO8601DateFormatter().date(from: "2026-10-24T18:42:00Z"),
+                    references: ["<m1@example.com>"]
+                ),
+                parts: [
+                    PartOutline(id: part, contentType: "text/plain; charset=utf-8", encoding: "7BIT", size: 25),
+                    PartOutline(
+                        id: AttachmentID(components: [2]), contentType: "application/pdf", disposition: "attachment",
+                        encoding: "BASE64", filename: "plan.pdf", size: 27_000_000
+                    ),
+                ]
+            )],
+            parts: [9: [part: Data("Can you look at the plan?".utf8)]],
+            appendedUID: 43
+        )
+
+        let saved = try await writer(fake).saveReply(
+            to: id(9),
+            body: "Looks good.",
+            from: me,
+            replyAll: true,
+            quote: true,
+            timeZone: TimeZone(identifier: "America/Chicago")!
+        )
+
+        XCTAssertEqual(saved.irisID, id(43, in: "Drafts"))
+        let expected = DraftMessage(
+            from: me,
+            to: [MailAddress(name: "Jane Doe", address: "jane@example.com")],
+            cc: [MailAddress(name: "Bob", address: "bob@example.com")],
+            subject: "Re: Q4 plan",
+            inReplyTo: "<m3@example.com>",
+            references: ["<m1@example.com>", "<m3@example.com>"],
+            markdown: "Looks good.\n\nOn 2026-10-24 13:42 CDT, Jane Doe wrote:\n> Can you look at the plan?",
+            html: "<p>Looks good.</p>\n<p>On 2026-10-24 13:42 CDT, Jane Doe wrote:</p>\n"
+                + "<blockquote type=\"cite\">\nCan you look at the plan?\n</blockquote>\n",
+            attachments: []
+        )
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [
+            // Reading: EXAMINE, the outline, and BODY.PEEK[1]: never the whole message or the PDF.
+            .login, .examine("INBOX"), .fetchOutline(9), .fetchBodyPart(part, 9), .logout,
+            .login, .listMailboxes, .appendDraft(expected, "Drafts"), .logout,
+        ])
     }
 }

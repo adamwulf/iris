@@ -8,6 +8,23 @@ public enum MessageOutputFormat: String, CaseIterable, Sendable {
     case json
     /// The message source exactly as the server sent it (RFC 822, an `.eml` file).
     case raw
+
+    /// The format in which `MessageFormatter.render(message:irisID:format:body:timeZone:)`
+    /// prints the decoded message, or nil for `raw`, which is the message
+    /// source: `MailReader.rawMessage(_:)` downloads it whole, at any size.
+    public var documentFormat: MessageDocumentFormat? {
+        switch self {
+        case .markdown: return .markdown
+        case .json: return .json
+        case .raw: return nil
+        }
+    }
+}
+
+/// The `MessageOutputFormat`s that decode the message, so that `iris show`
+/// can download a large one in parts (`MailReader.message(_:)`).
+public enum MessageDocumentFormat: CaseIterable, Sendable {
+    case markdown, json
 }
 
 /// How `iris thread` prints a thread (its `--format`).
@@ -45,25 +62,23 @@ public enum ThreadMessagesFormat: CaseIterable, Sendable {
 
 /// Prints a `MessageDocument` the way `iris show` does.
 public enum MessageFormatter {
-    /// The bytes `iris show` writes to stdout for the raw message `data`, read
-    /// from `irisID`. `raw` gives the bytes unchanged, so that it stays the
-    /// exact message source. The other formats decode the message, show the
-    /// iris ID, and end with a newline.
+    /// The bytes `iris show` writes to stdout in Markdown or JSON for
+    /// `message`, read from `irisID`, as `MailReader.message(_:)` downloaded
+    /// it (whole, or a large one in parts): decoded, with the iris ID shown,
+    /// ending with a newline. For `--format raw`, `iris show` writes the bytes
+    /// of `MailReader.rawMessage(_:)` unchanged, so they stay the exact source.
     public static func render(
-        rawMessage data: Data,
+        message: DownloadedMessage,
         irisID: IrisID,
-        format: MessageOutputFormat,
+        format: MessageDocumentFormat,
         body preference: BodyPreference = .auto,
         timeZone: TimeZone = .current
     ) async throws -> Data {
+        let document = try await document(message: message, irisID: irisID, body: preference)
         switch format {
-        case .raw:
-            return data
         case .markdown:
-            let document = try await document(rawMessage: data, irisID: irisID, body: preference)
             return Data((markdown(document, timeZone: timeZone) + "\n").utf8)
         case .json:
-            let document = try await document(rawMessage: data, irisID: irisID, body: preference)
             return Data((try json(document) + "\n").utf8)
         }
     }
@@ -84,6 +99,16 @@ public enum MessageFormatter {
                 because: "it did not download in \(seconds) seconds",
                 then: "It may be large, or the connection may be slow. Try again on a faster connection."
             )
+        case .bodyTimedOut(let seconds):
+            // `iris show` downloads the same body parts under the same limit.
+            return leftOutLine(
+                id,
+                because: "its body did not download in \(seconds) seconds",
+                then: "It may be large, or the connection may be slow. Try again on a faster connection."
+            )
+        case .bodyNotReceived:
+            // An unsolicited FETCH came first; the next session most likely has none.
+            return leftOutLine(id, because: "the server sent no bytes for its body", then: "Run the command again.")
         case .gone:
             // `iris show` would not find it either.
             return leftOutLine(id, because: "it is no longer in its mailbox", then: "Run the command again.")
@@ -95,18 +120,22 @@ public enum MessageFormatter {
         "Run `iris show \(id.shellQuoted) --format raw` to see its source."
     }
 
-    /// The raw message `data` decoded, with `irisID`, the message it was read
-    /// from. A note about the part shown goes to `log`.
+    /// `message` decoded, whole or from its parts, with `irisID`, the message
+    /// it was read from. A note about the part shown goes to `log`.
     static func document(
-        rawMessage data: Data,
+        message: DownloadedMessage,
         irisID: IrisID,
         body preference: BodyPreference,
         convertingHTMLWith htmlToMarkdown: (String) async throws -> String = MessageDecoder.markdown(fromHTML:),
         log: (String) -> Void = IrisLog.log
     ) async throws -> MessageDocument {
-        var document = try await MessageDecoder.decode(
-            data, body: preference, convertingHTMLWith: htmlToMarkdown, log: log
-        )
+        var document: MessageDocument
+        switch message {
+        case .whole(let data):
+            document = try await MessageDecoder.decode(data, body: preference, convertingHTMLWith: htmlToMarkdown, log: log)
+        case .parts(let parts):
+            document = try await MessageDecoder.decode(parts, body: preference, convertingHTMLWith: htmlToMarkdown, log: log)
+        }
         document.irisID = irisID
         return document
     }
@@ -124,7 +153,7 @@ public enum MessageFormatter {
     }
 
     /// The bytes `iris thread` writes to stdout for `messages`, in their order:
-    /// each message decoded, with its iris ID, as `render(rawMessage:irisID:format:body:timeZone:)`
+    /// each message decoded, with its iris ID, as `render(message:irisID:format:body:timeZone:)`
     /// makes it. Markdown puts `threadSeparator` between the messages; JSON is
     /// one array; JSON Lines is one compact object per line. Each ends with a
     /// newline. A note about the part shown of a message is logged with the
@@ -159,13 +188,13 @@ public enum MessageFormatter {
         var leftOut: [(message: ThreadMessage, error: IrisError, line: String)] = []
         for message in messages {
             let id = message.irisID
-            switch message.rawMessage {
+            switch message.download {
             case .failure(let failure):
                 leftOut.append((message, failure.irisError(for: id), leftOutLine(id, because: failure)))
-            case .success(let data):
+            case .success(let downloaded):
                 do {
                     documents.append(try await document(
-                        rawMessage: data, irisID: id, body: preference, convertingHTMLWith: htmlToMarkdown
+                        message: downloaded, irisID: id, body: preference, convertingHTMLWith: htmlToMarkdown
                     ) { note in
                         IrisLog.log("\(id): \(note)")
                     })
@@ -206,8 +235,8 @@ public enum MessageFormatter {
     /// The message as Markdown: a subject heading, the From/To/Cc/Date lines,
     /// the iris ID line when `irisID` is set, and the Apple Mail line when
     /// `appleMailURL` is set (each but the last ends in a hard break), the
-    /// body, and the attachments and inline parts (only when there are any).
-    /// It has no trailing newline.
+    /// body, and the attachments and inline parts (only when there are any),
+    /// each with its attachment ID first. It has no trailing newline.
     ///
     /// - Parameter timeZone: The zone for the date line. Tests pass a fixed zone.
     public static func markdown(_ document: MessageDocument, timeZone: TimeZone = .current) -> String {
@@ -239,11 +268,14 @@ public enum MessageFormatter {
         if !document.attachments.isEmpty {
             lines += ["", "---", "", "**Attachments:**"]
             lines += document.attachments.map { attachment in
-                var details = [attachment.contentType, sizeText(attachment.size)]
+                let size = sizeText(attachment.size)
+                var details = [attachment.contentType, attachment.sizeIsEstimate ? "about \(size)" : size]
                 if attachment.inline {
                     details.append("inline")
                 }
-                return "- \(attachment.filename ?? "(no filename)") (\(details.joined(separator: ", ")))"
+                // The attachment ID first, in code like the iris ID, so it is easy to copy.
+                return "- `\(attachment.attachmentID)` \(attachment.filename ?? "(no filename)") "
+                    + "(\(details.joined(separator: ", ")))"
             }
         }
         return lines.joined(separator: "\n")

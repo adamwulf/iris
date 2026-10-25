@@ -16,11 +16,28 @@ describes them.
 - Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` once per
   provider (Gmail, iCloud), and once each with a wrong password and a wrong
   host.
+- Run `iris download` once per provider (Gmail, iCloud, Zoho), on a PDF, an
+  inline image, and a forwarded message (`message/rfc822`, which must save
+  as an `.eml`), and check that the bytes match the attachment.
+- Show a 20 MB message (a large PDF attached) on Zoho and on Gmail with
+  `iris show`, `iris thread`, and `iris draft`: they must take the parts
+  path (no 10 second timeout), show the body and the attachment IDs, and
+  `iris download` must then fetch the PDF. Compare the body, the filenames,
+  and the estimated sizes with `iris show --format raw` of the same message
+  on a fast link, and with the same message under 1 MiB, which takes the
+  whole path. Note what each server sends in BODYSTRUCTURE for a non-ASCII
+  filename (`filename*=`), and whether its answer to the outline FETCH puts
+  RFC822.SIZE, BODYSTRUCTURE, and the header fields in one FETCH response.
 - Run `iris read`, `iris unread`, and `iris draft` once per provider (Gmail,
   iCloud, Zoho). They have not run against a real server yet. For
   `iris draft`, check that the draft opens in Apple Mail as its own draft,
   in the thread, and that the server reports its UID (UIDPLUS; Zoho
-  advertises it).
+  advertises it). With `--attach`, check that Apple Mail and Gmail's web
+  view show the files with their names, also a non-ASCII name (RFC 2231
+  `filename*=`). Also attach a file larger than the server takes, on Zoho
+  and on Gmail: record whether each announces APPENDLIMIT (`draftTooLarge`)
+  or answers with a tagged NO (`draftRefused`, and the reason text it
+  sends), and how long the upload takes against the 30 second limit.
 - Run `iris list --search` and `iris list --to` once per provider (Gmail,
   iCloud, Zoho). IMAP TEXT and TO have not been sent to a real server
   yet: check that `--search` finds a word that is only in the body, and
@@ -119,9 +136,40 @@ Next:
 
 - Raw message download has a 10 second total deadline: SwiftMail's
   `FetchRawMessageCommand.timeoutSeconds` is hard-coded at the pinned
-  revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. Large
-  messages may fail. Fix: an upstream SwiftMail change that adds a timeout
-  parameter, then a pin bump (ask Adam before opening an upstream PR).
+  revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. `iris show`,
+  `iris thread`, and `iris draft` download a message over 1 MiB in parts
+  (its headers and BODYSTRUCTURE, then only its text and HTML parts, 60
+  seconds each), so they show its body and attachment IDs. Only
+  `iris show --format raw` still needs the whole message, so a large one can
+  time out there, and so can a message up to 1 MiB on a link slower than
+  about 0.84 Mbit/s. A chunked whole download is not possible with
+  SwiftMail's API: the ranged `fetchPart(section:of:offset:count:)` cannot
+  ask for `BODY[]`, because `Section([])` becomes `[1]`. Fix: an upstream
+  SwiftMail change that adds a timeout parameter (or a ranged `BODY[]`),
+  then a pin bump (ask Adam before opening an upstream PR).
+- A large message, shown in parts, takes its filenames from SwiftMail's
+  BODYSTRUCTURE conversion (`MessagePart+BodyStructure.swift`), which reads
+  only the `filename` and `name` parameters, not RFC 2231 `filename*=`.
+  So on a server that sends only `filename*` in BODYSTRUCTURE, a non-ASCII
+  name (`Résumé.pdf`) shows as "(no filename)"; its attachment ID still
+  works. The conversion also keeps only the `charset` parameter of a
+  Content-Type, so a `format=flowed` text body keeps its soft line breaks.
+  Fix upstream (decode `filename*`, keep the parameters).
+- A large message, shown in parts, takes its date from SwiftMail's ENVELOPE
+  date parser (`FetchMessageInfoHandler.parseEnvelopeDate`), which reads no
+  date without seconds (`Sat, 24 Oct 2026 13:42 -0500`), and SwiftMail
+  keeps no raw `Date` value (it leaves Date out of `additionalFields`), so
+  `HeaderDate` cannot read it either. Such a date shows as `(unknown)`, and
+  the attribution line of a draft that quotes it loses its date
+  ("Jane Doe wrote:" instead of "On ..., Jane Doe wrote:"). Fix upstream:
+  accept a time without seconds in the ENVELOPE date parser, or keep the
+  raw `Date` value in `additionalFields`.
+- `iris download` fetches one part with SwiftMail's `fetchPart`, whose
+  `FetchMessagePartCommand.timeoutSeconds` is hard-coded at 60 at the
+  pinned revision, so an attachment that takes more than 60 seconds to
+  download fails (`attachmentDownloadTimedOut`). A ranged fetch
+  (`BODY.PEEK[<section>]<offset.count>`, which SwiftMail has) would remove
+  the limit; it is not built.
 - A quoted non-Latin charset (`charset="koi8-r"`) is not recognized by
   SwiftMail's `declaredCharset`, so such a body may decode wrong. UTF-8 and
   Latin-1 are correct. Upstream: SwiftMail PR #268.
@@ -132,6 +180,12 @@ Next:
 - SwiftMail's full-message fetch keeps only the first FETCH answer. If the
   server sends an unsolicited `* n FETCH (FLAGS ...)` first, iris reports
   that the message does not exist. Rare in a short session; fix upstream.
+  `iris download` has the same risk for its one part (`fetchPart` without a
+  range), and a server that answers `BODY[<section>] NIL` gives no bytes
+  too. There BODYSTRUCTURE gives the part's size, so for a part that is not
+  empty iris says that the server sent no bytes (`attachmentNotReceived`)
+  instead of saving an empty file. The body parts of a large message have
+  the same risk, and the same check (`bodyNotReceived`).
 - A filtered `iris list` gets every matching UID in one SEARCH reply, and
   SwiftMail reads at most 1 MiB per reply
   (`IMAPServer.defaultResponseBufferLimit`). A plain SEARCH reply takes
@@ -170,6 +224,12 @@ Next:
   cannot be converted and it has no text part, the error gives `show`'s
   advice (`--format raw`), which `draft` does not have, even with
   `--no-quote`, which needs no body.
+- APPEND has a 30 second total deadline: SwiftMail's
+  `AppendCommand.timeoutSeconds` is hard-coded at the pinned revision, and
+  the clock starts before the message bytes are sent. A draft with large
+  `--attach` files (base64 makes them about 4/3 their size) on a slow uplink
+  can time out, which iris reports as `draftMayBeSaved`. Fix: the same kind
+  of upstream timeout parameter as for the raw download.
 
 ## Open questions
 

@@ -45,6 +45,19 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// have saved the draft. `mailbox` is the Drafts mailbox: the wire name
     /// from `SwiftMailClient`, and the decoded name after `MailWriter`.
     case draftMayBeSaved(account: String, mailbox: String, reason: String)
+    /// A file given with `iris draft --attach` is missing or cannot be read.
+    case draftAttachmentNotRead(path: String, reason: String)
+    /// A path given with `iris draft --attach` is a folder, not a file.
+    case draftAttachmentIsAFolder(path: String)
+    /// With `--attach`, the reply argument names a file or folder that exists:
+    /// most likely a second path after one `--attach` (`--attach a.pdf b.pdf`,
+    /// or a glob that matched more than one file).
+    case draftBodyNamesAFile(path: String)
+    /// The server answered APPEND with NO or BAD: for example a draft too large
+    /// for a server that announces no APPENDLIMIT, or a full mailbox. `mailbox`
+    /// is the Drafts mailbox: the wire name from `SwiftMailClient`, and the
+    /// decoded name after `MailWriter`.
+    case draftRefused(account: String, mailbox: String, reason: String)
 
     // IMAP
 
@@ -68,12 +81,39 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case invalidDate(String)
     /// The raw message did not arrive inside SwiftMail's fixed time limit.
     case messageDownloadTimedOut(seconds: Int)
+    /// A body part of a large message, which iris downloads in parts, did not
+    /// arrive inside SwiftMail's fixed time limit for one part.
+    case bodyDownloadTimedOut(seconds: Int)
+    /// The server sent no bytes for a body part of a large message that
+    /// BODYSTRUCTURE says is not empty.
+    case bodyNotReceived(IrisID)
     /// After a good login, the server did not answer a command in time.
     case serverTimedOut(account: String, command: String)
     /// The server answered the SEARCH for the `list` filter options with NO or BAD.
     case searchFailed(account: String, reason: String)
     /// The server answered a command with NO or BAD.
     case serverError(account: String, command: String, reason: String)
+
+    // Attachments
+
+    /// The text is not an attachment ID: dot-separated numbers, each 1 or more.
+    case invalidAttachmentID(String)
+    /// The message has no part with this attachment ID.
+    case unknownAttachment(IrisID, AttachmentID)
+    /// The server's answer to FETCH BODYSTRUCTURE had none that iris can read.
+    case attachmentStructureMissing(IrisID)
+    /// The part did not arrive inside SwiftMail's fixed time limit for one part.
+    case attachmentDownloadTimedOut(seconds: Int)
+    /// The server sent no bytes for a part that BODYSTRUCTURE says is not empty.
+    case attachmentNotReceived(IrisID, AttachmentID)
+    /// `iris download` has no `-o`, and stdout is a terminal, which the bytes would garble.
+    case attachmentStdoutIsTerminal
+    /// `iris download -o` names an existing folder, not the file to write.
+    case attachmentOutputIsFolder(path: String)
+    /// The file that `iris download -o` would write already exists.
+    case attachmentFileExists(path: String)
+    /// `iris download -o` could not write the file for another reason.
+    case attachmentNotSaved(path: String, reason: String)
 
     // Google sign-in
 
@@ -155,13 +195,30 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "to see the mailboxes and their attributes."
         case .draftTooLarge(let account, let size, let limit):
             return "The draft is \(size) bytes, and the server takes at most \(limit) bytes "
-                + "(account \"\(account)\"). Shorten the reply, or leave out the quoted message with --no-quote."
+                + "(account \"\(account)\"). Attach fewer or smaller files, shorten the reply, "
+                + "or leave out the quoted message with --no-quote."
         case .draftMayBeSaved(let account, let mailbox, let reason):
             let list = MessagePage.listCommand(
                 account: account, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit, format: .listDefault
             )
             return "Saving the draft did not finish (account \"\(account)\"): \(reason). "
                 + "The server may have saved it in \"\(mailbox)\" anyway: look in it (`\(list)`) before you try again."
+        case .draftAttachmentNotRead(let path, let reason):
+            // In parentheses: Foundation's reasons end with a period.
+            return "Could not read the file \"\(path)\" to attach it (\(reason)). "
+                + "Check the path (a relative path starts in the current directory) and that you can read the file."
+        case .draftAttachmentIsAFolder(let path):
+            return "\"\(path)\" is a folder, and --attach takes a file. "
+                + "Give --attach once for each file in the folder, or attach a .zip of it."
+        case .draftBodyNamesAFile(let path):
+            return "The reply is \"\(path)\", which is the name of a file. Each --attach takes one path, "
+                + "so a second path after it (or the second file that a pattern such as *.pdf matched) "
+                + "becomes the reply. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
+                + "and give a reply that is in a file with -F <path>."
+        case .draftRefused(let account, let mailbox, let reason):
+            return "The server refused to save the draft in \"\(mailbox)\" (account \"\(account)\"): \(reason). "
+                + "The usual cause is the draft's size: attach fewer or smaller files, or leave out the quoted "
+                + "message with --no-quote. A full mailbox is another: make room, then try again."
         // IMAP
         case .loginFailed(let account, let username, let host, let reason):
             return "The server \(host) refused the login for \(username) (account \"\(account)\"): \(reason). "
@@ -200,6 +257,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "The message did not download in \(seconds) seconds. It may be large, or the connection "
                 + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
                 + "every raw-message download after \(seconds) seconds. Try again on a faster connection."
+        case .bodyDownloadTimedOut(let seconds):
+            return "The body of the message did not download in \(seconds) seconds. The message is large, so iris "
+                + "downloads only its text and HTML parts, and they may be large too, or the connection may be slow. "
+                + "This is a known limit of SwiftMail, the IMAP library that iris uses: it stops every part "
+                + "download after \(seconds) seconds. Try again on a faster connection."
+        case .bodyNotReceived(let id):
+            return "The server sent no bytes for the body of the message \"\(id)\", which is not empty. Try again."
         case .serverTimedOut(let account, let command):
             return "The server did not answer \(command) in time (account \"\(account)\"). "
                 + "The connection may be slow, or the server may be busy. Try again."
@@ -210,6 +274,39 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .serverError(let account, let command, let reason):
             return "The server answered \(command) with an error (account \"\(account)\"): \(reason). "
                 + "Run `iris check --account \(MessagePage.shellQuoted(account))` to test the account settings."
+        // Attachments
+        case .invalidAttachmentID(let text):
+            return "\"\(text)\" is not an attachment ID. An attachment ID is the number that `iris show` lists "
+                + "first on each attachment line, such as 2 or 1.2: numbers of 1 or more, joined by dots. "
+                + "Run `iris show '<iris-id>'` to see the attachment IDs of a message."
+        case .unknownAttachment(let id, let attachment):
+            return "The message \"\(id)\" has no attachment \(attachment). "
+                + "Run `iris show \(id.shellQuoted)` to see its attachment IDs."
+        case .attachmentStructureMissing(let id):
+            return "The server did not describe the parts of the message \"\(id)\" (its answer had no BODYSTRUCTURE "
+                + "that iris can read), so iris cannot find the attachment. Try again. If it keeps failing, "
+                + "`iris show \(id.shellQuoted) --format raw` gives the message source, with every attachment in it."
+        case .attachmentDownloadTimedOut(let seconds):
+            return "The attachment did not download in \(seconds) seconds. It may be large, or the connection "
+                + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
+                + "every attachment download after \(seconds) seconds. Try again on a faster connection."
+        case .attachmentNotReceived(let id, let attachment):
+            return "The server sent no bytes for attachment \(attachment) of the message \"\(id)\", which is not "
+                + "empty, so iris saved nothing. Try again."
+        case .attachmentStdoutIsTerminal:
+            return "iris writes the attachment's bytes to stdout, and stdout is a terminal, where they would garble "
+                + "the screen. Redirect stdout to a file, as in `iris download '<iris-id>' <attachment-id> > <file>`, "
+                + "or pass -o <path> to save it to a file (`iris ro download` has no -o)."
+        case .attachmentOutputIsFolder(let path):
+            let example = MessagePage.singleQuoted((path as NSString).appendingPathComponent("<file name>"))
+            return "\"\(path)\" is a folder, and -o takes the path of the file to write. Add a file name, "
+                + "such as the filename that `iris show` lists for the attachment: -o \(example)."
+        case .attachmentFileExists(let path):
+            return "The file \"\(path)\" already exists, and iris never overwrites a file. Pass -o with another path."
+        case .attachmentNotSaved(let path, let reason):
+            // In parentheses: Foundation's reasons end with a period.
+            return "Could not save the attachment to \"\(path)\" (\(reason)). "
+                + "Check that the folder exists and that you can write to it, or pass -o with another path."
         // Google sign-in
         case .noGoogleAccounts:
             return "No account signs in with Google. To sign in with Google, add the lines "

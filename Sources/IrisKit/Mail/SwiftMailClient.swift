@@ -9,6 +9,10 @@ struct SwiftMailClient: MailWriteClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
 
+    /// `IMAPServer.fetchPart` always gives up after this many seconds
+    /// (`FetchMessagePartCommand.timeoutSeconds`).
+    static let partTimeoutSeconds = 60
+
     /// The most messages one FETCH of `fetchEnvelopes` or `fetchThreadHeaders`
     /// asks for. SwiftMail gives every FETCH 10 seconds
     /// (`FetchMessageInfoCommand.timeoutSeconds`), so a page is fetched in
@@ -18,6 +22,11 @@ struct SwiftMailClient: MailWriteClient {
 
     /// The header fields that `fetchThreadHeaders` asks for.
     static let threadHeaderFields = ["Message-ID", "In-Reply-To", "References", "Subject", "Date"]
+
+    /// The header fields that `fetchOutline` asks for: those of `MessageHeaders`.
+    static let messageHeaderFields = [
+        "From", "To", "Cc", "Reply-To", "Subject", "Date", "Message-ID", "In-Reply-To", "References",
+    ]
 
     /// The IMAP commands iris sends. The command decides how its errors read.
     enum Command: Equatable {
@@ -35,7 +44,13 @@ struct SwiftMailClient: MailWriteClient {
         case headerSearch
         case fetchEnvelopes
         case fetchThreadHeaders
+        /// The FETCH of RFC822.SIZE, BODYSTRUCTURE, and the header fields of one message.
+        case fetchOutline
         case fetchRawMessage
+        /// One part, for `iris download`.
+        case fetchPart
+        /// One body part of a message that iris shows in parts.
+        case fetchBodyPart
         /// `mailbox` is the wire name, in modified UTF-7.
         case select(mailbox: String)
         case store
@@ -51,7 +66,8 @@ struct SwiftMailClient: MailWriteClient {
             case .list: return "LIST"
             case .examine: return "EXAMINE"
             case .search, .headerSearch: return "SEARCH"
-            case .fetchEnvelopes, .fetchThreadHeaders, .fetchRawMessage: return "FETCH"
+            case .fetchEnvelopes, .fetchThreadHeaders, .fetchOutline, .fetchRawMessage, .fetchPart, .fetchBodyPart:
+                return "FETCH"
             case .select: return "SELECT"
             case .store: return "STORE"
             case .append: return "APPEND"
@@ -247,9 +263,11 @@ struct SwiftMailClient: MailWriteClient {
     func fetchThreadHeaders(uids: [UInt32]) async throws -> [ThreadHeaders] {
         // No ENVELOPE: SwiftMail reads the header fields with the parser that
         // `iris show` uses, and the fields are a few hundred bytes a message.
+        // RFC822.SIZE adds a number to each answer, and tells `thread` which
+        // messages to download in parts.
         let infos = server.fetchMessageInfos(
             using: UIDSet(uids.map(UID.init)),
-            options: [.internalDate],
+            options: [.internalDate, .size],
             headerFields: Self.threadHeaderFields,
             chunkSize: Self.envelopeChunkSize
         )
@@ -265,11 +283,60 @@ struct SwiftMailClient: MailWriteClient {
         }
     }
 
+    func fetchOutline(uid: UInt32) async throws -> MessageOutline? {
+        // One UID FETCH, with FetchMessageInfoCommand's 10 seconds: a size, the
+        // header fields, and a BODYSTRUCTURE are a few kilobytes at most.
+        // IMAPServer.fetchStructure would fail for a missing UID, and sends a
+        // second FETCH for the filenames.
+        let infos = try await run(.fetchOutline) {
+            try await server.fetchMessageInfosBulk(
+                using: UIDSet(UID(uid)), options: [.size, .bodyStructure], headerFields: Self.messageHeaderFields
+            )
+        }
+        return Self.outline(in: infos, uid: uid)
+    }
+
+    /// The outline that FETCH (UID RFC822.SIZE BODYSTRUCTURE and the header
+    /// fields) gave for `uid`, from every answer with that UID, so an
+    /// unsolicited FETCH for this message (a CONDSTORE `MODSEQ`/`FLAGS`
+    /// answer) does not hide the real one: the size from the first answer
+    /// that has one, the parts from the first that has parts, and the header
+    /// fields from the first that has any. SwiftMail puts the header fields
+    /// on the first answer with the sequence number, and the other attributes
+    /// on the last, so they can be in two answers. An unsolicited FETCH for
+    /// another message is skipped. Nil when no answer has the UID.
+    static func outline(in infos: [MessageInfo], uid: UInt32) -> MessageOutline? {
+        let answers = infos.filter { $0.uid?.value == uid }
+        guard let first = answers.first else {
+            return nil
+        }
+        let headers = answers.lazy.map(MessageHeaders.init(swiftMail:)).first { $0 != MessageHeaders() }
+        return MessageOutline(
+            size: answers.lazy.compactMap(\.size).first,
+            headers: headers ?? MessageHeaders(swiftMail: first),
+            parts: (answers.first { !$0.parts.isEmpty }?.parts ?? []).map(PartOutline.init(swiftMail:))
+        )
+    }
+
     func fetchRawMessage(uid: UInt32) async throws -> Data {
         // SwiftMail 88c45cbd (1.16.0) fixes FetchRawMessageCommand.timeoutSeconds
         // at 10, and no public API sends BODY.PEEK[] with a longer timeout.
         try await run(.fetchRawMessage) {
             try await server.fetchRawMessage(identifier: UID(uid))
+        }
+    }
+
+    func fetchPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {
+        // One BODY.PEEK[<section>], with SwiftMail's fixed 60-second deadline.
+        try await run(.fetchPart) {
+            try await server.fetchPart(section: Section(id.components), of: UID(uid))
+        }
+    }
+
+    func fetchBodyPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {
+        // The same BODY.PEEK[<section>] as fetchPart; only its errors differ.
+        try await run(.fetchBodyPart) {
+            try await server.fetchPart(section: Section(id.components), of: UID(uid))
         }
     }
 
@@ -381,6 +448,10 @@ struct SwiftMailClient: MailWriteClient {
             return .unknownMailbox(account: account.name, name: mailbox, reason: redacted(reason))
         case (.fetchRawMessage, IMAPError.timeout):
             return .messageDownloadTimedOut(seconds: rawMessageTimeoutSeconds)
+        case (.fetchPart, IMAPError.timeout):
+            return .attachmentDownloadTimedOut(seconds: partTimeoutSeconds)
+        case (.fetchBodyPart, IMAPError.timeout):
+            return .bodyDownloadTimedOut(seconds: partTimeoutSeconds)
         case (.append, IMAPError.appendLimitExceeded(let size, let limit)):
             return .draftTooLarge(account: account.name, size: size, limit: limit)
         case (.append(let mailbox), IMAPError.timeout):
@@ -400,6 +471,10 @@ struct SwiftMailClient: MailWriteClient {
             return connectionFailed(reason: reason(of: error), account: account, secrets: secrets)
         case (.append(let mailbox), IMAPError.connectionFailed):
             return draftMayBeSaved(reason: reason(of: error), mailbox: mailbox, account: account, secrets: secrets)
+        case (.append(let mailbox), let error as IMAPError):
+            // A tagged NO or BAD (commandFailed). The usual causes are a draft too
+            // large for a server that announces no APPENDLIMIT (Zoho), and a full mailbox.
+            return .draftRefused(account: account.name, mailbox: mailbox, reason: redacted(error.description))
         case (_, IMAPError.connectionFailed):
             // The login worked, so the host and port are right. SwiftMail
             // reports a closed connection and a BYE this way.
@@ -470,9 +545,14 @@ struct SwiftMailClient: MailWriteClient {
 extension Email {
     /// `draft` as SwiftMail writes it. `constructContent` adds Date (now), a new
     /// Message-ID, and multipart/alternative with the text and HTML parts.
+    /// With attachments, it puts that inside multipart/mixed, followed by one
+    /// base64 part per file with `Content-Disposition: attachment`.
     init(draft: DraftMessage) {
         func emailAddress(_ address: MailAddress) -> EmailAddress {
             EmailAddress(name: address.name, address: address.address)
+        }
+        let attachments = draft.attachments.map { attachment in
+            Attachment(filename: attachment.filename, mimeType: attachment.mimeType, data: attachment.data, isInline: false)
         }
         self.init(
             sender: emailAddress(draft.from),
@@ -480,7 +560,8 @@ extension Email {
             ccRecipients: draft.cc.map(emailAddress),
             subject: draft.subject,
             textBody: draft.markdown,
-            htmlBody: draft.html
+            htmlBody: draft.html,
+            attachments: attachments.isEmpty ? nil : attachments
         )
         let headers = draft.threadingHeaders
         additionalHeaders = headers.isEmpty ? nil : headers
@@ -529,8 +610,54 @@ extension MessageEnvelope {
     }
 }
 
+extension MessageHeaders {
+    /// `info` from FETCH (the `messageHeaderFields`, without ENVELOPE).
+    /// SwiftMail reads the header block with EMLParser's code for the subject,
+    /// the addresses, and the Message-ID, so they are what a whole download
+    /// gives. Three fields come another way:
+    ///
+    /// - Date: SwiftMail's ENVELOPE date parser, which drops a trailing
+    ///   comment such as `(CDT)`, as `HeaderDate` does on a whole download.
+    /// - In-Reply-To: SwiftMail reads the whole value as one message ID, so
+    ///   `<a@x> (comment)` gives `<a@x> (comment)>`. iris takes the first
+    ///   `<...>` in that text, as it takes the first ID of the header on a
+    ///   whole download.
+    /// - References: the IDs that SwiftMail found in the value.
+    init(swiftMail info: MessageInfo) {
+        self.init(
+            messageID: info.messageId?.description,
+            subject: info.subject,
+            from: MessageDecoder.addresses(info.fromAddresses),
+            to: MessageDecoder.addresses(info.toAddresses),
+            cc: MessageDecoder.addresses(info.ccAddresses),
+            replyTo: MessageDecoder.addresses(info.replyToAddresses),
+            date: info.date,
+            inReplyTo: MessageDecoder.messageIDs(in: info.inReplyTo?.description).first,
+            references: info.references?.map(\.description) ?? []
+        )
+    }
+}
+
+extension PartOutline {
+    /// `part` from BODYSTRUCTURE, as SwiftMail's `[MessagePart](BodyStructure)` gives it.
+    /// SwiftMail keeps a message/rfc822 part at its own section, so it can be
+    /// fetched whole, and adds the parts inside it after it (`2`, then `2.1`, `2.2`).
+    init(swiftMail part: MessagePart) {
+        self.init(
+            id: AttachmentID(components: part.section.components),
+            contentType: part.contentType,
+            disposition: part.disposition,
+            encoding: part.encoding,
+            filename: part.filename,
+            contentID: part.contentId,
+            size: part.size
+        )
+    }
+}
+
 extension ThreadHeaders {
-    /// `info` from FETCH (UID INTERNALDATE and the `threadHeaderFields`). Nil when it has no UID.
+    /// `info` from FETCH (UID INTERNALDATE RFC822.SIZE and the
+    /// `threadHeaderFields`). Nil when it has no UID.
     init?(swiftMail info: MessageInfo) {
         guard let uid = info.uid else {
             return nil
@@ -542,7 +669,8 @@ extension ThreadHeaders {
             references: info.references?.map(\.description) ?? [],
             subject: info.subject,
             date: info.date,
-            internalDate: info.internalDate
+            internalDate: info.internalDate,
+            size: info.size
         )
     }
 }

@@ -204,14 +204,39 @@ public struct MessagePage: Sendable, Equatable {
     }
 }
 
-/// One message of `iris thread`: its iris ID and its raw RFC 822 bytes, or
-/// why iris could not download them, so that one bad message does not cost
-/// the rest of the thread.
+/// A message as iris downloaded it to decode it (see `MailReader.message(_:)`).
+public enum DownloadedMessage: Sendable, Equatable {
+    /// The whole message: its raw RFC 822 bytes, as `BODY[]` gives them.
+    case whole(Data)
+    /// A message larger than `MailReader.wholeDownloadLimit`, downloaded in parts.
+    case parts(MessageParts)
+}
+
+/// A large message as iris downloads it: the outline from one FETCH (its
+/// size, its header fields, and its parts from BODYSTRUCTURE), and the bytes
+/// of its body parts only (`MessageDecoder.bodyParts(of:)`), still in their
+/// Content-Transfer-Encoding. The attachments stay on the server.
+public struct MessageParts: Sendable, Equatable {
+    let outline: MessageOutline
+    /// The bytes of each body part, by its attachment ID.
+    let bodies: [AttachmentID: Data]
+}
+
+/// One message of `iris thread`: its iris ID and the message as iris
+/// downloaded it (whole, or a large one in parts), or why iris could not
+/// download it, so that one bad message does not cost the rest of the thread.
 public struct ThreadMessage: Sendable, Equatable {
     /// Why iris could not download one message of a thread.
     public enum DownloadFailure: Error, Sendable, Equatable {
-        /// It did not download in SwiftMail's fixed time limit.
+        /// It did not download whole in SwiftMail's fixed time limit.
         case timedOut(seconds: Int)
+        /// It is large, and a body part did not download in SwiftMail's
+        /// fixed time limit for one part.
+        case bodyTimedOut(seconds: Int)
+        /// It is large, and the server sent no bytes for a body part that is
+        /// not empty: an unsolicited FETCH (another client's flag change)
+        /// came before the part.
+        case bodyNotReceived
         /// It left its mailbox after iris found it.
         case gone
 
@@ -219,20 +244,22 @@ public struct ThreadMessage: Sendable, Equatable {
         func irisError(for id: IrisID) -> IrisError {
             switch self {
             case .timedOut(let seconds): return .messageDownloadTimedOut(seconds: seconds)
+            case .bodyTimedOut(let seconds): return .bodyDownloadTimedOut(seconds: seconds)
+            case .bodyNotReceived: return .bodyNotReceived(id)
             case .gone: return .unknownMessage(id)
             }
         }
     }
 
     public let irisID: IrisID
-    public let rawMessage: Result<Data, DownloadFailure>
+    public let download: Result<DownloadedMessage, DownloadFailure>
     /// Whether this is the message that the thread was asked for (the copy
     /// shown of it, which can be in another mailbox).
     public let isInput: Bool
 
-    init(irisID: IrisID, rawMessage: Result<Data, DownloadFailure>, isInput: Bool = false) {
+    init(irisID: IrisID, download: Result<DownloadedMessage, DownloadFailure>, isInput: Bool = false) {
         self.irisID = irisID
-        self.rawMessage = rawMessage
+        self.download = download
         self.isInput = isInput
     }
 }

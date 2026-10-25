@@ -113,6 +113,22 @@ final class MailErrorTests: XCTestCase {
         XCTAssertTrue(message.contains("known limit of SwiftMail"))
     }
 
+    func testBodyTimeoutExplainsTheLargeMessageAndTheSwiftMailLimit() throws {
+        let message = try XCTUnwrap(IrisError.bodyDownloadTimedOut(seconds: 60).errorDescription)
+        XCTAssertTrue(message.contains("The body of the message did not download in 60 seconds"), message)
+        XCTAssertTrue(message.contains("only its text and HTML parts"), message)
+        XCTAssertTrue(message.contains("known limit of SwiftMail"), message)
+        XCTAssertTrue(message.contains("every part download after 60 seconds"), message)
+        XCTAssertFalse(message.contains("attachment"), "show and thread were not downloading an attachment")
+    }
+
+    func testNoBytesForTheBodySaysToTryAgain() {
+        XCTAssertEqual(
+            IrisError.bodyNotReceived(IrisID(account: "work", mailbox: "INBOX", uid: 150)).errorDescription,
+            "The server sent no bytes for the body of the message \"work/INBOX/150\", which is not empty. Try again."
+        )
+    }
+
     func testServerTimeoutAdvisesRetryingNotASmallerLimitOrTheHostAndPort() throws {
         let message = try XCTUnwrap(IrisError.serverTimedOut(account: "work", command: "FETCH").errorDescription)
         XCTAssertTrue(message.contains("did not answer FETCH in time"))
@@ -174,7 +190,7 @@ final class MailErrorTests: XCTestCase {
         XCTAssertEqual(
             IrisError.draftTooLarge(account: "work", size: 2_000_000, limit: 1_000_000).errorDescription,
             "The draft is 2000000 bytes, and the server takes at most 1000000 bytes (account \"work\"). "
-                + "Shorten the reply, or leave out the quoted message with --no-quote."
+                + "Attach fewer or smaller files, shorten the reply, or leave out the quoted message with --no-quote."
         )
     }
 
@@ -186,6 +202,126 @@ final class MailErrorTests: XCTestCase {
             "Saving the draft did not finish (account \"personal\"): the server did not answer APPEND in time. "
                 + "The server may have saved it in \"[Gmail]/Drafts\" anyway: look in it "
                 + "(`iris list --account personal --mailbox '[Gmail]/Drafts'`) before you try again."
+        )
+    }
+
+    func testAttachmentErrorsNameThePathAndSayWhatToDo() {
+        XCTAssertEqual(
+            IrisError.draftAttachmentNotRead(
+                path: "docs/q4.pdf", reason: "The file “q4.pdf” couldn’t be opened because there is no such file."
+            ).errorDescription,
+            "Could not read the file \"docs/q4.pdf\" to attach it "
+                + "(The file “q4.pdf” couldn’t be opened because there is no such file.). "
+                + "Check the path (a relative path starts in the current directory) and that you can read the file."
+        )
+        XCTAssertEqual(
+            IrisError.draftAttachmentIsAFolder(path: "docs").errorDescription,
+            "\"docs\" is a folder, and --attach takes a file. "
+                + "Give --attach once for each file in the folder, or attach a .zip of it."
+        )
+    }
+
+    /// A refused draft is about its size or the mailbox, not the account settings that `iris check` tests.
+    func testDraftRefusedNamesTheMailboxTheReasonAndTheUsualCauses() {
+        XCTAssertEqual(
+            IrisError.draftRefused(
+                account: "work", mailbox: "Drafts", reason: "Command failed: NO [TOOBIG] Message too large"
+            ).errorDescription,
+            "The server refused to save the draft in \"Drafts\" (account \"work\"): "
+                + "Command failed: NO [TOOBIG] Message too large. The usual cause is the draft's size: "
+                + "attach fewer or smaller files, or leave out the quoted message with --no-quote. "
+                + "A full mailbox is another: make room, then try again."
+        )
+    }
+
+    func testAReplyThatNamesAFileSaysToRepeatAttachOrUseF() {
+        XCTAssertEqual(
+            IrisError.draftBodyNamesAFile(path: "b.pdf").errorDescription,
+            "The reply is \"b.pdf\", which is the name of a file. Each --attach takes one path, "
+                + "so a second path after it (or the second file that a pattern such as *.pdf matched) "
+                + "becomes the reply. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
+                + "and give a reply that is in a file with -F <path>."
+        )
+    }
+
+    // MARK: - Attachments
+
+    func testInvalidAttachmentIDShowsTheFormAndWhereToFindTheIDs() {
+        XCTAssertEqual(
+            IrisError.invalidAttachmentID("x").errorDescription,
+            "\"x\" is not an attachment ID. An attachment ID is the number that `iris show` lists "
+                + "first on each attachment line, such as 2 or 1.2: numbers of 1 or more, joined by dots. "
+                + "Run `iris show '<iris-id>'` to see the attachment IDs of a message."
+        )
+    }
+
+    func testUnknownAttachmentPointsToShowForThatMessage() {
+        XCTAssertEqual(
+            IrisError.unknownAttachment(
+                IrisID(account: "work", mailbox: "Sent Items", uid: 150), AttachmentID(components: [1, 2])
+            ).errorDescription,
+            "The message \"work/Sent Items/150\" has no attachment 1.2. "
+                + "Run `iris show 'work/Sent Items/150'` to see its attachment IDs."
+        )
+    }
+
+    func testAMissingStructureSaysToTryAgainOrUseTheRawSource() {
+        XCTAssertEqual(
+            IrisError.attachmentStructureMissing(IrisID(account: "work", mailbox: "Sent Items", uid: 150)).errorDescription,
+            "The server did not describe the parts of the message \"work/Sent Items/150\" (its answer had no "
+                + "BODYSTRUCTURE that iris can read), so iris cannot find the attachment. Try again. If it keeps "
+                + "failing, `iris show 'work/Sent Items/150' --format raw` gives the message source, with every "
+                + "attachment in it."
+        )
+    }
+
+    func testAttachmentTimeoutExplainsTheSwiftMailLimit() throws {
+        let message = try XCTUnwrap(IrisError.attachmentDownloadTimedOut(seconds: 60).errorDescription)
+        XCTAssertTrue(message.contains("did not download in 60 seconds"), message)
+        XCTAssertTrue(message.contains("large"), message)
+        XCTAssertTrue(message.contains("known limit of SwiftMail"), message)
+    }
+
+    func testTheTerminalErrorSaysToRedirectOrPassAPath() throws {
+        let message = try XCTUnwrap(IrisError.attachmentStdoutIsTerminal.errorDescription)
+        XCTAssertTrue(message.contains("stdout is a terminal"), message)
+        XCTAssertTrue(message.contains("`iris download '<iris-id>' <attachment-id> > <file>`"), message)
+        XCTAssertTrue(message.contains("-o <path>"), message)
+        XCTAssertTrue(message.contains("`iris ro download` has no -o"), message)
+    }
+
+    func testTheFolderErrorSaysToAddAFileName() {
+        XCTAssertEqual(
+            IrisError.attachmentOutputIsFolder(path: "Downloads").errorDescription,
+            "\"Downloads\" is a folder, and -o takes the path of the file to write. Add a file name, "
+                + "such as the filename that `iris show` lists for the attachment: -o 'Downloads/<file name>'."
+        )
+        XCTAssertEqual(
+            IrisError.attachmentOutputIsFolder(path: "/Users/me/Bob's files/").errorDescription,
+            "\"/Users/me/Bob's files/\" is a folder, and -o takes the path of the file to write. Add a file name, "
+                + #"such as the filename that `iris show` lists for the attachment: -o '/Users/me/Bob'\''s files/<file name>'."#
+        )
+    }
+
+    func testTheFileErrorsSayToPassAnotherPath() {
+        XCTAssertEqual(
+            IrisError.attachmentFileExists(path: "report.pdf").errorDescription,
+            "The file \"report.pdf\" already exists, and iris never overwrites a file. Pass -o with another path."
+        )
+        XCTAssertEqual(
+            IrisError.attachmentNotSaved(path: "x/report.pdf", reason: "No such file or directory.").errorDescription,
+            "Could not save the attachment to \"x/report.pdf\" (No such file or directory.). "
+                + "Check that the folder exists and that you can write to it, or pass -o with another path."
+        )
+    }
+
+    func testNoBytesForAnAttachmentSaysNothingWasSavedAndToTryAgain() {
+        XCTAssertEqual(
+            IrisError.attachmentNotReceived(
+                IrisID(account: "work", mailbox: "INBOX", uid: 150), AttachmentID(components: [2])
+            ).errorDescription,
+            "The server sent no bytes for attachment 2 of the message \"work/INBOX/150\", which is not empty, "
+                + "so iris saved nothing. Try again."
         )
     }
 

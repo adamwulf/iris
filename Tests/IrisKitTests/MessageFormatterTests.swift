@@ -19,9 +19,18 @@ final class MessageFormatterTests: XCTestCase {
         body: "Can we meet **Tuesday**?\n\n> Quoted line",
         bodySource: .html,
         attachments: [
-            MessageAttachment(filename: "résumé.pdf", contentType: "application/pdf", size: 120_000, inline: false),
-            MessageAttachment(filename: nil, contentType: "text/calendar", size: 512, inline: false),
-            MessageAttachment(filename: "photo.jpg", contentType: "image/jpeg", size: 1_200_000, inline: true),
+            MessageAttachment(
+                attachmentID: AttachmentID(components: [2]),
+                filename: "résumé.pdf", contentType: "application/pdf", size: 120_000, inline: false
+            ),
+            MessageAttachment(
+                attachmentID: AttachmentID(components: [3]),
+                filename: nil, contentType: "text/calendar", size: 512, inline: false
+            ),
+            MessageAttachment(
+                attachmentID: AttachmentID(components: [4, 2]),
+                filename: "photo.jpg", contentType: "image/jpeg", size: 1_200_000, inline: true
+            ),
         ]
     )
 
@@ -45,9 +54,9 @@ final class MessageFormatterTests: XCTestCase {
         ---
 
         **Attachments:**
-        - résumé.pdf (application/pdf, 120 KB)
-        - (no filename) (text/calendar, 512 bytes)
-        - photo.jpg (image/jpeg, 1.2 MB, inline)
+        - `2` résumé.pdf (application/pdf, 120 KB)
+        - `3` (no filename) (text/calendar, 512 bytes)
+        - `4.2` photo.jpg (image/jpeg, 1.2 MB, inline)
         """)
     }
 
@@ -87,7 +96,7 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(MessageFormatter.sizeText(2_000_000_000), "2.0 GB")
     }
 
-    /// A message whose bytes are not valid UTF-8 (a Latin-1 "é"), so `raw` must not re-encode it.
+    /// A message whose bytes are not valid UTF-8 (a Latin-1 "é"), which only its charset decodes.
     private let latin1Message = Data(
         "Subject: Caf\u{E9}\r\nContent-Type: text/plain; charset=ISO-8859-1\r\n\r\nCaf\u{E9}\r\n"
             .unicodeScalars.map { UInt8($0.value) }
@@ -95,14 +104,13 @@ final class MessageFormatterTests: XCTestCase {
 
     private let irisID = IrisID(account: "work", mailbox: "INBOX", uid: 42)
 
-    func testRenderRawGivesTheBytesUnchanged() async throws {
-        let output = try await MessageFormatter.render(rawMessage: latin1Message, irisID: irisID, format: .raw)
-        XCTAssertEqual(output, latin1Message)
-    }
+    // A whole message renders what it always rendered: the goldens here
+    // (`testMarkdownForAFullDocument`, `testJSONIsDeterministicAndHasNoAttachmentBytes`)
+    // and in MessageDecoderTests pin the output byte for byte.
 
     func testRenderMarkdownDecodesShowsTheIrisIDAndEndsWithANewline() async throws {
         let output = try await MessageFormatter.render(
-            rawMessage: latin1Message, irisID: irisID, format: .markdown, timeZone: chicago
+            message: .whole(latin1Message), irisID: irisID, format: .markdown, timeZone: chicago
         )
         var document = try await MessageDecoder.decode(latin1Message)
         document.irisID = irisID
@@ -112,7 +120,7 @@ final class MessageFormatterTests: XCTestCase {
     }
 
     func testRenderJSONDecodesAddsTheIrisIDAndEndsWithANewline() async throws {
-        let output = try await MessageFormatter.render(rawMessage: latin1Message, irisID: irisID, format: .json)
+        let output = try await MessageFormatter.render(message: .whole(latin1Message), irisID: irisID, format: .json)
         var document = try await MessageDecoder.decode(latin1Message)
         XCTAssertNil(document.irisID, "the decoder reads only the bytes")
         document.irisID = irisID
@@ -121,11 +129,44 @@ final class MessageFormatterTests: XCTestCase {
     }
 
     func testDocumentDecodesAndSetsTheIrisID() async throws {
-        let document = try await MessageFormatter.document(rawMessage: latin1Message, irisID: irisID, body: .auto)
+        let document = try await MessageFormatter.document(message: .whole(latin1Message), irisID: irisID, body: .auto)
 
         var expected = try await MessageDecoder.decode(latin1Message)
         expected.irisID = irisID
         XCTAssertEqual(document, expected)
+    }
+
+    /// A message with a PDF attached at section 2.
+    private let withAttachment = Data("""
+    Subject: Report\r
+    Message-ID: <report@example.com>\r
+    Content-Type: multipart/mixed; boundary="m"\r
+    \r
+    --m\r
+    Content-Type: text/plain\r
+    \r
+    The report is attached.\r
+    --m\r
+    Content-Type: application/pdf; name="report.pdf"\r
+    Content-Disposition: attachment; filename="report.pdf"\r
+    Content-Transfer-Encoding: base64\r
+    \r
+    SGVsbG8=\r
+    --m--\r
+
+    """.utf8)
+
+    func testRenderShowsTheAttachmentIDInMarkdownAndJSON() async throws {
+        let markdown = try await MessageFormatter.render(message: .whole(withAttachment), irisID: irisID, format: .markdown)
+        XCTAssertTrue(
+            String(decoding: markdown, as: UTF8.self).contains("- `2` report.pdf (application/pdf, 5 bytes)\n"),
+            String(decoding: markdown, as: UTF8.self)
+        )
+
+        let json = try await MessageFormatter.render(message: .whole(withAttachment), irisID: irisID, format: .json)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+        let attachments = try XCTUnwrap(object["attachments"] as? [[String: Any]])
+        XCTAssertEqual(attachments.compactMap { $0["attachmentID"] as? String }, ["2"])
     }
 
     func testRenderPassesTheBodyPreference() async throws {
@@ -144,8 +185,8 @@ final class MessageFormatterTests: XCTestCase {
         --b--\r
 
         """.utf8)
-        let text = try await MessageFormatter.render(rawMessage: alternative, irisID: irisID, format: .json, body: .text)
-        let html = try await MessageFormatter.render(rawMessage: alternative, irisID: irisID, format: .json, body: .html)
+        let text = try await MessageFormatter.render(message: .whole(alternative), irisID: irisID, format: .json, body: .text)
+        let html = try await MessageFormatter.render(message: .whole(alternative), irisID: irisID, format: .json, body: .html)
         XCTAssertTrue(String(decoding: text, as: UTF8.self).contains(#""body" : "plain *text*""#))
         XCTAssertTrue(String(decoding: html, as: UTF8.self).contains(#""body" : "html **text**""#))
     }
@@ -166,8 +207,8 @@ final class MessageFormatterTests: XCTestCase {
     private func documents(_ messages: [ThreadMessage], body: BodyPreference = .auto) async throws -> [MessageDocument] {
         var documents: [MessageDocument] = []
         for message in messages {
-            let data = try message.rawMessage.get()
-            documents.append(try await MessageFormatter.document(rawMessage: data, irisID: message.irisID, body: body))
+            let downloaded = try message.download.get()
+            documents.append(try await MessageFormatter.document(message: downloaded, irisID: message.irisID, body: body))
         }
         return documents
     }
@@ -220,6 +261,22 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(objects, array, "the objects of --format json, in the same order")
     }
 
+    func testRenderThreadShowsTheAttachmentIDsInEveryFormat() async throws {
+        let messages = [thread[0], ThreadMessage(irisID: irisID, rawMessage: .success(withAttachment))]
+
+        let markdown = String(decoding: try await MessageFormatter.render(thread: messages, format: .markdown), as: UTF8.self)
+        XCTAssertTrue(markdown.contains("- `2` report.pdf (application/pdf, 5 bytes)\n"), markdown)
+
+        let json = try await MessageFormatter.render(thread: messages, format: .json)
+        let array = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [[String: Any]])
+        XCTAssertEqual(array.map { ($0["attachments"] as? [[String: Any]])?.compactMap { $0["attachmentID"] as? String } }, [[], ["2"]])
+
+        let jsonl = String(decoding: try await MessageFormatter.render(thread: messages, format: .jsonl), as: UTF8.self)
+        let lines = jsonl.split(separator: "\n")
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines[1].contains(#""attachments":[{"attachmentID":"2","#), String(lines[1]))
+    }
+
     func testRenderThreadIDsIsOneIrisIDPerLineAsListWritesThem() throws {
         let ids = [IrisID(account: "work", mailbox: "INBOX", uid: 7), IrisID(account: "work", mailbox: "[Gmail]/Sent Mail", uid: 3)]
 
@@ -236,6 +293,13 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(ThreadOutputFormat.json.messagesFormat, .json)
         XCTAssertEqual(ThreadOutputFormat.jsonl.messagesFormat, .jsonl)
         XCTAssertNil(ThreadOutputFormat.id.messagesFormat)
+    }
+
+    func testOnlyTheRawFormatOfShowNeedsTheWholeMessage() {
+        // `iris show` downloads a large message in parts for every format with a documentFormat.
+        XCTAssertEqual(MessageOutputFormat.markdown.documentFormat, .markdown)
+        XCTAssertEqual(MessageOutputFormat.json.documentFormat, .json)
+        XCTAssertNil(MessageOutputFormat.raw.documentFormat, "the source is always the whole message")
     }
 
     func testRenderThreadPassesTheBodyPreference() async throws {
@@ -388,23 +452,67 @@ final class MessageFormatterTests: XCTestCase {
         ])
     }
 
+    func testAnEstimatedSizeIsAboutInMarkdownAndMarkedInJSON() throws {
+        let estimated = MessageDocument(
+            messageID: nil, subject: "Scans", from: [], to: [], cc: [], replyTo: [], date: nil,
+            inReplyTo: nil, references: [], body: "", bodySource: nil, attachments: [
+                MessageAttachment(
+                    attachmentID: AttachmentID(components: [2]), filename: "scan.pdf", contentType: "application/pdf",
+                    size: 19_730_769, sizeIsEstimate: true, inline: false
+                ),
+                MessageAttachment(
+                    attachmentID: AttachmentID(components: [3]), filename: nil, contentType: "message/rfc822",
+                    size: 2400, inline: false
+                ),
+            ]
+        )
+
+        XCTAssertTrue(MessageFormatter.markdown(estimated).hasSuffix("""
+        **Attachments:**
+        - `2` scan.pdf (application/pdf, about 19.7 MB)
+        - `3` (no filename) (message/rfc822, 2 KB)
+        """), MessageFormatter.markdown(estimated))
+        let json = try MessageFormatter.json(estimated)
+        XCTAssertTrue(json.contains("""
+              "attachments" : [
+                {
+                  "attachmentID" : "2",
+                  "contentType" : "application/pdf",
+                  "filename" : "scan.pdf",
+                  "inline" : false,
+                  "size" : 19730769,
+                  "sizeIsEstimate" : true
+                },
+                {
+                  "attachmentID" : "3",
+                  "contentType" : "message/rfc822",
+                  "inline" : false,
+                  "size" : 2400
+                }
+              ],
+            """), json)
+    }
+
     func testJSONIsDeterministicAndHasNoAttachmentBytes() throws {
         XCTAssertEqual(try MessageFormatter.json(document), """
         {
           "appleMailURL" : "message://%3Creply-2@example.com%3E",
           "attachments" : [
             {
+              "attachmentID" : "2",
               "contentType" : "application/pdf",
               "filename" : "résumé.pdf",
               "inline" : false,
               "size" : 120000
             },
             {
+              "attachmentID" : "3",
               "contentType" : "text/calendar",
               "inline" : false,
               "size" : 512
             },
             {
+              "attachmentID" : "4.2",
               "contentType" : "image/jpeg",
               "filename" : "photo.jpg",
               "inline" : true,

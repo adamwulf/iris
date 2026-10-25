@@ -10,7 +10,7 @@ final class ReadOnlyCommandTests: XCTestCase {
 
     func testRoHasOnlyTheReadOnlyCommands() {
         let roCommands = ReadOnly.configuration.subcommands
-        XCTAssertEqual(names(roCommands), ["accounts", "check", "mailboxes", "list", "show", "thread", "auth"])
+        XCTAssertEqual(names(roCommands), ["accounts", "check", "mailboxes", "list", "show", "thread", "auth", "download"])
         for command in roCommands + ReadOnlyAuth.configuration.subcommands {
             XCTAssertTrue(command is any ReadOnlyCommand.Type, "\(command) is under `iris ro` but is not a ReadOnlyCommand")
         }
@@ -24,6 +24,52 @@ final class ReadOnlyCommandTests: XCTestCase {
         // `auth` has both kinds: its read-only children are under `iris ro auth` too.
         let readOnlyAuthChildren = Auth.configuration.subcommands.filter { $0 is any ReadOnlyCommand.Type }
         XCTAssertEqual(names(readOnlyAuthChildren), names(ReadOnlyAuth.configuration.subcommands))
+        // The rest of `ro` is the read-only form of a top-level command that is not
+        // read-only itself: `auth` (a group with both kinds) and `download` (without -o).
+        let readOnlyForms: [any ParsableCommand.Type] = [ReadOnlyAuth.self, ReadOnlyDownload.self]
+        let shared = names(ReadOnly.sharedCommands.map { $0 as any ParsableCommand.Type })
+        XCTAssertEqual(names(ReadOnly.configuration.subcommands), shared + names(readOnlyForms))
+        for form in readOnlyForms {
+            let full = Iris.configuration.subcommands.first { $0._commandName == form._commandName }
+            XCTAssertNotNil(full, "\(form) has no full form under `iris`")
+            XCTAssertFalse(full is any ReadOnlyCommand.Type, "the full form of \(form) is a write command")
+        }
+    }
+
+    func testRoDownloadParsesTheSameAsDownloadWithoutTheOutputPath() throws {
+        let arguments = ["download", "work/Sent Items/42", "1.2"]
+        let plain = try XCTUnwrap(try Iris.parseAsRoot(arguments) as? Download)
+        let readOnly = try XCTUnwrap(try Iris.parseAsRoot(["ro"] + arguments) as? ReadOnlyDownload)
+
+        for command in [plain.arguments, readOnly.arguments] {
+            XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "Sent Items", uid: 42))
+            XCTAssertEqual(command.attachmentID, try AttachmentID(parsing: "1.2"))
+        }
+        XCTAssertNil(plain.output)
+    }
+
+    func testDownloadWithAnOutputPathIsOnlyAtTheTop() throws {
+        // -o writes a file whose content comes from the sender.
+        XCTAssertFalse(Download.self is any ReadOnlyCommand.Type)
+        let download = try XCTUnwrap(try Iris.parseAsRoot(["download", "work/INBOX/42", "2", "-o", "x"]) as? Download)
+        XCTAssertEqual(download.output, "x")
+        XCTAssertTrue(try Iris.parseAsRoot(["ro", "download", "work/INBOX/42", "2"]) is ReadOnlyDownload)
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "download", "work/INBOX/42", "2", "-o", "x"]))
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "download", "work/INBOX/42", "2", "--output", "x"]))
+    }
+
+    /// The whole surface of each form, not only -o by name: an option added
+    /// later to the shared DownloadArguments changes these lines, and so forces
+    /// a decision on whether `ro` may have it.
+    func testTheUsageOfEachDownloadFormIsPinned() {
+        func usage(_ command: any ParsableCommand.Type) -> String? {
+            Iris.helpMessage(for: command, columns: 1000)
+                .split(separator: "\n")
+                .first { $0.hasPrefix("USAGE: ") }
+                .map(String.init)
+        }
+        XCTAssertEqual(usage(ReadOnlyDownload.self), "USAGE: iris ro download <iris-id> <attachment-id>")
+        XCTAssertEqual(usage(Download.self), "USAGE: iris download <iris-id> <attachment-id> [--output <path>]")
     }
 
     func testRoListParsesTheSameAsList() throws {

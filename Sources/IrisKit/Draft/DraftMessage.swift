@@ -1,8 +1,9 @@
 import Foundation
 
-/// A draft ready to save: the headers iris chooses and the two body parts.
-/// SwiftMail adds the rest when it writes the message: Date (now), a new
-/// Message-ID, and the multipart/alternative structure.
+/// A draft ready to save: the headers iris chooses, the two body parts, and
+/// the attachments. SwiftMail adds the rest when it writes the message: Date
+/// (now), a new Message-ID, and the multipart/alternative structure, inside
+/// multipart/mixed with the attachments when there are any.
 public struct DraftMessage: Sendable, Equatable {
     public let from: MailAddress
     public let to: [MailAddress]
@@ -18,6 +19,9 @@ public struct DraftMessage: Sendable, Equatable {
     /// The text/html part: the reply's Markdown rendered, then the quote
     /// (see `ReplyComposer.quotation(of:timeZone:)`).
     public let html: String
+    /// The files of `iris draft --attach`, in the order given. Each is a
+    /// regular attachment, not an inline one.
+    public let attachments: [DraftAttachment]
 
     /// The longest header line iris writes, as RFC 5322 (section 2.1.1) asks.
     static let maxLineLength = 78

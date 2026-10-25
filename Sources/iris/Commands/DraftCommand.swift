@@ -6,7 +6,7 @@ import IrisKit
 struct Draft: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Save a reply to a message as a draft. iris never sends mail: review and send the draft in your mail app.",
-        discussion: "The reply is Markdown, from exactly one source: the argument, -F <path>, or stdin. The draft has the Markdown as plain text and as HTML, with the original quoted below it, and goes to the \\Drafts mailbox. iris prints the draft's iris ID. The From address is IRIS_<NAME>_FROM, else the username when it is an address."
+        discussion: "The reply is Markdown, from exactly one source: the argument, -F <path>, or stdin. The draft has the Markdown as plain text and as HTML, with the original quoted below it, and goes to the \\Drafts mailbox. Each --attach <path> attaches one file; iris reads every file before it connects. iris prints the draft's iris ID. The From address is IRIS_<NAME>_FROM, else the username when it is an address."
     )
 
     // The iris ID names the account, so `draft` has no --account.
@@ -22,6 +22,9 @@ struct Draft: AsyncParsableCommand {
     )
     var file: String?
 
+    @Option(help: ArgumentHelp("Attach this file to the draft. Repeat --attach for each file.", valueName: "path"))
+    var attach: [String] = []
+
     @Flag(help: "Reply to all: also Cc the original's To and Cc recipients, except you.")
     var all = false
 
@@ -32,9 +35,13 @@ struct Draft: AsyncParsableCommand {
         let settings = AccountResolver.settings()
         let account = try AccountResolver.resolve(name: irisID.account, settings: settings)
         let from = try AccountResolver.fromAddress(for: account, in: settings)
-        let reply = try DraftBody.read(argument: body, file: file, stdinIsTerminal: isatty(STDIN_FILENO) == 1)
+        // Before the reply, so a bad path fails before a reply typed on stdin, and before login.
+        let attachments = try attach.map(DraftAttachment.read(path:))
+        let reply = try DraftBody.read(
+            argument: body, file: file, attaching: !attach.isEmpty, stdinIsTerminal: isatty(STDIN_FILENO) == 1
+        )
         let saved = try await MailWriter(account: account).saveReply(
-            to: irisID, body: reply, from: from, replyAll: all, quote: !noQuote
+            to: irisID, body: reply, from: from, replyAll: all, quote: !noQuote, attachments: attachments
         )
         if let draftID = saved.irisID {
             FileHandle.standardOutput.write(Data("\(draftID)\n".utf8))

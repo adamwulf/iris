@@ -2,7 +2,8 @@ import Foundation
 import SwiftMail
 import SwiftTextHTML
 
-/// Decodes the raw RFC 822 bytes of one message into a `MessageDocument`.
+/// Decodes one message into a `MessageDocument`: the raw RFC 822 bytes of
+/// a whole message, or a large message that iris downloaded in parts.
 /// SwiftMail's `EMLParser` does the MIME work; SwiftText turns HTML into Markdown.
 public enum MessageDecoder {
     /// Decodes `data`, the full message as the server sends it for `BODY[]`.
@@ -29,13 +30,65 @@ public enum MessageDecoder {
         } catch {
             throw IrisError.messageNotParsed(reason: error.localizedDescription)
         }
+        return try await document(
+            of: message, headers: headers(of: message, rawMessage: data),
+            preference: preference, htmlToMarkdown: htmlToMarkdown, log: log
+        )
+    }
 
+    /// Decodes `parts`, a large message that iris downloaded in parts: the
+    /// header fields and the parts from one FETCH, and the bytes of the body
+    /// parts only. The SwiftMail message that `message(of:bodies:)` makes of
+    /// them goes through the same steps as a parsed whole message, so the
+    /// body and the attachment IDs are the ones a whole download gives. What
+    /// differs comes from BODYSTRUCTURE (see "Large messages" in AGENTS.md):
+    /// the attachment sizes can be estimates (`decodedSize(of:)`), a filename
+    /// can differ, and `format=flowed` is not known, so its soft line breaks stay.
+    static func decode(
+        _ parts: MessageParts,
+        body preference: BodyPreference,
+        convertingHTMLWith htmlToMarkdown: (String) async throws -> String,
+        log: (String) -> Void = IrisLog.log
+    ) async throws -> MessageDocument {
+        try await document(
+            of: message(of: parts.outline.parts, bodies: parts.bodies), headers: parts.outline.headers,
+            preference: preference, htmlToMarkdown: htmlToMarkdown, log: log
+        )
+    }
+
+    /// The document of `message`, whose header fields are `headers`: what
+    /// a whole message and one downloaded in parts share after the parse.
+    private static func document(
+        of message: Message,
+        headers: MessageHeaders,
+        preference: BodyPreference,
+        htmlToMarkdown: (String) async throws -> String,
+        log: (String) -> Void
+    ) async throws -> MessageDocument {
         let (body, bodySource) = try await body(
             of: message, preference: preference, htmlToMarkdown: htmlToMarkdown, log: log
         )
+        return MessageDocument(
+            messageID: headers.messageID,
+            subject: headers.subject,
+            from: headers.from,
+            to: headers.to,
+            cc: headers.cc,
+            replyTo: headers.replyTo,
+            date: headers.date,
+            inReplyTo: headers.inReplyTo,
+            references: headers.references,
+            body: body,
+            bodySource: bodySource,
+            attachments: attachments(of: message)
+        )
+    }
+
+    /// The header fields of `message`, which EMLParser parsed from `data`.
+    static func headers(of message: Message, rawMessage data: Data) -> MessageHeaders {
         // EMLParser leaves In-Reply-To and References in the additional fields.
         let additionalFields = message.header.additionalFields ?? [:]
-        return MessageDocument(
+        return MessageHeaders(
             messageID: message.header.messageId?.description,
             subject: message.subject,
             from: addresses(message.fromAddresses),
@@ -44,11 +97,41 @@ public enum MessageDecoder {
             replyTo: addresses(message.replyToAddresses),
             date: message.date ?? HeaderDate.date(inRawMessage: data),
             inReplyTo: messageIDs(in: additionalFields["in-reply-to"]).first,
-            references: messageIDs(in: additionalFields["references"]),
-            body: body,
-            bodySource: bodySource,
-            attachments: attachments(of: message)
+            references: messageIDs(in: additionalFields["references"])
         )
+    }
+
+    /// A SwiftMail message of `parts` from BODYSTRUCTURE, with the bytes in
+    /// `bodies` (by attachment ID) and no others, in the shape that EMLParser
+    /// gives a whole message: without the parts inside a message/rfc822 part,
+    /// which EMLParser keeps as one part and does not open. Its header is
+    /// empty; the header fields are in `MessageHeaders`.
+    static func message(of parts: [PartOutline], bodies: [AttachmentID: Data]) -> Message {
+        let forwarded = parts.filter { mimeType(of: $0.contentType) == "message/rfc822" }.map(\.id.components)
+        let own = parts.filter { part in
+            !forwarded.contains { prefix in
+                part.id.components.count > prefix.count && part.id.components.starts(with: prefix)
+            }
+        }
+        return Message(header: MessageInfo(sequenceNumber: SequenceNumber(0)), parts: own.map { part in
+            MessagePart(
+                section: Section(part.id.components),
+                contentType: part.contentType,
+                disposition: part.disposition,
+                encoding: part.encoding,
+                filename: part.filename,
+                contentId: part.contentID,
+                size: part.size,
+                data: bodies[part.id]
+            )
+        })
+    }
+
+    /// The parts of a message downloaded in parts whose bytes the decoder
+    /// needs: its body parts, found by `bodyParts(of:)` as in a whole message.
+    static func bodyParts(of parts: [PartOutline]) -> [PartOutline] {
+        let sections = Set(bodyParts(of: message(of: parts, bodies: [:])).map(\.section))
+        return parts.filter { sections.contains(Section($0.id.components)) }
     }
 
     /// Every part that is not a body part, in section order, so that no part
@@ -57,18 +140,58 @@ public enum MessageDecoder {
     /// as the returned `message/rfc822` of a bounce, so iris does not use it here.
     /// The only other parts left out are other renditions of the body, such as
     /// Gmail's AMP HTML (see `isOtherRendition(_:bodyParents:)`).
+    ///
+    /// Each attachment ID is the part's section. EMLParser numbers the parts
+    /// as IMAP does (RFC 3501, section 6.4.5): a multipart's children are
+    /// `<parent>.1`, `<parent>.2`, and so on, a body of one part is `1`, and a
+    /// message/rfc822 part is one part, not opened. So each ID is a section
+    /// that `BODY[<section>]` fetches, which `iris download` uses.
     static func attachments(of message: Message) -> [MessageAttachment] {
         let bodySections = Set(bodyParts(of: message).map(\.section))
         let bodyParents = Set(bodySections.map(parentSection(of:)))
         return message.parts.filter { part in
             !bodySections.contains(part.section) && !isOtherRendition(part, bodyParents: bodyParents)
         }.map { part in
-            MessageAttachment(
+            let size = decodedSize(of: part)
+            return MessageAttachment(
+                attachmentID: AttachmentID(components: part.section.components),
                 filename: part.filename.flatMap { $0.isEmpty ? nil : $0 },
                 contentType: mimeType(of: part.contentType),
-                size: part.decodedData()?.count ?? 0,
+                size: size.bytes,
+                sizeIsEstimate: size.isEstimate,
                 inline: part.disposition?.lowercased() == "inline"
             )
+        }
+    }
+
+    /// The share of a base64 part's size that is data: each line of 76
+    /// characters and CRLF holds 57 bytes. Senders' mail apps, and SwiftMail
+    /// itself, write lines of 76; a part without line breaks holds 3/4, which
+    /// is 3% more.
+    static let base64DataShare = (bytes: 57, encoded: 78)
+
+    /// The size of `part` without its Content-Transfer-Encoding. A part with
+    /// bytes (every part of a whole message) gives the exact size. A part
+    /// without them (an attachment of a message downloaded in parts) has only
+    /// BODYSTRUCTURE's size of the encoded body. That is the exact size
+    /// without an encoding (7bit, 8bit, binary), and an estimate with one:
+    /// `base64DataShare` of it for base64, and all of it for quoted-printable
+    /// (or an encoding iris does not know), which only gets smaller when
+    /// decoded. No size is an estimate of 0.
+    static func decodedSize(of part: MessagePart) -> (bytes: Int, isEstimate: Bool) {
+        if let data = part.decodedData() {
+            return (data.count, false)
+        }
+        guard let size = part.size else {
+            return (0, true)
+        }
+        switch part.encoding?.lowercased() {
+        case nil, "7bit", "8bit", "binary":
+            return (size, false)
+        case "base64":
+            return (size * base64DataShare.bytes / base64DataShare.encoded, true)
+        default:
+            return (size, true)
         }
     }
 

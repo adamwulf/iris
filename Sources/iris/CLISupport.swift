@@ -50,6 +50,7 @@ extension ArgumentHelp {
 }
 
 /// The `--account` option for the commands that talk to a server and take no iris ID.
+/// A command that takes an iris ID (such as `show` and `download`) has none.
 /// A command that takes an iris ID uses the account that the ID names.
 struct AccountOptions: ParsableArguments {
     @Option(name: .shortAndLong, help: "The account to use, by name. Omit to use the default account (run `iris accounts` to see them).")

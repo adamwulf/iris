@@ -15,7 +15,10 @@ actor FakeMailClient: MailWriteClient {
         case fetchEnvelopes(ClosedRange<Int>)
         case fetchEnvelopesByUID([UInt32])
         case fetchThreadHeaders([UInt32])
+        case fetchOutline(UInt32)
         case fetchRawMessage(UInt32)
+        case fetchPart(AttachmentID, UInt32)
+        case fetchBodyPart(AttachmentID, UInt32)
         case select(String)
         case setSeen(Bool, UInt32)
         case appendDraft(DraftMessage, String)
@@ -25,7 +28,7 @@ actor FakeMailClient: MailWriteClient {
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
         case login, capabilities, listMailboxes, examine, searchUIDs, searchSubject, searchMessageIDs, fetchEnvelopes,
-             fetchThreadHeaders, fetchRawMessage, select, setSeen, appendDraft
+             fetchThreadHeaders, fetchOutline, fetchRawMessage, fetchPart, fetchBodyPart, select, setSeen, appendDraft
     }
 
     /// How the fake answers a search in a mailbox of `mailboxMessages`.
@@ -39,7 +42,9 @@ actor FakeMailClient: MailWriteClient {
 
     /// One message in a fake mailbox, for `thread`: the headers that the
     /// searches match and `fetchThreadHeaders` returns, and the raw message
-    /// that `fetchRawMessage` returns.
+    /// that `fetchRawMessage` returns. A large message has an `outline`, which
+    /// `fetchOutline` returns, and `bodyParts`, the transfer-encoded bytes
+    /// that `fetchBodyPart` returns.
     struct Message {
         var messageID: String?
         var inReplyTo: String?
@@ -47,6 +52,13 @@ actor FakeMailClient: MailWriteClient {
         var subject: String?
         var date: Date?
         var internalDate: Date?
+        var outline: MessageOutline?
+        var bodyParts: [AttachmentID: Data] = [:]
+
+        /// What `fetchThreadHeaders` reports as the size: the outline's, else that of `raw`.
+        var size: Int? {
+            outline.map(\.size) ?? raw.count
+        }
 
         /// The message as RFC 822 text with these headers and a one-line body.
         var raw: Data {
@@ -82,7 +94,8 @@ actor FakeMailClient: MailWriteClient {
                 references: references,
                 subject: subject,
                 date: date,
-                internalDate: internalDate
+                internalDate: internalDate,
+                size: size
             )
         }
     }
@@ -100,6 +113,9 @@ actor FakeMailClient: MailWriteClient {
     private let searchRules: SearchRules
     private let refusesNonASCII: Bool
     private let rawMessageErrors: [UInt32: any Error]
+    private let outlines: [UInt32: MessageOutline]
+    private let bodyPartErrors: [UInt32: any Error]
+    private let parts: [UInt32: [AttachmentID: Data]]
     private let appendedUID: UInt32?
     private let errors: [Method: any Error]
     /// The wire name of the mailbox that the last EXAMINE opened.
@@ -125,6 +141,18 @@ actor FakeMailClient: MailWriteClient {
     /// UTF-8 SEARCH does (NO [BADCHARSET]); Zoho accepted it in the probes.
     /// `fetchRawMessage` throws the error in `rawMessageErrors` for its UID;
     /// after `messageDownloadTimedOut` no mailbox is open, as after SwiftMail's reconnect.
+    ///
+    /// `fetchOutline` returns the `outlines` of its UID (in a mailbox of
+    /// `mailboxMessages`, the message's `outline`); an outline without parts
+    /// stands for an answer without a BODYSTRUCTURE. A message with no outline
+    /// that `fetchRawMessage` would return gets one with its size and no
+    /// headers or parts, which a whole download does not read; any other UID
+    /// gets nil, as for a missing message. `fetchPart` returns the `parts`
+    /// bytes, still transfer-encoded, and empty data for a part that is not
+    /// in it. `fetchBodyPart` returns the bytes
+    /// in `parts` (in a mailbox of `mailboxMessages`, the message's
+    /// `bodyParts`), or throws the error in `bodyPartErrors` for its UID;
+    /// after `bodyDownloadTimedOut` no mailbox is open, as after SwiftMail's reconnect.
     init(
         accountName: String = "work",
         capabilities: [String] = [],
@@ -137,6 +165,9 @@ actor FakeMailClient: MailWriteClient {
         searchRules: SearchRules = .zoho,
         refusesNonASCII: Bool = false,
         rawMessageErrors: [UInt32: any Error] = [:],
+        outlines: [UInt32: MessageOutline] = [:],
+        bodyPartErrors: [UInt32: any Error] = [:],
+        parts: [UInt32: [AttachmentID: Data]] = [:],
         appendedUID: UInt32? = nil,
         errors: [Method: any Error] = [:]
     ) {
@@ -151,6 +182,9 @@ actor FakeMailClient: MailWriteClient {
         self.searchRules = searchRules
         self.refusesNonASCII = refusesNonASCII
         self.rawMessageErrors = rawMessageErrors
+        self.outlines = outlines
+        self.bodyPartErrors = bodyPartErrors
+        self.parts = parts
         self.appendedUID = appendedUID
         self.errors = errors
     }
@@ -320,6 +354,34 @@ actor FakeMailClient: MailWriteClient {
             return message.raw
         }
         return rawMessages[uid] ?? Data()
+    }
+
+    func fetchOutline(uid: UInt32) async throws -> MessageOutline? {
+        try record(.fetchOutline(uid), .fetchOutline)
+        if let message = openMessages[uid] {
+            return message.outline ?? MessageOutline(size: message.raw.count, headers: MessageHeaders(), parts: [])
+        }
+        if let outline = outlines[uid] {
+            return outline
+        }
+        return rawMessages[uid].map { MessageOutline(size: $0.count, headers: MessageHeaders(), parts: []) }
+    }
+
+    func fetchPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {
+        try record(.fetchPart(id, uid), .fetchPart)
+        return parts[uid]?[id] ?? Data()
+    }
+
+    func fetchBodyPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {
+        try record(.fetchBodyPart(id, uid), .fetchBodyPart)
+        if let error = bodyPartErrors[uid] {
+            if case IrisError.bodyDownloadTimedOut = error {
+                // SwiftMail reconnects after a timeout, and no mailbox is open on the new connection.
+                openMailbox = nil
+            }
+            throw error
+        }
+        return openMessages[uid]?.bodyParts[id] ?? parts[uid]?[id] ?? Data()
     }
 
     func select(mailbox: String) async throws {

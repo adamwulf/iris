@@ -252,6 +252,7 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertNil(command.file)
         XCTAssertFalse(command.all)
         XCTAssertFalse(command.noQuote, "the original is quoted by default")
+        XCTAssertEqual(command.attach, [], "no attachments by default")
     }
 
     func testDraftTakesTheReplyAsAnArgument() throws {
@@ -288,6 +289,29 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertEqual(command.file, "reply.md")
     }
 
+    func testDraftTakesRepeatedAttachInOrder() throws {
+        let command = try Draft.parse([
+            "work/INBOX/42", "--attach", "q4.pdf", "Thanks!", "--attach=notes/My Notes.txt", "--all", "--attach", "q4.pdf",
+        ])
+        XCTAssertEqual(command.attach, ["q4.pdf", "notes/My Notes.txt", "q4.pdf"], "in order, repeats kept")
+        XCTAssertEqual(command.body, "Thanks!")
+        XCTAssertTrue(command.all)
+
+        let withFile = try Draft.parse(["work/INBOX/42", "-F", "reply.md", "--attach", "q4.pdf"])
+        XCTAssertEqual(withFile.file, "reply.md")
+        XCTAssertEqual(withFile.attach, ["q4.pdf"])
+    }
+
+    /// Each --attach takes one path, so a second path is the reply, not another file.
+    /// `DraftBody.read` then rejects a reply that names a file (`draftBodyNamesAFile`).
+    func testDraftAttachTakesOnePathEach() throws {
+        let command = try Draft.parse(["work/INBOX/42", "--attach", "q4.pdf", "budget.xlsx"])
+        XCTAssertEqual(command.attach, ["q4.pdf"])
+        XCTAssertEqual(command.body, "budget.xlsx")
+
+        XCTAssertThrowsError(try Draft.parse(["work/INBOX/42", "--attach"]), "--attach needs a path")
+    }
+
     func testDraftNeedsAFullIrisIDAndHasNoAccountOption() {
         XCTAssertThrowsError(try Draft.parse([]))
         XCTAssertThrowsError(try Draft.parse(["42", "Thanks!"]))
@@ -299,6 +323,53 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertThrowsError(try Draft.parse(["INBOX/42"])) { error in
             let message = Draft.message(for: error)
             XCTAssertTrue(message.contains("\"INBOX/42\" is not an iris ID"), message)
+        }
+    }
+
+    func testDownloadTakesAnIrisIDAndAnAttachmentID() throws {
+        let command = try Download.parse(["personal/[Gmail]/All Mail/7", "1.2"])
+        XCTAssertEqual(command.arguments.irisID, IrisID(account: "personal", mailbox: "[Gmail]/All Mail", uid: 7))
+        XCTAssertEqual(command.arguments.attachmentID.components, [1, 2])
+        XCTAssertNil(command.output, "without -o, the bytes go to stdout")
+    }
+
+    func testDownloadTakesTheOutputPathWithShortAndLongNames() throws {
+        XCTAssertEqual(try Download.parse(["work/INBOX/42", "2", "-o", "report.pdf"]).output, "report.pdf")
+        XCTAssertEqual(try Download.parse(["work/INBOX/42", "2", "--output", "~/Downloads"]).output, "~/Downloads")
+        XCTAssertEqual(try Download.parse(["-o", "x", "work/INBOX/42", "2"]).output, "x")
+    }
+
+    func testReadOnlyDownloadTakesTheSameArgumentsAndNoOutputPath() throws {
+        let command = try ReadOnlyDownload.parse(["work/INBOX/42", "2"])
+        XCTAssertEqual(command.arguments.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+        XCTAssertEqual(command.arguments.attachmentID.components, [2])
+        XCTAssertThrowsError(try ReadOnlyDownload.parse(["work/INBOX/42", "2", "-o", "x"]))
+        XCTAssertThrowsError(try ReadOnlyDownload.parse(["work/INBOX/42", "2", "--output", "x"]))
+    }
+
+    func testDownloadNeedsBothIDsAndHasNoAccountOption() {
+        for parse in [{ try Download.parse($0) }, { try ReadOnlyDownload.parse($0) }] as [([String]) throws -> Any] {
+            XCTAssertThrowsError(try parse([]))
+            XCTAssertThrowsError(try parse(["work/INBOX/42"]), "the attachment ID is required")
+            XCTAssertThrowsError(try parse(["work/INBOX/42", "2", "3"]), "one attachment at a time")
+            XCTAssertThrowsError(try parse(["work/INBOX/42", "2", "--account", "work"]), "the iris ID names the account")
+        }
+    }
+
+    func testDownloadExplainsABadIrisIDAndABadAttachmentID() {
+        XCTAssertThrowsError(try Download.parse(["INBOX/42", "2"])) { error in
+            let message = Download.message(for: error)
+            XCTAssertTrue(message.contains("\"INBOX/42\" is not an iris ID"), message)
+        }
+        for bad in ["0", "1.", "a", "-1"] {
+            XCTAssertThrowsError(try Download.parse(["work/INBOX/42", "--", bad])) { error in
+                let message = Download.message(for: error)
+                XCTAssertTrue(message.contains("\"\(bad)\" is not an attachment ID"), message)
+            }
+        }
+        XCTAssertThrowsError(try ReadOnlyDownload.parse(["work/INBOX/42", "x.2"])) { error in
+            let message = ReadOnlyDownload.message(for: error)
+            XCTAssertTrue(message.contains("\"x.2\" is not an attachment ID"), message)
         }
     }
 
