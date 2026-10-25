@@ -157,9 +157,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "\"\(AccountResolver.key(.googleClientSecret, account: "NAME"))=...\" to a .env file, "
                 + "then run `iris auth login --account <name>`. See \"Gmail with OAuth\" in README.md."
         case .googleNotSignedIn(let account):
-            return "The account \"\(account)\" signs in with Google "
-                + "(it has \(AccountResolver.key(.googleClientID, account: account))), but it is not signed in yet: "
-                + "\(AccountResolver.key(.googleRefreshToken, account: account)) is not set. "
+            return "\(AccountResolver.key(.googleRefreshToken, account: account)) is not set. "
                 + "Run `\(Self.authLoginCommand(account))` to sign in."
         case .googleSignInExpired(let account):
             return "The Google sign-in of the account \"\(account)\" has expired or was revoked "
