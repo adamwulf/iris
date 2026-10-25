@@ -76,17 +76,41 @@ private struct HTMLEscaper: MarkupRewriter {
         LineBreak()
     }
 
-    /// Nil for a paragraph left with only white space and line breaks, such as
-    /// one that held only `cid:` images: two on lines next to each other leave
-    /// a line break, and two linked icons leave the space between the links.
-    mutating func visitParagraph(_ paragraph: Paragraph) -> Markup? {
-        guard let rewritten = defaultVisit(paragraph) else {
-            return nil
-        }
-        let isBlank = rewritten.children.allSatisfy { child in
+    /// Whether `markup` shows nothing: every child is a line break or
+    /// white-space text, or it has no children. Dropping `cid:` images leaves
+    /// such nodes: two on lines next to each other leave a line break, and two
+    /// linked icons leave the space between the links.
+    static func isBlank(_ markup: Markup) -> Bool {
+        markup.children.allSatisfy { child in
             child is LineBreak || child is SoftBreak || (child as? Text)?.string.allSatisfy(\.isWhitespace) == true
         }
-        return isBlank ? nil : rewritten
+    }
+
+    /// `markup`, or nil when it is blank. The children are rewritten first, so
+    /// a drop spreads outward: image, emphasis, link, paragraph.
+    static func unlessBlank(_ markup: Markup?) -> Markup? {
+        guard let markup, !isBlank(markup) else {
+            return nil
+        }
+        return markup
+    }
+
+    mutating func visitParagraph(_ paragraph: Paragraph) -> Markup? {
+        Self.unlessBlank(defaultVisit(paragraph))
+    }
+
+    /// Outlook writes a bold signature block as <b><span><a><img src="cid:...">, which
+    /// SwiftText keeps as `**[![Image](cid:...)](https://...)**`.
+    mutating func visitStrong(_ strong: Strong) -> Markup? {
+        Self.unlessBlank(defaultVisit(strong))
+    }
+
+    mutating func visitEmphasis(_ emphasis: Emphasis) -> Markup? {
+        Self.unlessBlank(defaultVisit(emphasis))
+    }
+
+    mutating func visitStrikethrough(_ strikethrough: Strikethrough) -> Markup? {
+        Self.unlessBlank(defaultVisit(strikethrough))
     }
 
     mutating func visitText(_ text: Text) -> Markup? {
@@ -101,15 +125,12 @@ private struct HTMLEscaper: MarkupRewriter {
         CodeBlock(language: codeBlock.language.map(Self.escaped), Self.escaped(codeBlock.code))
     }
 
-    /// Nil for a link left with no children: signatures link their logo and
-    /// social icons, and SwiftText keeps that as `[![Image](cid:...)](https://...)`.
+    /// Nil for a link left blank: signatures link their logo and social icons,
+    /// and SwiftText keeps that as `[![Image](cid:...)](https://...)`.
     mutating func visitLink(_ link: Link) -> Markup? {
         var link = link
         link.destination = link.destination.map(Self.escaped)
-        guard let rewritten = defaultVisit(link), rewritten.childCount > 0 else {
-            return nil
-        }
-        return rewritten
+        return Self.unlessBlank(defaultVisit(link))
     }
 
     mutating func visitImage(_ image: Image) -> Markup? {

@@ -58,6 +58,22 @@ final class MarkdownHTMLTests: XCTestCase {
         )
     }
 
+    /// Outlook writes a bold signature block as <b><span><a><img src="cid:...">. The drop
+    /// spreads outward: image, emphasis, link, paragraph.
+    func testABoldOrItalicCidImageLeavesNothing() {
+        XCTAssertEqual(html("**[![Image](cid:logo)](https://acme.com)**"), "")
+        XCTAssertEqual(html("Jane\n\n**[![Image](cid:logo)](https://acme.com)**"), "<p>Jane</p>\n")
+        XCTAssertEqual(html("[*![Image](cid:logo)*](https://acme.com)"), "")
+        XCTAssertEqual(html("~~![Image](cid:logo)~~"), "", "strikethrough too")
+    }
+
+    func testALinkedRemoteLogoStays() {
+        XCTAssertEqual(
+            html("[![logo](https://acme.com/logo.png)](https://acme.com)"),
+            "<p><a href=\"https://acme.com\"><img src=\"https://acme.com/logo.png\" /></a></p>\n"
+        )
+    }
+
     func testAParagraphLeftWithOnlyALineBreakIsLeftOut() {
         XCTAssertEqual(html("Jane\n\n![Image](cid:logo)\n![Image](cid:icon)"), "<p>Jane</p>\n")
         XCTAssertEqual(html("![Image](cid:logo)  \n![Image](cid:icon)"), "", "a hard break too")
