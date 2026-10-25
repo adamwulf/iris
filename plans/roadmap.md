@@ -21,6 +21,10 @@ describes them.
   `iris draft`, check that the draft opens in Apple Mail as its own draft,
   in the thread, and that the server reports its UID (UIDPLUS; Zoho
   advertises it).
+- Run `iris list --search` and `iris list --to` once per provider (Gmail,
+  iCloud, Zoho). IMAP TEXT and TO have not been sent to a real server
+  yet: check that `--search` finds a word that is only in the body, and
+  how each server matches words (whole words, as SUBJECT on Zoho?).
 - Zoho (`imappro.zoho.com`) was checked on 2026-10-24: `check`,
   `mailboxes`, `list`, `show`, and `thread` work. Post-login CAPABILITY: `IMAP4rev1
   UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR

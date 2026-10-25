@@ -263,7 +263,8 @@ same, and the next-page hint keeps the filter options.
 The server does the matching (IMAP SEARCH), so the details depend on the
 server. RFC 3501 says that text matches any part of the header (or, for
 `--search`, of the whole message) and ignores case, but some servers match
-only whole words, and some refuse text that is not ASCII. `--since` and `--before`
+only whole words, and some refuse text that is not ASCII. On Zoho,
+`--search` with a message's `Message-ID` finds nothing. `--since` and `--before`
 compare days, not times: the server uses the day it received the message
 and ignores the time and the time zone. That day can be different from the
 `DATE` column, which shows the sender's `Date:` header.
