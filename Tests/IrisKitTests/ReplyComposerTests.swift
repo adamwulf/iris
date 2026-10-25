@@ -120,9 +120,12 @@ final class ReplyComposerTests: XCTestCase {
         XCTAssertEqual(draft.cc, [bob])
     }
 
+    /// The capitals are on the configured side, so both the sender check and
+    /// the removal from To must ignore case.
     func testYourOwnMessageIsKnownByTheUsernameIgnoringCaseAndItLeavesTo() {
-        let login = MailAddress(name: nil, address: "Login@Example.com")
-        let draft = reply(to: original(from: [login], to: [jane, login]), username: "login@example.com")
+        let login = MailAddress(name: nil, address: "login@example.com")
+        let shouting = MailAddress(name: nil, address: "LOGIN@EXAMPLE.COM")
+        let draft = reply(to: original(from: [login], to: [jane, shouting]), username: "Login@Example.com")
         XCTAssertEqual(draft.to, [jane])
     }
 
