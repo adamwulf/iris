@@ -94,6 +94,33 @@ final class SwiftMailClientTests: XCTestCase {
         )
     }
 
+    /// The same 60 seconds as for an attachment, but `iris show` was not downloading an attachment.
+    func testTimeoutOnABodyPartBecomesBodyDownloadTimedOut() {
+        XCTAssertEqual(
+            irisError(IMAPError.timeout, .fetchBodyPart),
+            .bodyDownloadTimedOut(seconds: SwiftMailClient.partTimeoutSeconds)
+        )
+        XCTAssertEqual(
+            irisError(IMAPError.timeout, .fetchOutline), .serverTimedOut(account: "work", command: "FETCH"),
+            "FetchMessageInfoCommand's 10 seconds for a size, a few header fields, and a BODYSTRUCTURE"
+        )
+    }
+
+    func testOtherBodyPartAndOutlineErrorsBecomeServerErrorsOrConnectionLost() {
+        for command in [SwiftMailClient.Command.fetchBodyPart, .fetchOutline] {
+            XCTAssertEqual(
+                irisError(IMAPError.fetchFailed("no(NO [UNAVAILABLE] secret)"), command),
+                .serverError(account: "work", command: "FETCH", reason: "Fetch failed: no(NO [UNAVAILABLE] <redacted>)"),
+                "\(command)"
+            )
+            XCTAssertEqual(
+                irisError(IMAPError.connectionFailed("Server terminated connection: secret"), command),
+                .connectionLost(account: "work", command: "FETCH", reason: "Server terminated connection: <redacted>"),
+                "\(command)"
+            )
+        }
+    }
+
     func testOtherPartAndStructureErrorsBecomeServerErrorsOrConnectionLost() {
         XCTAssertEqual(
             irisError(IMAPError.fetchFailed("no(NO [UNAVAILABLE] secret)"), .fetchStructure),
@@ -327,6 +354,11 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.Command.select(mailbox: "INBOX").name, "SELECT")
         XCTAssertEqual(SwiftMailClient.Command.store.name, "STORE")
         XCTAssertEqual(SwiftMailClient.Command.append(mailbox: "Drafts").name, "APPEND")
+    }
+
+    func testTheFetchesOfALargeMessageAreFETCH() {
+        XCTAssertEqual(SwiftMailClient.Command.fetchOutline.name, "FETCH")
+        XCTAssertEqual(SwiftMailClient.Command.fetchBodyPart.name, "FETCH")
     }
 
     // MARK: - APPEND errors
@@ -813,5 +845,136 @@ final class SwiftMailClientTests: XCTestCase {
 
     func testThreadHeadersWithoutAUIDAreLeftOut() {
         XCTAssertNil(ThreadHeaders(swiftMail: MessageInfo(sequenceNumber: SequenceNumber(3))))
+    }
+
+    func testThreadHeadersKeepTheSize() throws {
+        let info = MessageInfo(sequenceNumber: SequenceNumber(3), uid: UID(103), size: 20_000_000)
+        XCTAssertEqual(ThreadHeaders(swiftMail: info)?.size, 20_000_000)
+        XCTAssertNil(try XCTUnwrap(ThreadHeaders(swiftMail: MessageInfo(sequenceNumber: SequenceNumber(3), uid: UID(103)))).size)
+    }
+
+    // MARK: - Outlines
+
+    func testTheOutlineAsksForTheHeaderFieldsThatShowShows() {
+        XCTAssertEqual(SwiftMailClient.messageHeaderFields, [
+            "From", "To", "Cc", "Reply-To", "Subject", "Date", "Message-ID", "In-Reply-To", "References",
+        ])
+    }
+
+    /// multipart/mixed(text/plain, application/pdf), as SwiftMail gives its BODYSTRUCTURE.
+    private let reportParts = [
+        MessagePart(sectionString: "1", contentType: "text/plain; charset=utf-8", encoding: "QUOTED-PRINTABLE", size: 40),
+        MessagePart(
+            sectionString: "2", contentType: "application/pdf", disposition: "attachment", encoding: "BASE64",
+            filename: "report.pdf", contentId: "<pdf@example.com>", size: 27_000_000
+        ),
+    ]
+
+    /// The answer to FETCH (UID RFC822.SIZE BODYSTRUCTURE and the header fields) for UID 150.
+    private func reportAnswer() -> MessageInfo {
+        let date = Date(timeIntervalSince1970: 1_792_867_320)
+        return MessageInfo(
+            sequenceNumber: SequenceNumber(7),
+            uid: UID(150),
+            subject: "Q4 report",
+            from: "Jane Doe <jane@example.com>",
+            replyTo: ["reports@example.com"],
+            to: ["Me <me@example.com>", "bob@example.com"],
+            cc: ["Ann <ann@example.com>"],
+            date: date,
+            messageId: MessageID("<m3@example.com>"),
+            inReplyTo: MessageID("<m2@example.com>"),
+            references: [MessageID("<m1@example.com>"), MessageID("<m2@example.com>")].compactMap { $0 },
+            parts: reportParts,
+            size: 20_000_000
+        )
+    }
+
+    private var reportOutline: MessageOutline {
+        MessageOutline(
+            size: 20_000_000,
+            headers: MessageHeaders(
+                messageID: "<m3@example.com>",
+                subject: "Q4 report",
+                from: [MailAddress(name: "Jane Doe", address: "jane@example.com")],
+                to: [MailAddress(name: "Me", address: "me@example.com"), MailAddress(name: nil, address: "bob@example.com")],
+                cc: [MailAddress(name: "Ann", address: "ann@example.com")],
+                replyTo: [MailAddress(name: nil, address: "reports@example.com")],
+                date: Date(timeIntervalSince1970: 1_792_867_320),
+                inReplyTo: "<m2@example.com>",
+                references: ["<m1@example.com>", "<m2@example.com>"]
+            ),
+            parts: [
+                PartOutline(
+                    id: AttachmentID(components: [1]), contentType: "text/plain; charset=utf-8",
+                    encoding: "QUOTED-PRINTABLE", size: 40
+                ),
+                PartOutline(
+                    id: AttachmentID(components: [2]), contentType: "application/pdf", disposition: "attachment",
+                    encoding: "BASE64", filename: "report.pdf", contentID: "<pdf@example.com>", size: 27_000_000
+                ),
+            ]
+        )
+    }
+
+    func testOutlineHasTheSizeHeadersAndPartsOfTheAnswerWithTheUID() {
+        // An unsolicited FETCH for another message, such as a flag change, can come first.
+        let unsolicited = MessageInfo(sequenceNumber: SequenceNumber(3), uid: UID(103), flags: [.seen])
+
+        XCTAssertEqual(SwiftMailClient.outline(in: [unsolicited, reportAnswer()], uid: 150), reportOutline)
+    }
+
+    /// A CONDSTORE server (Zoho advertises it) can send `* 7 FETCH (UID 150
+    /// MODSEQ (...) FLAGS (...))` before the answer. SwiftMail then puts the
+    /// header fields on that first answer with the sequence number, and the
+    /// size and BODYSTRUCTURE on the last.
+    func testOutlineCombinesTheAnswersForTheSameMessage() {
+        var flagChange = reportAnswer()
+        flagChange.parts = []
+        flagChange.size = nil
+        var answer = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), parts: reportParts)
+        answer.size = 20_000_000
+
+        XCTAssertEqual(SwiftMailClient.outline(in: [flagChange, answer], uid: 150), reportOutline)
+        XCTAssertEqual(SwiftMailClient.outline(in: [answer, flagChange], uid: 150), reportOutline)
+    }
+
+    func testOutlineOfAMissingUIDIsNil() {
+        XCTAssertNil(SwiftMailClient.outline(in: [], uid: 150), "no answer: no such message")
+        XCTAssertNil(SwiftMailClient.outline(in: [reportAnswer()], uid: 151), "only another message answered")
+    }
+
+    func testOutlineOfAnAnswerWithoutABodyStructureOrSizeHasNone() throws {
+        // SwiftMail leaves `parts` empty when BODYSTRUCTURE is missing or cannot be parsed.
+        let outline = try XCTUnwrap(SwiftMailClient.outline(in: [MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150))], uid: 150))
+        XCTAssertEqual(outline, MessageOutline(size: nil, headers: MessageHeaders(), parts: []))
+    }
+
+    /// SwiftMail reads In-Reply-To whole as one message ID; iris keeps the
+    /// first `<...>` of it, as a whole download keeps the first ID of the header.
+    func testMessageHeadersKeepTheFirstIDOfAnInReplyToWithACommentOrTwoIDs() {
+        for (value, expected) in [
+            ("<a@example.com> (Jane's message)", "<a@example.com>"),
+            ("<a@example.com> <b@example.com>", "<a@example.com>"),
+            ("<a@example.com>", "<a@example.com>"),
+        ] {
+            let info = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), inReplyTo: MessageID(value))
+            XCTAssertEqual(MessageHeaders(swiftMail: info).inReplyTo, expected, value)
+        }
+        XCTAssertNil(MessageHeaders(swiftMail: MessageInfo(sequenceNumber: SequenceNumber(7))).inReplyTo)
+    }
+
+    func testMessageHeadersReplaceAGroupByItsMembers() {
+        let info = MessageInfo(sequenceNumber: SequenceNumber(7), to: ["Team: ann@example.com, bob@example.com;"])
+        XCTAssertEqual(MessageHeaders(swiftMail: info).to, [
+            MailAddress(name: nil, address: "ann@example.com"), MailAddress(name: nil, address: "bob@example.com"),
+        ])
+    }
+
+    func testPartOutlineWithoutTheOptionalFieldsHasNone() {
+        XCTAssertEqual(
+            PartOutline(swiftMail: MessagePart(sectionString: "1.2", contentType: "image/png")),
+            PartOutline(id: AttachmentID(components: [1, 2]), contentType: "image/png")
+        )
     }
 }

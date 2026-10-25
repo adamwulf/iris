@@ -81,6 +81,12 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case invalidDate(String)
     /// The raw message did not arrive inside SwiftMail's fixed time limit.
     case messageDownloadTimedOut(seconds: Int)
+    /// A body part of a large message, which iris downloads in parts, did not
+    /// arrive inside SwiftMail's fixed time limit for one part.
+    case bodyDownloadTimedOut(seconds: Int)
+    /// The server sent no bytes for a body part of a large message that
+    /// BODYSTRUCTURE says is not empty.
+    case bodyNotReceived(IrisID)
     /// After a good login, the server did not answer a command in time.
     case serverTimedOut(account: String, command: String)
     /// The server answered the SEARCH for the `list` filter options with NO or BAD.
@@ -251,6 +257,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "The message did not download in \(seconds) seconds. It may be large, or the connection "
                 + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
                 + "every raw-message download after \(seconds) seconds. Try again on a faster connection."
+        case .bodyDownloadTimedOut(let seconds):
+            return "The body of the message did not download in \(seconds) seconds. The message is large, so iris "
+                + "downloads only its text and HTML parts, and they may be large too, or the connection may be slow. "
+                + "This is a known limit of SwiftMail, the IMAP library that iris uses: it stops every part "
+                + "download after \(seconds) seconds. Try again on a faster connection."
+        case .bodyNotReceived(let id):
+            return "The server sent no bytes for the body of the message \"\(id)\", which is not empty. Try again."
         case .serverTimedOut(let account, let command):
             return "The server did not answer \(command) in time (account \"\(account)\"). "
                 + "The connection may be slow, or the server may be busy. Try again."

@@ -113,6 +113,22 @@ final class MailErrorTests: XCTestCase {
         XCTAssertTrue(message.contains("known limit of SwiftMail"))
     }
 
+    func testBodyTimeoutExplainsTheLargeMessageAndTheSwiftMailLimit() throws {
+        let message = try XCTUnwrap(IrisError.bodyDownloadTimedOut(seconds: 60).errorDescription)
+        XCTAssertTrue(message.contains("The body of the message did not download in 60 seconds"), message)
+        XCTAssertTrue(message.contains("only its text and HTML parts"), message)
+        XCTAssertTrue(message.contains("known limit of SwiftMail"), message)
+        XCTAssertTrue(message.contains("every part download after 60 seconds"), message)
+        XCTAssertFalse(message.contains("attachment"), "show and thread were not downloading an attachment")
+    }
+
+    func testNoBytesForTheBodySaysToTryAgain() {
+        XCTAssertEqual(
+            IrisError.bodyNotReceived(IrisID(account: "work", mailbox: "INBOX", uid: 150)).errorDescription,
+            "The server sent no bytes for the body of the message \"work/INBOX/150\", which is not empty. Try again."
+        )
+    }
+
     func testServerTimeoutAdvisesRetryingNotASmallerLimitOrTheHostAndPort() throws {
         let message = try XCTUnwrap(IrisError.serverTimedOut(account: "work", command: "FETCH").errorDescription)
         XCTAssertTrue(message.contains("did not answer FETCH in time"))
