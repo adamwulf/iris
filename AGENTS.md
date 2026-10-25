@@ -205,6 +205,9 @@ names the account (`--account <name>`).
   (a force unwrap) for other years. So `CalendarDay(parsing:)` rejects those
   years, and `searchUIDs` passes `CalendarDay.calendar` (UTC), the calendar
   that made `CalendarDay.start`, so no time zone moves the day.
+- **Quoted ENVELOPE names:** Zoho keeps the header's quotes in the ENVELOPE
+  name (`"\"Doe, Jane\""`), and SwiftMail passes them on. `MailAddress.init`
+  removes the quotes of a name that is one quoted-string, for every address.
 - **Special-use:** a plain LIST may leave out the attributes, so
   `SwiftMailClient.listMailboxes` merges LIST with LIST RETURN (SPECIAL-USE).
   Servers without SPECIAL-USE get SwiftMail's guess from mailbox names.

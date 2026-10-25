@@ -261,4 +261,14 @@ final class SwiftMailClientTests: XCTestCase {
     func testEnvelopeWithoutAUIDIsLeftOut() {
         XCTAssertNil(MessageEnvelope(swiftMail: MessageInfo(sequenceNumber: SequenceNumber(3), flags: [.seen])))
     }
+
+    /// Zoho keeps the header's quotes in the ENVELOPE name.
+    func testEnvelopeSenderNameLosesTheQuotesTheServerKept() throws {
+        var info = MessageInfo(sequenceNumber: SequenceNumber(3), uid: UID(103))
+        info.fromAddresses = [.mailbox(EmailAddress(name: #""Doe, Jane""#, address: "jane@example.com"))]
+
+        let sender = try XCTUnwrap(MessageEnvelope(swiftMail: info)?.from)
+        XCTAssertEqual(sender.name, "Doe, Jane")
+        XCTAssertEqual(sender.address, "jane@example.com")
+    }
 }
