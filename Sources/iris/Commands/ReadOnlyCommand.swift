@@ -1,7 +1,8 @@
 import ArgumentParser
 
-/// A command that cannot change anything on the server: no send, draft, move,
-/// flag, or delete. Only these commands can be listed under `iris ro`.
+/// A command that cannot change anything on the server (no send, draft, move,
+/// flag, or delete) and writes no file. Only these commands can be listed
+/// under `iris ro`.
 protocol ReadOnlyCommand: AsyncParsableCommand {}
 
 /// `iris ro <command>`: the read-only commands, and nothing else.

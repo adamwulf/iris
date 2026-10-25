@@ -362,7 +362,8 @@ for the user to save.
 agent `Bash(iris ro:*)` and nothing else. `Sources/iris/Commands/ReadOnlyCommand.swift`
 enforces it:
 
-- A **read-only** command (it cannot send, draft, move, flag, or delete) is
+- A **read-only** command (it cannot send, draft, move, flag, or delete,
+  and writes no file) is
   declared `struct X: ReadOnlyCommand` and added to `ReadOnly.sharedCommands`.
   It then appears both as `iris x` and `iris ro x`.
 - A **write** command (such as `read`, `unread`, `draft`, and `download`)

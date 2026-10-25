@@ -521,7 +521,8 @@ stdout and says on stderr where it saved the draft.
 ### Read-only access for agents
 
 `iris ro <command>` runs the same command as `iris <command>`, but only the
-read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
+read-only commands exist under `ro`: the ones that change nothing on the
+server and write no file. They are `accounts`, `check`, `mailboxes`,
 `list`, `show`, `thread`, `auth status`, and `download` without `-o`.
 Commands that change mail (`read`, `unread`, and `draft`) are not there, so
 `iris ro read ...` and `iris ro draft ...` fail. Neither is `iris auth login`,
