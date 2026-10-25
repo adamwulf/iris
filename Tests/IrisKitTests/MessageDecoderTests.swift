@@ -960,14 +960,23 @@ final class MessageDecoderTests: XCTestCase {
             <div>Thanks!</div><blockquote type="cite"><div>Begin forwarded message:</div><div>Lunch on Tuesday?</div></blockquote>
             """)
         }
-        let reply = try await MessageDecoder.decode(message(subject: "Re: Fwd: Lunch"))
-        XCTAssertEqual(reply.body, "Thanks!")
-        XCTAssertTrue(reply.bodyTrimmed)
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
 
-        // A forward with an edited subject.
-        let forward = try await MessageDecoder.decode(message(subject: "Lunch"))
-        XCTAssertFalse(forward.bodyTrimmed)
-        XCTAssertTrue(forward.body.contains("Lunch on Tuesday?"))
+        // Every choice, so that both places that convert the HTML (--body
+        // text with no text part is the second) know that it is a reply.
+        for preference in BodyPreference.allCases {
+            let reply = try await MessageDecoder.decode(message(subject: "Re: Fwd: Lunch"), body: preference)
+            XCTAssertEqual(reply.body, "Thanks!", "--body \(preference)")
+            XCTAssertTrue(reply.bodyTrimmed, "--body \(preference)")
+
+            // A forward with an edited subject.
+            let forward = try await MessageDecoder.decode(message(subject: "Lunch"), body: preference)
+            XCTAssertFalse(forward.bodyTrimmed, "--body \(preference)")
+            XCTAssertTrue(forward.body.contains("Lunch on Tuesday?"), "--body \(preference)")
+        }
+        XCTAssertEqual(recorder.lines, Array(repeating: "The message has no text part, so the html part is shown.", count: 2))
     }
 
     func testTheQuoteInTheLastOfSeveralTextPartsIsTrimmed() async throws {
