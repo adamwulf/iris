@@ -88,6 +88,11 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// The server answered a command with NO or BAD.
     case serverError(account: String, command: String, reason: String)
 
+    // Attachments
+
+    /// The text is not an attachment ID: dot-separated numbers, each 1 or more.
+    case invalidAttachmentID(String)
+
     // Google sign-in
 
     /// `iris auth status` found no account with `IRIS_<NAME>_GOOGLE_CLIENT_ID`.
@@ -240,6 +245,11 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .serverError(let account, let command, let reason):
             return "The server answered \(command) with an error (account \"\(account)\"): \(reason). "
                 + "Run `iris check --account \(MessagePage.shellQuoted(account))` to test the account settings."
+        // Attachments
+        case .invalidAttachmentID(let text):
+            return "\"\(text)\" is not an attachment ID. An attachment ID is the number that `iris show` lists "
+                + "first on each attachment line, such as 2 or 1.2: numbers of 1 or more, joined by dots. "
+                + "Run `iris show '<iris-id>'` to see the attachment IDs of a message."
         // Google sign-in
         case .noGoogleAccounts:
             return "No account signs in with Google. To sign in with Google, add the lines "
