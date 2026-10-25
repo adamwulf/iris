@@ -375,15 +375,20 @@ each body, and print a line under the body that says so:
 
 iris cuts only at the marks that mail apps leave:
 
-- HTML: Gmail's quote and signature (`gmail_quote`, `gmail_signature`),
-  Apple Mail's and Thunderbird's `<blockquote type="cite">` (and
-  Thunderbird's attribution and signature), and Outlook's reply header
-  (`divRplyFwdMsg`), with everything under it (but not when it is inside
-  another app's quote: then it is part of that quote).
+- HTML: Gmail's reply quote and signature (`gmail_quote`, `gmail_attr`,
+  `gmail_signature`; Superhuman writes them too), Zoho's reply quote
+  (`zmail_extra`, `blockquote_zmail`), Apple Mail's and Thunderbird's
+  `<blockquote type="cite">` (and Thunderbird's attribution and
+  signature), and Outlook's reply header (`divRplyFwdMsg`), with
+  everything under it (but not when it is inside another app's quote: then
+  it is part of that quote). A quote that the sender made with Gmail's
+  Quote button is part of the new text, so it is kept. Hidden elements at
+  the end (a tracking image) are dropped too; nobody sees them.
 - Text (also the Markdown from HTML): an `On <date>, <name> wrote:` line
   (or Zoho's `---- On <date> <name> wrote ----`) with only `>` lines under
-  it, Outlook's `From:` / `Sent:` / `To:` / `Subject:` header block, and a
-  signature after a `-- ` line.
+  it, the same line quoted as the first line of a quote (iPhone writes
+  `> On ... wrote:`), the `From:` / `Sent:` (or `Date:`) / `Subject:`
+  header block of Outlook and Zoho, and a signature after a `-- ` line.
 
 Only the end of a body is cut. When someone answers between the quoted
 lines, the answers and the quoted lines above them are kept; only quoted
@@ -405,17 +410,23 @@ Limits:
   whose attribution line has no class, a non-English one stays at the end;
   and a reply from classic desktop Outlook in another language
   (`Von:` / `Gesendet:` / `Betreff:`) is shown whole. The classes and ids
-  that Gmail, Apple Mail, Thunderbird, and Outlook on the web write do not
-  depend on the language.
+  that Gmail, Zoho, Apple Mail, Thunderbird, and Outlook on the web write
+  do not depend on the language.
 - A quoted forward at the end of a message is hidden only when the subject
   starts with `Re:`. A reply whose subject does not (for example an edited
   one) keeps it. A forward whose subject was changed to start with `Re:`
   loses the Apple Mail message it forwards; `--full` shows it.
-- A plain-text reply from Apple Mail is kept whole: Apple Mail quotes its
-  `On ... wrote:` line too, so there is no mark. Its HTML part, which iris
-  shows by default, is trimmed.
+- A quote that an Apple Mail sender adds to the end of their own text
+  (with "Increase Quote Level") looks like a reply's quote, so it is hidden.
 - A signature without the `-- ` line (most signatures that people type) is
   kept, and so is "Sent from my iPhone".
+
+The marks were checked on 2026-10-25 against real replies from Gmail,
+Superhuman, Zoho Mail on the web, Apple Mail on the Mac and iPhone (HTML
+and plain text), Outlook on the web, and classic Outlook, and on forwards.
+Thunderbird, new Outlook, and a Gmail reply with answers between the
+quoted lines were not in those mailboxes; their marks come from what
+those apps are known to write.
 
 ### Iris IDs
 

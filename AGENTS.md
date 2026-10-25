@@ -691,6 +691,15 @@ account (`--account <name>`).
   escaped line by line (`MarkdownHTML.html(fromPlainText:)`), because as
   Markdown a `-- ` signature line makes the line above it a heading. The
   text part quotes both kinds with `> `.
+- **Quote marks in real mail** (checked 2026-10-25): Gmail's Quote button
+  writes the same `blockquote.gmail_quote` as a reply's quote, so only one
+  inside `div.gmail_quote` (or Zoho's `div.zmail_extra`) is history.
+  Superhuman writes Gmail's classes and ends with a hidden tracking image
+  (`display: none`). Zoho on the web puts a `From:` / `Date:` / `Subject:`
+  block (id `Zm-_Id_-Sgn1`) above `blockquote#blockquote_zmail`, not an
+  "On ... wrote:" line. iPhone plain text quotes its attribution
+  (`> On ... wrote:`). Outlook's quoted HTML inside another app's quote
+  keeps its ids with an `x_` prefix.
 - **SwiftText's DOM:** `DOMElement.children` is a public `var`, so
   `QuotedHistory` removes nodes in place before `HTMLDocument.markdown()`;
   `DOMText` is internal, so a text node is read with `DOMNode.text()`.

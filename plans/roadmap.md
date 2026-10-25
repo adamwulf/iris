@@ -115,11 +115,11 @@ Next:
 - Check `iris thread` on Gmail and iCloud. Gmail's SEARCH is also
   index-based: confirm that SUBJECT finds the replies there, and how it
   matches words.
-- Check the quoted-history trimming (README.md, "Quoted history and
-  signatures") on real replies from Gmail, Apple Mail, Outlook, and Zoho.
-  The tests use HTML written from memory of each app; Zoho's HTML markers
-  are not known (its replies are found by their `---- On ... wrote ----`
-  line).
+- Check the quoted-history trimming on a real Thunderbird reply, a new
+  Outlook reply, and a Gmail reply with answers between the quoted lines.
+  Gmail, Superhuman, Zoho on the web, Apple Mail (Mac and iPhone, HTML and
+  plain text), Outlook on the web, classic Outlook, and forwards were
+  checked on 2026-10-25 (README.md, "Quoted history and signatures").
 
 ## Later, maybe
 

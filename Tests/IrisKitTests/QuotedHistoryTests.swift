@@ -57,15 +57,28 @@ final class QuotedHistoryTests: XCTestCase {
     }
 
     func testAppleMailPlainTextReplyKeepsSentFromMyIPhone() {
+        // iPhone quotes its attribution with the message (seen on Zoho, 2026-10-25).
+        XCTAssertEqual(QuotedHistory.trim("""
+        Sounds good.
+        Sent from my iPhone
+
+        > On Oct 24, 2026, at 9:41\u{202F}PM, Jane Doe <jane@example.com> wrote:
+        >\u{20}
+        > \u{FEFF}Lunch on Tuesday?
+        >\u{20}
+        >> On Oct 24, 2026, at 9:00\u{202F}PM, Adam Wulf <adam@example.com> wrote:
+        >>\u{20}
+        >> Lunch?
+        """), .trimmed("Sounds good.\nSent from my iPhone"))
+
         XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
-        Sent from my iPhone
-
         > On Oct 24, 2026, at 9:41 AM, Jane Doe <jane@example.com> wrote:
-        >
         > Lunch on Tuesday?
-        """), .noMarker, "the attribution is quoted too, so there is no marker")
+
+        Yes, Tuesday.
+        """), .noMarker, "an answer under the quote keeps it")
 
         XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
@@ -383,6 +396,53 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertTrue(result.text.contains("Who is in?"))
     }
 
+    // MARK: - Shapes seen in real mail (2026-10-25)
+
+    func testAQuoteTheSenderWroteWithGmailsQuoteButtonIsKept() async throws {
+        // Gmail's Quote button makes a blockquote.gmail_quote outside the
+        // div.gmail_quote of the reply's history.
+        let result = try await trimmed("""
+        <div dir="ltr">Those dates work for us.<div><br></div><div>I still need an answer to my question from Monday:</div><blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">Can the emails include the list?</blockquote><div><div dir="ltr" class="gmail_signature">Bob</div></div></div><br><div class="gmail_quote" style=""><div dir="ltr" class="gmail_attr">On Mon, Oct 12, 2026 at 10:22 AM Jane Doe &lt;jane@example.com&gt; wrote:<br></div><blockquote class="gmail_quote">Let me know who sends them.</blockquote></div>
+        """)
+        XCTAssertEqual(result.text, """
+        Those dates work for us.
+
+        I still need an answer to my question from Monday:
+
+        > Can the emails include the list?
+        """)
+        XCTAssertTrue(result.trimmed)
+
+        let alone = try await trimmed(#"<div>See below:</div><blockquote class="gmail_quote">The list question.</blockquote>"#)
+        XCTAssertFalse(alone.trimmed)
+        XCTAssertTrue(alone.text.hasSuffix("> The list question."))
+    }
+
+    func testSuperhumansHiddenTrackingImageDoesNotHideTheQuote() async throws {
+        let result = try await trimmed("""
+        <html><body>Thanks for the quick fix.<br/><br/>Bob<div class="gmail_signature"><div>Sent via Superhuman</div></div><div class="gmail_quote sh-color-black sh-color">On Fri, Oct 16, 2026 at 8:53 PM, Adam Wulf <span>&lt;<a href="mailto:adam@example.com">adam@example.com</a>&gt;</span> wrote:<br/><blockquote class="gmail_quote sh-color-black sh-color"><div>I just published the fix.</div></blockquote></div><div style="display: none; border: 0px; width: 0px; height: 0px; overflow: hidden; visibility: hidden;"><img src="https://example.com/pixel.gif" alt=" " width="1" height="0"/></div></body></html>
+        """)
+        XCTAssertFalse(result.text.contains("published"), result.text)
+        XCTAssertFalse(result.text.contains("wrote:"), result.text)
+        XCTAssertTrue(result.text.hasPrefix("Thanks for the quick fix."), result.text)
+        XCTAssertTrue(result.trimmed)
+    }
+
+    func testAHiddenElementAloneIsNotHistory() async throws {
+        let result = try await trimmed(#"<p>Hi there.</p><div style="display:none"><img src="https://example.com/pixel.gif"></div>"#)
+        XCTAssertEqual(result.text, "Hi there.")
+        XCTAssertFalse(result.trimmed)
+    }
+
+    func testZohoWebReplyInAnyLanguage() async throws {
+        // Zoho's header has the original's From, Date, and Subject, here in German.
+        let result = try await trimmed("""
+        <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"><html><head><meta content="text/html;charset=UTF-8" http-equiv="Content-Type"></head><body ><div style="font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 10pt;"><div>Gerne!<br></div><div><br></div><div>Adam<br></div><div><br></div><div><br></div><div class="zmail_extra_hr" style="border-top: 1px solid rgb(204, 204, 204); height: 0px; margin-top: 10px; margin-bottom: 10px; line-height: 0px; display: none;"><br></div><div class="zmail_extra" data-zbluepencil-ignore="true" style="clear: both;"><div><br></div><div id="Zm-_Id_-Sgn1">Von: Jane Doe &lt;jane@example.com&gt;<br>Datum: Fr., 23 Okt. 2026 10:28:18 -0500<br>Betreff: Mittagessen<br></div><div><br></div><blockquote style="margin: 0px;" id="blockquote_zmail"><div>Mittagessen am Dienstag?</div></blockquote></div><div><br></div></div><br></body></html>
+        """)
+        XCTAssertEqual(result.text, "Gerne!\n\nAdam")
+        XCTAssertTrue(result.trimmed)
+    }
+
     func testAReplyToAForwardWithoutANoteLosesTheQuotedForward() async throws {
         // The quote starts with the forward marker: in a reply, it is the
         // forward the reply answers. iPhone puts the attribution in its own blockquote.
@@ -400,10 +460,17 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertEqual(german.text, "Danke!")
         XCTAssertTrue(german.trimmed)
 
-        // The same HTML in a message that is not a reply could be the forward itself.
-        let notReply = try await trimmed(iPhone)
+        // Without "Re:", the HTML pass keeps a quote that starts a forward:
+        // it could be the forward itself.
+        let notReply = try await trimmed(gmail)
         XCTAssertFalse(notReply.trimmed)
         XCTAssertTrue(notReply.text.contains("Lunch on Tuesday?"))
+
+        // But iPhone's quoted attribution above it (`> On ... wrote:`) marks
+        // a reply's quote, so the text pass cuts it.
+        let quotedAttribution = try await trimmed(iPhone)
+        XCTAssertEqual(quotedAttribution.text, "Thanks!")
+        XCTAssertTrue(quotedAttribution.trimmed)
     }
 
     func testTheDOMPassLeavesAGmailForwardAlone() async throws {

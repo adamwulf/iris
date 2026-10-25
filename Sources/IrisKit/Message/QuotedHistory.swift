@@ -119,7 +119,14 @@ enum QuotedHistory {
     ///   blank lines after it.
     static func trailingAttributionStart(in lines: [Substring], before end: Int, allowingNoQuote: Bool) -> Int? {
         for index in 0..<end {
-            guard let start = attributionStart(in: lines, endingAt: index) else { continue }
+            let start: Int
+            if let unquoted = attributionStart(in: lines, endingAt: index) {
+                start = unquoted
+            } else if isQuotedAttribution(in: lines, at: index) {
+                start = index
+            } else {
+                continue
+            }
             let after = lines[(index + 1)..<end]
             guard after.allSatisfy({ isQuoted($0) || isBlank($0) }) else { continue }
             if allowingNoQuote || after.contains(where: isQuoted) {
@@ -147,6 +154,16 @@ enum QuotedHistory {
               previous.trimmingCharacters(in: .whitespaces).prefixMatch(of: /On\s/.ignoresCase()) != nil
         else { return nil }
         return index - 1
+    }
+
+    /// Whether `lines[index]` is a quoted attribution that starts a quote:
+    /// iPhone and Apple Mail quote their attribution with the message
+    /// (`> On <date>, <name> wrote:`), so it is the first line of the quote.
+    static func isQuotedAttribution(in lines: [Substring], at index: Int) -> Bool {
+        let line = lines[index]
+        guard isQuoted(line), index == 0 || !isQuoted(lines[index - 1]) else { return false }
+        let text = line.drop { $0 == " " }.dropFirst().trimmingCharacters(in: .whitespaces)
+        return text.wholeMatch(of: /On\s.*\swrote:/.ignoresCase()) != nil
     }
 
     /// The most label lines read under a `From:` line.
@@ -213,16 +230,23 @@ enum QuotedHistory {
     ///
     /// These elements are removed, each only when nothing but other such
     /// elements and blank space follows it:
-    /// - Gmail: `blockquote class="gmail_quote"`, its attribution (class
-    ///   `gmail_attr`), and the signature (class `gmail_signature` or
-    ///   `gmail_signature_prefix`, the `-- ` line). The `div.gmail_quote`
-    ///   around the attribution and the quote is searched like any other
+    /// - Gmail: `blockquote class="gmail_quote"` inside the `div.gmail_quote`
+    ///   around a reply's quote, its attribution (class `gmail_attr`), and
+    ///   the signature (class `gmail_signature` or `gmail_signature_prefix`,
+    ///   the `-- ` line). The `div.gmail_quote` is searched like any other
     ///   element, because Gmail puts answers written between the quoted
-    ///   lines in it.
+    ///   lines in it. A `blockquote.gmail_quote` outside it is one that the
+    ///   sender wrote (Gmail's Quote button), so it is kept.
+    /// - Zoho Mail: `blockquote#blockquote_zmail` and its header (id
+    ///   `Zm-_Id_-Sgn1`) inside `div.zmail_extra`, which is searched like
+    ///   Gmail's.
     /// - Apple Mail and Thunderbird: `blockquote type="cite"` (Apple Mail puts
     ///   the attribution in one too), class `moz-cite-prefix` (Thunderbird's
     ///   attribution), and class `moz-signature`.
     /// - New Outlook: id `mail-editor-reference-message-container`.
+    /// - Any app: a hidden element (`display: none`), such as Superhuman's
+    ///   tracking image or Zoho's separator line. A reader never sees it, so
+    ///   it is removed without counting as history.
     ///
     /// A quote or `div.gmail_quote` that starts a forward
     /// (`isForwardMarker(_:)`) counts as content: it is kept whole, and so is
@@ -263,8 +287,10 @@ enum QuotedHistory {
 
     /// The classes of an attribution, which is removed like a quote.
     static let attributionClasses: Set<String> = ["gmail_attr", "moz-cite-prefix"]
-    /// The classes of Gmail's element around the attribution and the quote.
-    static let quoteContainerClasses: Set<String> = ["gmail_quote", "gmail_quote_container"]
+    /// The classes of Gmail's and Zoho's element around the attribution and the quote.
+    static let quoteContainerClasses: Set<String> = ["gmail_quote", "gmail_quote_container", "zmail_extra"]
+    /// The ids of the attribution and the quote that Zoho puts in its container.
+    static let containerQuoteIDs: Set<String> = ["Zm-_Id_-Sgn1", "blockquote_zmail"]
     static let signatureClasses: Set<String> = ["gmail_signature", "gmail_signature_prefix", "moz-signature"]
     static let quoteIDs: Set<String> = ["mail-editor-reference-message-container"]
     static let outlookHeaderID = "divRplyFwdMsg"
@@ -295,10 +321,14 @@ enum QuotedHistory {
             if nonContentTags.contains(child.name) {
                 continue
             }
+            if isHidden(child) {
+                element.children.remove(at: index)
+                continue
+            }
             if child.name == "img" {
                 return (removal, true)
             }
-            if !inReply && (isQuote(child) || isQuoteContainer(child)) && startsForward(child) {
+            if !inReply && (isQuote(child, in: element) || isQuoteContainer(child)) && startsForward(child) {
                 return (removal, true)
             }
             if isSignature(child) {
@@ -306,7 +336,7 @@ enum QuotedHistory {
                 removal.signature = true
                 continue
             }
-            if isQuote(child) {
+            if isQuote(child, in: element) {
                 element.children.remove(at: index)
                 removal.quote = true
                 continue
@@ -334,19 +364,31 @@ enum QuotedHistory {
     /// Whether `element` is a quote (or its attribution) that
     /// `removeHistory(fromHTMLParts:inReply:)` removes, unless it starts a
     /// forward in a message that is not a reply.
-    static func isQuote(_ element: DOMElement) -> Bool {
+    ///
+    /// - Parameter parent: The element that holds `element`. Gmail's and
+    ///   Zoho's quotes count only inside their quote container
+    ///   (`isQuoteContainer(_:)`). Nil counts as inside one.
+    static func isQuote(_ element: DOMElement, in parent: DOMElement?) -> Bool {
         let classes = classes(of: element)
+        let id = attribute("id", of: element)
         let isBlockquote = element.name == "blockquote"
+        let inContainer = parent.map(isQuoteContainer) ?? true
         return !classes.isDisjoint(with: attributionClasses)
-            || (isBlockquote && classes.contains("gmail_quote"))
+            || (inContainer && isBlockquote && classes.contains("gmail_quote"))
+            || (inContainer && id.map(containerQuoteIDs.contains) == true)
             || (isBlockquote && attribute("type", of: element)?.lowercased() == "cite")
-            || attribute("id", of: element).map(quoteIDs.contains) == true
+            || id.map(quoteIDs.contains) == true
     }
 
-    /// Whether `element` is Gmail's element around an attribution and a
-    /// quote, which is searched, not removed whole.
+    /// Whether `element` is Gmail's or Zoho's element around an attribution
+    /// and a quote, which is searched, not removed whole.
     static func isQuoteContainer(_ element: DOMElement) -> Bool {
         element.name != "blockquote" && !classes(of: element).isDisjoint(with: quoteContainerClasses)
+    }
+
+    /// Whether `element` is hidden by its inline style (`display: none`).
+    static func isHidden(_ element: DOMElement) -> Bool {
+        attribute("style", of: element)?.contains(/display\s*:\s*none/.ignoresCase()) == true
     }
 
     static func classes(of element: DOMElement) -> Set<String> {
@@ -363,10 +405,10 @@ enum QuotedHistory {
 
     /// Removes Outlook's reply header, everything after it in the document,
     /// and the `<hr>` just above it. Returns whether there was one outside
-    /// other apps' quotes (`isQuote(_:)`, `isQuoteContainer(_:)`).
+    /// other apps' quotes (`isQuote(_:in:)`, `isQuoteContainer(_:)`).
     static func removeOutlookHistory(in root: DOMElement) -> Bool {
         let isHeader = { (element: DOMElement) in attribute("id", of: element) == outlookHeaderID }
-        let isOtherQuote = { (element: DOMElement) in isQuote(element) || isQuoteContainer(element) }
+        let isOtherQuote = { (element: DOMElement) in isQuote(element, in: nil) || isQuoteContainer(element) }
         guard let path = path(in: root, to: isHeader, skipping: isOtherQuote),
               let header = path.last
         else { return false }
