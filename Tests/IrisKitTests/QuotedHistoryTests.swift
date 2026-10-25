@@ -682,11 +682,13 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertTrue(gmail.trimmed)
 
         // A Zoho reply to a Google Group: the walk stops at the footer, so
-        // Zoho's header is cut by the Outlook rule.
+        // Zoho's header is left, and only the footer is cut. (A header that is
+        // left may have the sender's answers under it.)
         let zoho = try await trimmed("""
         <div>Sounds good.</div><div class="zmail_extra"><div><br></div><div id="Zm-_Id_-Sgn1">From: Jane Doe &lt;jane@example.com&gt;<br>Date: Fri, 23 Oct 2026 10:28:18 -0500<br>Subject: Lunch<br></div><div><br></div><blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div><p></p>-- <br />You received this message because you are subscribed to the Google Groups "Lunch" group.<br />
         """)
-        XCTAssertEqual(zoho.text, "Sounds good.")
+        XCTAssertTrue(zoho.text.hasSuffix("> Lunch on Tuesday?"), zoho.text)
+        XCTAssertTrue(zoho.trimmed)
 
         // A Gmail reply without "Re:" that quotes a forward: the walk keeps
         // the forward, which is no answer, so the signature still cuts.
@@ -701,6 +703,45 @@ final class QuotedHistoryTests: XCTestCase {
         <div>Sounds good.</div><div>-- <br>Adam</div><div class="zmail_extra"><div>---- On Fri, 24 Oct 2026 09:41:00 -0500 Jane Doe &lt;jane@example.com&gt; wrote ----<br></div><blockquote style="margin: 0px;"><div>Lunch on Tuesday?</div></blockquote></div>
         """)
         XCTAssertEqual(unmarked.text, "Sounds good.")
+    }
+
+    func testAnswersInAZohoReplyAreKeptWhateverFollowsTheContainer() async throws {
+        let header = #"<div><br></div><div id="Zm-_Id_-Sgn1">From: Jane Doe &lt;jane@example.com&gt;<br>Date: Fri, 23 Oct 2026 10:28:18 -0500<br>Subject: Lunch<br></div><div><br></div>"#
+        let groups = #"<p></p>-- <br />You received this message because you are subscribed to the Google Groups "Lunch" group.<br />"#
+        let disclaimer = "<div>This message is confidential.</div>"
+        for footer in [groups, disclaimer] {
+            let inline = try await trimmed(#"<div>See inline.</div><div class="zmail_extra">"# + header + #"<blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote><div>Yes, Tuesday works.</div><blockquote id="blockquote_zmail"><div>See you!</div></blockquote></div>"# + footer)
+            XCTAssertTrue(inline.text.contains("Yes, Tuesday works."), "\(footer): \(inline.text)")
+
+            let under = try await trimmed(#"<div>Hi Jane,</div><div class="zmail_extra">"# + header + #"<div>Tuesday works for me.</div><blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div>"# + footer)
+            XCTAssertTrue(under.text.contains("Tuesday works for me."), "\(footer): \(under.text)")
+        }
+
+        // A bottom-post: the reply is under Zoho's container, with a signature above it.
+        let bottom = try await trimmed(#"<div>Hi Jane,</div><div>-- <br>Adam</div><div class="zmail_extra">"# + header + #"<blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div><div>Sounds good, see you Tuesday.</div>"#)
+        XCTAssertTrue(bottom.text.hasSuffix("Sounds good, see you Tuesday."), bottom.text)
+    }
+
+    func testASignatureAboveAKeptForwardKeepsIt() async throws {
+        // An Apple Mail forward with an edited subject: its "Begin forwarded
+        // message:" line is inside the quote, which the HTML pass keeps.
+        let forward = try await trimmed("""
+        <html><body>Have a look at this.<div>-- <br>Adam</div><div><br><blockquote type="cite"><div>Begin forwarded message:</div><br class="Apple-interchange-newline"><div><b>From: </b>Jane Doe &lt;jane@example.com&gt;</div><div><b>Subject: </b>Lunch</div><br><div>Lunch on Tuesday?</div></blockquote></div></body></html>
+        """)
+        XCTAssertTrue(forward.text.contains("Lunch on Tuesday?"), forward.text)
+        XCTAssertFalse(forward.trimmed)
+
+        XCTAssertEqual(QuotedHistory.trim("""
+        Have a look at this.
+        --\u{20}
+        Adam
+
+        > Begin forwarded message:
+        >
+        > From: Jane Doe <jane@example.com>
+        >
+        > Lunch on Tuesday?
+        """), .noMarker, "plain text too")
     }
 
     func testGmailAnswersBetweenTheQuotedLinesAreKept() async throws {

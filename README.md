@@ -410,9 +410,12 @@ Limits:
   such a Zoho reply (answers under Zoho's header) keeps that history (the
   Outlook header and the Zoho reply).
 - A footer that a mailing list or a mail server adds under the quote
-  without a `-- ` line (Mailman's, a company disclaimer) reads as new text
-  after the quote, so the quote is kept. A `-- ` footer (Google Groups) is
-  cut with the quote.
+  stops the HTML marks from being used, since the quote is no longer at
+  the end. A `-- ` footer (Google Groups) is cut, and the quote above it
+  too when a text mark finds it (an English `On ... wrote:` line,
+  Outlook's header); otherwise the quote is kept. A footer without a `-- `
+  line (Mailman's, a company disclaimer) reads as new text after the
+  quote, so the quote is kept.
 - Outlook writes the same header for a forward. A forward is known only by
   `Fwd:` or `Fw:`, so a forward from an Outlook in another language
   (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.

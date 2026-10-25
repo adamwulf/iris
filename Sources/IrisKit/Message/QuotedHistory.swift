@@ -93,9 +93,9 @@ enum QuotedHistory {
     ///     it was the removed quote's (older Apple Mail puts it above the
     ///     `blockquote`).
     ///   - findingOutlookHeader: Whether Outlook's header block starts the
-    ///     cut. False when the HTML pass stopped at the sender's text under
-    ///     Zoho's marked header (`Removal.keptZohoHeader`): in English its
-    ///     From/Date/Subject lines look like Outlook's.
+    ///     cut. False when Zoho's marked header is left after the HTML pass
+    ///     (`hasZohoHeader(in:)`): in English its From/Date/Subject lines
+    ///     look like Outlook's, and what follows it may be the sender's.
     ///   - keptAnswers: Whether the HTML pass stopped at the sender's text
     ///     inside a reply's quote container (`Removal.keptAnswers`). Then the
     ///     signature does not start the cut.
@@ -128,14 +128,24 @@ enum QuotedHistory {
         // between the quoted lines are under it: then it does not start the
         // cut. An answer is an unquoted line under a quoted line, before the
         // history or the next `-- ` line.
+        // A quoted forward that is not history is one the HTML pass kept
+        // (an Apple Mail forward with an edited subject), so it stays too.
         let signatureCut = signature.flatMap { start -> Int? in
+            guard !keptAnswers else { return nil }
             let end = min(history ?? lines.count, signatures.dropFirst().first ?? lines.count)
             guard start < end else { return start }
-            let between = lines[(start + 1)..<end]
-            let answered = between.indices.contains { index in
-                !isQuoted(between[index]) && !isBlank(between[index]) && between[..<index].contains(where: isQuoted)
+            var quoteSeen = false
+            for line in lines[(start + 1)..<end] {
+                if isQuoted(line) {
+                    if isForwardMarker(line.drop { $0 == ">" || $0 == " " }) {
+                        return nil
+                    }
+                    quoteSeen = true
+                } else if quoteSeen && !isBlank(line) {
+                    return nil
+                }
             }
-            return keptAnswers || answered ? nil : start
+            return start
         }
         guard let cut = [signatureCut, history].compactMap({ $0 }).min() else { return .noMarker }
         let kept = BodyCleanup.clean(lines[..<cut].joined(separator: "\n"))
@@ -260,10 +270,6 @@ enum QuotedHistory {
         /// container (answers between quoted lines, or under Zoho's header),
         /// so that text is the sender's and stays.
         var keptAnswers = false
-        /// Not a removal: the container where the walk stopped keeps Zoho's
-        /// header (id `Zm-_Id_-Sgn1`), which in English reads like
-        /// Outlook's header block.
-        var keptZohoHeader = false
         /// Not a removal: the walk stopped at a quote that starts a forward.
         var keptForward = false
 
@@ -274,7 +280,6 @@ enum QuotedHistory {
                 quote: lhs.quote || rhs.quote,
                 signature: lhs.signature || rhs.signature,
                 keptAnswers: lhs.keptAnswers || rhs.keptAnswers,
-                keptZohoHeader: lhs.keptZohoHeader || rhs.keptZohoHeader,
                 keptForward: lhs.keptForward || rhs.keptForward
             )
         }
@@ -336,6 +341,22 @@ enum QuotedHistory {
             }
         }
         return removal
+    }
+
+    /// Whether `documents` still have Zoho's marked header (id
+    /// `Zm-_Id_-Sgn1`) in Zoho's quote container. Read it after
+    /// `removeHistory`, which removes the header when nothing follows it:
+    /// a header that is left is either above the sender's text or above
+    /// something the HTML pass stopped at (a footer, a reply under the
+    /// quote), and in English it reads like Outlook's header block.
+    static func hasZohoHeader(in documents: [HTMLDocument]) -> Bool {
+        documents.contains { document in
+            path(in: contentRoot(of: document)) { element in
+                isQuoteContainer(element) && element.children.contains { node in
+                    (node as? DOMElement).flatMap { attribute("id", of: $0) }.map(containerAttributionIDs.contains) == true
+                }
+            } != nil
+        }
     }
 
     /// The element that `HTMLDocument.markdown()` converts: the `<html>`
@@ -438,9 +459,6 @@ enum QuotedHistory {
                 if isQuoteContainer(child), !inner.removal.keptForward,
                    let last = child.children.last(where: hasContent), (last as? DOMElement)?.name != "blockquote" {
                     removal.keptAnswers = true
-                    removal.keptZohoHeader = child.children.contains { node in
-                        (node as? DOMElement).flatMap { attribute("id", of: $0) }.map(containerAttributionIDs.contains) == true
-                    }
                 }
                 return (removal, true)
             }
