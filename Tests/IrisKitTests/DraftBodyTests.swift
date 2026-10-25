@@ -133,6 +133,25 @@ final class DraftBodyTests: XCTestCase {
         }
     }
 
+    /// `-F reply.md --attach a.pdf b.pdf` makes `b.pdf` the argument next to -F:
+    /// draftBodyNamesAFile says why, where draftBodyGivenTwice would not.
+    func testWithAttachmentsAnArgumentThatNamesAFileWinsOverGivenTwice() {
+        let files = ["reply.md": Data("From a file.".utf8), "b.pdf": Data("%PDF".utf8)]
+        assertThrows(.draftBodyNamesAFile(path: "b.pdf")) {
+            try read(argument: "b.pdf", file: "reply.md", attaching: true, files: files)
+        }
+        // stdin is nil, so the test fails if it is read.
+        assertThrows(.draftBodyNamesAFile(path: "b.pdf")) {
+            try read(argument: "b.pdf", file: "-", attaching: true, files: files)
+        }
+    }
+
+    func testWithAttachmentsAnArgumentThatNamesNoFileAndAFileAreStillGivenTwice() {
+        let files = ["reply.md": Data("From a file.".utf8)]
+        assertThrows(.draftBodyGivenTwice) { try read(argument: "Thanks!", file: "reply.md", attaching: true, files: files) }
+        assertThrows(.draftBodyGivenTwice) { try read(argument: "Thanks!", file: "-", attaching: true, stdin: Data("x".utf8)) }
+    }
+
     func testWithAttachmentsAnArgumentThatNamesNoFileIsTheReply() throws {
         XCTAssertEqual(try read(argument: "Thanks!", attaching: true, files: ["a.pdf": Data()]), "Thanks!")
     }

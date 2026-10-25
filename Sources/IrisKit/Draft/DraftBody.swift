@@ -14,9 +14,9 @@ public enum DraftBody {
     ///
     /// - Parameters:
     ///   - attaching: Whether the draft attaches files (`--attach`). Then an
-    ///     `argument` that names a file or folder that exists is an error: each
-    ///     `--attach` takes one path, so `--attach a.pdf b.pdf` (or a pattern
-    ///     that matched two files) makes `b.pdf` the argument.
+    ///     `argument` that names a file or folder that exists is an error, also
+    ///     next to `-F`: each `--attach` takes one path, so `--attach a.pdf b.pdf`
+    ///     (or a pattern that matched two files) makes `b.pdf` the argument.
     ///   - stdinIsTerminal: Whether stdin is a terminal. Without an argument or
     ///     `-F`, a terminal is an error, so iris never waits silently for typing.
     ///     `-F -` reads a terminal too, after a log line that says how to end the text.
@@ -32,13 +32,15 @@ public enum DraftBody {
         readFile: (String) throws -> Data = { try Data(contentsOf: URL(fileURLWithPath: $0)) },
         fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
     ) throws -> String {
+        // Before draftBodyGivenTwice: with -F, a second --attach path is the
+        // argument too, and "given twice" would not say why.
+        if attaching, let argument, fileExists(argument) {
+            throw IrisError.draftBodyNamesAFile(path: argument)
+        }
         switch (argument, path) {
         case (_?, _?):
             throw IrisError.draftBodyGivenTwice
         case (let argument?, nil):
-            if attaching, fileExists(argument) {
-                throw IrisError.draftBodyNamesAFile(path: argument)
-            }
             return try nonEmpty(argument, source: "the argument")
         case (nil, let path?) where path == stdinPath:
             if stdinIsTerminal {
