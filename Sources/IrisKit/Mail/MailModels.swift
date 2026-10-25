@@ -222,14 +222,17 @@ public struct MessageParts: Sendable, Equatable {
     let bodies: [AttachmentID: Data]
 }
 
-/// One message of `iris thread`: its iris ID and its raw RFC 822 bytes, or
-/// why iris could not download them, so that one bad message does not cost
-/// the rest of the thread.
+/// One message of `iris thread`: its iris ID and the message as iris
+/// downloaded it (whole, or a large one in parts), or why iris could not
+/// download it, so that one bad message does not cost the rest of the thread.
 public struct ThreadMessage: Sendable, Equatable {
     /// Why iris could not download one message of a thread.
     public enum DownloadFailure: Error, Sendable, Equatable {
-        /// It did not download in SwiftMail's fixed time limit.
+        /// It did not download whole in SwiftMail's fixed time limit.
         case timedOut(seconds: Int)
+        /// It is large, and a body part did not download in SwiftMail's
+        /// fixed time limit for one part.
+        case bodyTimedOut(seconds: Int)
         /// It left its mailbox after iris found it.
         case gone
 
@@ -237,20 +240,21 @@ public struct ThreadMessage: Sendable, Equatable {
         func irisError(for id: IrisID) -> IrisError {
             switch self {
             case .timedOut(let seconds): return .messageDownloadTimedOut(seconds: seconds)
+            case .bodyTimedOut(let seconds): return .bodyDownloadTimedOut(seconds: seconds)
             case .gone: return .unknownMessage(id)
             }
         }
     }
 
     public let irisID: IrisID
-    public let rawMessage: Result<Data, DownloadFailure>
+    public let download: Result<DownloadedMessage, DownloadFailure>
     /// Whether this is the message that the thread was asked for (the copy
     /// shown of it, which can be in another mailbox).
     public let isInput: Bool
 
-    init(irisID: IrisID, rawMessage: Result<Data, DownloadFailure>, isInput: Bool = false) {
+    init(irisID: IrisID, download: Result<DownloadedMessage, DownloadFailure>, isInput: Bool = false) {
         self.irisID = irisID
-        self.rawMessage = rawMessage
+        self.download = download
         self.isInput = isInput
     }
 }

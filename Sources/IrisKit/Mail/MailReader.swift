@@ -296,6 +296,8 @@ public struct MailReader: Sendable {
         let inputCopy: IrisID?
         /// The mailbox that the walk's last EXAMINE opened.
         let openMailbox: String?
+        /// The size (RFC822.SIZE) of each copy in `messages` whose headers gave one.
+        let sizes: [IrisID: Int]
     }
 
     /// Runs the walk of `thread(_:)` for `id` in one session, then `body` with
@@ -327,7 +329,9 @@ public struct MailReader: Sendable {
             throw IrisError.unknownMessage(id)
         }
         guard let inputMessageID = input.messageID else {
-            return ThreadWalk(messages: [id], inputCopy: id, openMailbox: openMailbox)
+            return ThreadWalk(
+                messages: [id], inputCopy: id, openMailbox: openMailbox, sizes: input.size.map { [id: $0] } ?? [:]
+            )
         }
 
         let mailboxes = Self.threadMailboxes(listed: Self.decoded(try await client.listMailboxes()), inputMailbox: id.mailbox)
@@ -461,11 +465,19 @@ public struct MailReader: Sendable {
         let messages = chosen.values.sorted { lhs, rhs in
             date(lhs) == date(rhs) ? precedes(lhs, rhs) : date(lhs) < date(rhs)
         }
-        return ThreadWalk(messages: messages, inputCopy: chosen[inputMessageID], openMailbox: openMailbox)
+        let shown = Set(messages)
+        return ThreadWalk(
+            messages: messages,
+            inputCopy: chosen[inputMessageID],
+            openMailbox: openMailbox,
+            sizes: fetched.compactMapValues(\.size).filter { shown.contains($0.key) }
+        )
     }
 
     /// The messages of `walk`, downloaded in the session of the walk, in the
-    /// walk's order. A message that does not download is kept with its failure.
+    /// walk's order, each as `message(_:)` downloads it: whole, or in parts
+    /// when its size is above `wholeDownloadLimit`. A message that does not
+    /// download is kept with its failure.
     private func threadDownloads(_ walk: ThreadWalk, with client: any MailClient) async throws -> [ThreadMessage] {
         // Downloaded mailbox by mailbox, in name order, so each mailbox is
         // opened once (and not at all when the walk left it open), then put
@@ -480,14 +492,14 @@ public struct MailReader: Sendable {
                 _ = try await examine(copy.mailbox, with: client)
                 openMailbox = copy.mailbox
             }
-            let rawMessage = try await threadDownload(copy, with: client)
-            if case .failure = rawMessage {
+            let download = try await threadDownload(copy, size: walk.sizes[copy], with: client)
+            if case .failure = download {
                 // After any failed download, open the mailbox again: after a
                 // timeout SwiftMail opens a new connection, where no mailbox is
                 // open, and for a message that is gone it costs one EXAMINE.
                 openMailbox = nil
             }
-            downloaded.append((position, ThreadMessage(irisID: copy, rawMessage: rawMessage, isInput: copy == walk.inputCopy)))
+            downloaded.append((position, ThreadMessage(irisID: copy, download: download, isInput: copy == walk.inputCopy)))
         }
         return downloaded.sorted { $0.position < $1.position }.map(\.message)
     }
@@ -504,16 +516,24 @@ public struct MailReader: Sendable {
         return words.isEmpty || words == [subject] ? [[subject]] : [[subject], words]
     }
 
-    /// The raw bytes of `id` from the open mailbox, which must be `id`'s
-    /// mailbox, or the error of this one message: it did not download in time,
-    /// or it is gone. Every other error, such as a lost connection, throws.
+    /// `id` from the open mailbox, which must be `id`'s mailbox, or the error
+    /// of this one message: it did not download in time, or it is gone. Every
+    /// other error, such as a lost connection, throws. `size` is the size from
+    /// the walk's headers: at most `wholeDownloadLimit`, or unknown, gives the
+    /// whole message with no other FETCH; above it, `download(_:with:)`
+    /// fetches the outline and the body parts.
     private func threadDownload(
-        _ id: IrisID, with client: any MailClient
-    ) async throws -> Result<Data, ThreadMessage.DownloadFailure> {
+        _ id: IrisID, size: Int?, with client: any MailClient
+    ) async throws -> Result<DownloadedMessage, ThreadMessage.DownloadFailure> {
         do {
-            return .success(try await fetchRawMessage(id, with: client))
+            guard let size, size > Self.wholeDownloadLimit else {
+                return .success(.whole(try await fetchRawMessage(id, with: client)))
+            }
+            return .success(try await download(id, with: client))
         } catch IrisError.messageDownloadTimedOut(let seconds) {
             return .failure(.timedOut(seconds: seconds))
+        } catch IrisError.bodyDownloadTimedOut(let seconds) {
+            return .failure(.bodyTimedOut(seconds: seconds))
         } catch IrisError.unknownMessage {
             return .failure(.gone)
         }

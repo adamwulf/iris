@@ -117,6 +117,13 @@ public enum MessageFormatter {
                 because: "it did not download in \(seconds) seconds",
                 then: "It may be large, or the connection may be slow. Try again on a faster connection."
             )
+        case .bodyTimedOut(let seconds):
+            // `iris show` downloads the same body parts under the same limit.
+            return leftOutLine(
+                id,
+                because: "its body did not download in \(seconds) seconds",
+                then: "It may be large, or the connection may be slow. Try again on a faster connection."
+            )
         case .gone:
             // `iris show` would not find it either.
             return leftOutLine(id, because: "it is no longer in its mailbox", then: "Run the command again.")
@@ -175,7 +182,7 @@ public enum MessageFormatter {
     }
 
     /// The bytes `iris thread` writes to stdout for `messages`, in their order:
-    /// each message decoded, with its iris ID, as `render(rawMessage:irisID:format:body:timeZone:)`
+    /// each message decoded, with its iris ID, as `render(message:irisID:format:body:timeZone:)`
     /// makes it. Markdown puts `threadSeparator` between the messages; JSON is
     /// one array; JSON Lines is one compact object per line. Each ends with a
     /// newline. A note about the part shown of a message is logged with the
@@ -210,13 +217,13 @@ public enum MessageFormatter {
         var leftOut: [(message: ThreadMessage, error: IrisError, line: String)] = []
         for message in messages {
             let id = message.irisID
-            switch message.rawMessage {
+            switch message.download {
             case .failure(let failure):
                 leftOut.append((message, failure.irisError(for: id), leftOutLine(id, because: failure)))
-            case .success(let data):
+            case .success(let downloaded):
                 do {
                     documents.append(try await document(
-                        rawMessage: data, irisID: id, body: preference, convertingHTMLWith: htmlToMarkdown
+                        message: downloaded, irisID: id, body: preference, convertingHTMLWith: htmlToMarkdown
                     ) { note in
                         IrisLog.log("\(id): \(note)")
                     })
