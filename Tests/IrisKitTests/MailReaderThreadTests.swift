@@ -50,13 +50,19 @@ final class MailReaderThreadTests: XCTestCase {
         mailboxes: [MailboxInfo]? = nil,
         rules: SearchRules = .zoho,
         refusesNonASCII: Bool = false,
+        rawMessageErrors: [UInt32: any Error] = [:],
         errors: [FakeMailClient.Method: any Error] = [:]
     ) -> FakeMailClient {
         let listed = mailboxes ?? zohoMailboxes
         var all = Dictionary(uniqueKeysWithValues: listed.map { ($0.name, [UInt32: Message]()) })
         all.merge(messages) { _, filled in filled }
         return FakeMailClient(
-            mailboxes: listed, mailboxMessages: all, searchRules: rules, refusesNonASCII: refusesNonASCII, errors: errors
+            mailboxes: listed,
+            mailboxMessages: all,
+            searchRules: rules,
+            refusesNonASCII: refusesNonASCII,
+            rawMessageErrors: rawMessageErrors,
+            errors: errors
         )
     }
 
@@ -324,7 +330,7 @@ final class MailReaderThreadTests: XCTestCase {
 
         let messages = try await reader(fake).thread(IrisID(account: "work", mailbox: "[Gmail]/All Mail", uid: 51))
 
-        XCTAssertEqual(messages.map(\.rawMessage), [a.raw, b.raw])
+        XCTAssertEqual(messages.map(\.rawMessage), [.success(a.raw), .success(b.raw)])
         let calls = await fake.calls
         XCTAssertEqual(calls.filter { if case .fetchRawMessage = $0 { return true } else { return false } }, [
             .fetchRawMessage(5), .fetchRawMessage(7),
@@ -726,6 +732,31 @@ final class MailReaderThreadTests: XCTestCase {
         await assertThrows(.unknownMailbox(account: "work", name: "R&D", reason: "NO no such mailbox")) {
             try await self.reader(fake).thread(id)
         }
+    }
+
+    func testAMessageThatDoesNotDownloadIsReturnedAsAFailureAndTheRestStillDownload() async throws {
+        let timeout = IrisError.messageDownloadTimedOut(seconds: 10)
+        let gone = IrisError.unknownMessage(IrisID(account: "work", mailbox: "INBOX", uid: 3))
+        let a = message("a", subject: "Budget", day: 1)
+        let c = message("c", day: 3, replyTo: "b", references: ["a", "b"])
+        let d = message("d", day: 4, replyTo: "c", references: ["a", "b", "c"])
+        let fake = server([
+            "INBOX": [1: a, 3: c, 4: d],
+            "Sent": [2: message("b", day: 2, replyTo: "a", references: ["a"])],
+        ], rawMessageErrors: [2: timeout, 3: gone])
+
+        let messages = try await reader(fake).thread(IrisID(account: "work", mailbox: "INBOX", uid: 4))
+
+        XCTAssertEqual(messages.map(\.irisID.description), ["work/INBOX/1", "work/Sent/2", "work/INBOX/3", "work/INBOX/4"])
+        XCTAssertEqual(messages.map(\.rawMessage), [.success(a.raw), .failure(timeout), .failure(gone), .success(d.raw)])
+        let calls = await fake.calls
+        let downloads = calls.drop { if case .fetchRawMessage = $0 { return false } else { return true } }
+        XCTAssertEqual(Array(downloads), [
+            // After a failed download the mailbox is opened again: SwiftMail
+            // reconnects after a timeout, and a new connection has no mailbox open.
+            .fetchRawMessage(1), .fetchRawMessage(3), .examine("INBOX"), .fetchRawMessage(4),
+            .examine("Sent"), .fetchRawMessage(2), .logout,
+        ])
     }
 
     func testOtherSubjectSearchErrorsStillFailAndLogOut() async {

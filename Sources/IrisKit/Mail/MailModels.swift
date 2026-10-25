@@ -199,12 +199,14 @@ public struct MessagePage: Sendable, Equatable {
     }
 }
 
-/// One message of `iris thread`: its iris ID and its raw RFC 822 bytes.
+/// One message of `iris thread`: its iris ID and its raw RFC 822 bytes, or
+/// the error that kept iris from downloading them, so that one bad message
+/// does not cost the rest of the thread.
 public struct ThreadMessage: Sendable, Equatable {
     public let irisID: IrisID
-    public let rawMessage: Data
+    public let rawMessage: Result<Data, IrisError>
 
-    init(irisID: IrisID, rawMessage: Data) {
+    init(irisID: IrisID, rawMessage: Result<Data, IrisError>) {
         self.irisID = irisID
         self.rawMessage = rawMessage
     }

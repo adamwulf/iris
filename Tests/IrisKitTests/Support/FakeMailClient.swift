@@ -98,6 +98,7 @@ actor FakeMailClient: MailWriteClient {
     private let mailboxMessages: [String: [UInt32: Message]]
     private let searchRules: SearchRules
     private let refusesNonASCII: Bool
+    private let rawMessageErrors: [UInt32: any Error]
     private let errors: [Method: any Error]
     /// The wire name of the mailbox that the last EXAMINE opened.
     private var openMailbox: String?
@@ -119,6 +120,7 @@ actor FakeMailClient: MailWriteClient {
     /// `fetchRawMessage` returns their raw text. With `refusesNonASCII`, the
     /// SUBJECT search refuses text that is not ASCII, as a server without
     /// UTF-8 SEARCH does (NO [BADCHARSET]); Zoho accepted it in the probes.
+    /// `fetchRawMessage` throws the error in `rawMessageErrors` for its UID.
     init(
         accountName: String = "work",
         capabilities: [String] = [],
@@ -130,6 +132,7 @@ actor FakeMailClient: MailWriteClient {
         mailboxMessages: [String: [UInt32: Message]] = [:],
         searchRules: SearchRules = .zoho,
         refusesNonASCII: Bool = false,
+        rawMessageErrors: [UInt32: any Error] = [:],
         errors: [Method: any Error] = [:]
     ) {
         self.accountName = accountName
@@ -142,6 +145,7 @@ actor FakeMailClient: MailWriteClient {
         self.mailboxMessages = mailboxMessages
         self.searchRules = searchRules
         self.refusesNonASCII = refusesNonASCII
+        self.rawMessageErrors = rawMessageErrors
         self.errors = errors
     }
 
@@ -299,6 +303,9 @@ actor FakeMailClient: MailWriteClient {
 
     func fetchRawMessage(uid: UInt32) async throws -> Data {
         try record(.fetchRawMessage(uid), .fetchRawMessage)
+        if let error = rawMessageErrors[uid] {
+            throw error
+        }
         if let message = openMessages[uid] {
             return message.raw
         }

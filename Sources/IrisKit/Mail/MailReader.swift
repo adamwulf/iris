@@ -169,7 +169,7 @@ public struct MailReader: Sendable {
                 throw IrisError.unknownMessage(id)
             }
             guard input.messageID != nil else {
-                return [ThreadMessage(irisID: id, rawMessage: try await fetchRawMessage(id, with: client))]
+                return [ThreadMessage(irisID: id, rawMessage: try await threadDownload(id, with: client))]
             }
 
             let mailboxes = Self.threadMailboxes(listed: Self.decoded(try await client.listMailboxes()), inputMailbox: id.mailbox)
@@ -298,7 +298,12 @@ public struct MailReader: Sendable {
                     _ = try await examine(copy.mailbox, with: client)
                     openMailbox = copy.mailbox
                 }
-                messages.append(ThreadMessage(irisID: copy, rawMessage: try await fetchRawMessage(copy, with: client)))
+                let rawMessage = try await threadDownload(copy, with: client)
+                if case .failure = rawMessage {
+                    // After a timeout SwiftMail opens a new connection, where no mailbox is open.
+                    openMailbox = nil
+                }
+                messages.append(ThreadMessage(irisID: copy, rawMessage: rawMessage))
             }
             func date(_ message: ThreadMessage) -> Date {
                 let headers = fetched[message.irisID]
@@ -320,6 +325,22 @@ public struct MailReader: Sendable {
         }
         let words = ThreadSubject.asciiWords(subject)
         return words.isEmpty || words == [subject] ? [[subject]] : [[subject], words]
+    }
+
+    /// The raw bytes of `id` from the open mailbox, which must be `id`'s
+    /// mailbox, or the error of this one message: it did not download in time,
+    /// or it is gone. Every other error, such as a lost connection, throws.
+    private func threadDownload(_ id: IrisID, with client: any MailClient) async throws -> Result<Data, IrisError> {
+        do {
+            return .success(try await fetchRawMessage(id, with: client))
+        } catch let error as IrisError {
+            switch error {
+            case .messageDownloadTimedOut, .unknownMessage:
+                return .failure(error)
+            default:
+                throw error
+            }
+        }
     }
 
     /// The iris ID of `uid` in `mailbox` of this account.
