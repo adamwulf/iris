@@ -141,12 +141,10 @@ final class MailErrorTests: XCTestCase {
 
     // MARK: - Google sign-in
 
-    func testNotSignedInNamesTheKeysAndTheLoginCommand() throws {
+    func testNotSignedInNamesTheRefreshTokenKeyAndTheLoginCommand() throws {
         XCTAssertEqual(
             IrisError.googleNotSignedIn(account: "personal").errorDescription,
-            "The account \"personal\" signs in with Google (it has IRIS_PERSONAL_GOOGLE_CLIENT_ID), "
-                + "but it is not signed in yet: IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN is not set. "
-                + "Run `iris auth login --account personal` to sign in."
+            "IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN is not set. Run `iris auth login --account personal` to sign in."
         )
     }
 
