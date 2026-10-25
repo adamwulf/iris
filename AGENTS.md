@@ -4,11 +4,11 @@ Instructions for agents (Claude, Codex, and others) that work in this repo.
 
 ## What this is
 
-`iris` is a command-line email reader over IMAP. It also saves replies as
-drafts, but it never sends mail. It follows the structure of
-Adam's other CLIs, `graham` (Google Workspace) and `hunch` (Notion): a library
-with all the logic (`IrisKit`) and a thin executable (`iris`) built on
-swift-argument-parser.
+`iris` is a command-line email reader over IMAP. It also marks a message read
+or unread and saves replies as drafts, but it never sends mail. It follows
+the structure of Adam's other CLIs, `graham` (Google Workspace) and `hunch`
+(Notion): a library with all the logic (`IrisKit`) and a thin executable
+(`iris`) built on swift-argument-parser.
 
 iris does not write its own IMAP or MIME code. It uses SwiftMail for both,
 SwiftText to turn HTML into Markdown, and swift-markdown to turn a draft's
@@ -38,12 +38,11 @@ Sources/IrisKit/
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
                MailReader (sessions, paging, the thread walk, errors),
                MailModels (rows, pages, ThreadMessage),
-               MailWriter (the calls that change mail: read and unread),
+               MailWriter (the calls that change mail: read, unread, and
+               saving a draft; SavedDraft),
                MessageFilter (the `list` filter options, sent as UID SEARCH),
                IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>),
-               ThreadSubject (the subject rule of `thread`),
-               DraftClient (the write seam: APPEND), DraftWriter (the draft
-               session, SavedDraft)
+               ThreadSubject (the subject rule of `thread`)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw,
                and a thread), AppleMailURL (the message: URL from the Message-ID header)
@@ -62,8 +61,8 @@ Sources/iris/
                     ArgumentHelp.irisID (the help for every iris ID argument)
   Commands/         one file per command
 Tests/IrisKitTests/ offline library tests (LoopbackServerTests binds 127.0.0.1);
-                    Support/ has FakeMailClient, FakeDraftClient, LogRecorder,
-                    StubTransport (HTTP), and FakeRedirectReceiver (sign-in)
+                    Support/ has FakeMailClient, LogRecorder, StubTransport
+                    (HTTP), and FakeRedirectReceiver (sign-in)
 Tests/CLITests/     argument parsing only, never run()
 ```
 
@@ -91,13 +90,24 @@ the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
 `MessageEnvelope(swiftMail:)`, `ThreadHeaders(swiftMail:)`, and `Email(draft:)`.
 
 `MailWriteClient` refines `MailClient` with the calls that change mail:
-`select(mailbox:)` (SELECT, read-write) and `setSeen(_:uid:)` (UID STORE
-+FLAGS or -FLAGS `\Seen`). Only `MailWriter` holds one; `MailReader` holds a
+`select(mailbox:)` (SELECT, read-write), `setSeen(_:uid:)` (UID STORE
++FLAGS or -FLAGS `\Seen`), and `appendDraft(_:to:)` (APPEND with the
+`\Draft` flag). Only `MailWriter` holds one; `MailReader` holds a
 plain `MailClient`, so it cannot reach them. `SwiftMailClient` and
 `FakeMailClient` conform to both. `MailWriter` SELECTs the mailbox (encoded
 like EXAMINE), fetches the envelope by UID to check that the message exists
 (STORE answers OK for a missing UID), then STOREs. `read` always adds
 `\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
+
+`MailWriter.saveReply` takes two sessions: a `MailReader` reads the original
+(`rawMessage(_:)`), and `saveDraft(_:)` saves the reply that `ReplyComposer`
+built (pure; it needs no fake). `saveDraft` finds the `\Drafts` mailbox in
+the merged LIST, APPENDs to its wire name, and makes the iris ID from the
+decoded name (it also puts that name back into a `draftMayBeSaved` error).
+`appendDraft` calls SwiftMail's `createDraft(from:in:)`, which adds the
+`\Draft` flag and `X-Uniform-Type-Identifier: com.apple.mail-draft`. Both
+sessions log in through `SwiftMailClient.login()`, so a Google account
+sends AUTHENTICATE XOAUTH2 to save a draft as it does to read.
 
 `thread` (`MailReader.thread`) is one session too. It reads only headers
 until it knows the thread: `fetchThreadHeaders` (UID FETCH of
@@ -134,9 +144,8 @@ logs one line, as a refused SUBJECT search does. Every other error fails
 the command.
 
 Tests never touch the network: no test reaches another host. They use
-`FakeMailClient` and `FakeDraftClient`, which return scripted results and
-record the calls. For
-`thread` `FakeMailClient` holds whole mailboxes (`mailboxMessages`) and searches them the
+`FakeMailClient`, which returns scripted results and records the calls. For
+`thread` it holds whole mailboxes (`mailboxMessages`) and searches them the
 way Zoho did in the 2026-10-24 probes (`SearchRules.zoho`), or by RFC 3501
 (`.rfc3501`); `refusesNonASCII` models a server that refuses non-ASCII
 SEARCH text, and `rawMessageErrors` a message that does not download (after
@@ -146,23 +155,6 @@ and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
 browser opener). One test opens a socket: `LoopbackServerTests` runs the
 real `LoopbackServer`, which binds 127.0.0.1 only, and sends it the
 favicon request and the redirect over loopback.
-
-### The write seam
-
-APPEND is not in `MailClient`. `DraftClient` is the protocol for the draft
-session: `login()`, `listMailboxes()`, `appendDraft(_:to:)`, `logout()`.
-`SwiftMailClient` conforms to it too (the three shared calls are the same
-methods), but `MailReader` holds it as `any MailClient`, which has no APPEND,
-and only `DraftWriter` holds an `any DraftClient`. `DraftWriter` owns the
-draft session's order the way `MailClient.session` does, finds the `\Drafts` mailbox in the merged
-LIST, APPENDs to its wire name, and makes the iris ID from the decoded name
-(it also puts that name back into a `draftMayBeSaved` error). A reply takes
-two sessions: `MailReader.rawMessage(_:)` reads the original, then
-`DraftWriter` saves. The composition (`ReplyComposer`) is pure and needs no
-fake. `appendDraft` calls SwiftMail's `createDraft(from:in:)`, which adds
-the `\Draft` flag and `X-Uniform-Type-Identifier: com.apple.mail-draft`.
-The draft session logs in through `SwiftMailClient.login()`, so a Google
-account sends AUTHENTICATE XOAUTH2 there as for reading.
 
 ### Accounts
 
@@ -292,7 +284,7 @@ enforces it:
 - A **read-only** command (it cannot send, draft, move, flag, or delete) is
   declared `struct X: ReadOnlyCommand` and added to `ReadOnly.sharedCommands`.
   It then appears both as `iris x` and `iris ro x`.
-- A **write** command (such as `read` and `unread`) is declared
+- A **write** command (such as `read`, `unread`, and `draft`) is declared
   `struct X: AsyncParsableCommand` and added only to
   `Iris.configuration.subcommands`, after the read-only ones. Never
   mark it `ReadOnlyCommand`: `ReadOnly.commands` is typed
@@ -310,8 +302,7 @@ enforces it:
   and `new`) would work the same way as `auth`.
 - Keep write calls out of `MailReader` and out of the IMAP calls it uses: put
   them in `MailWriter` and `MailWriteClient` (see "The IMAP seam"), so a
-  read-only command cannot reach them. `draft` uses `DraftClient` and
-  `DraftWriter` (see "The write seam").
+  read-only command cannot reach them.
 
 `ReadOnlyCommandTests` checks that `ro` has only read-only commands, that
 every read-only command is in both places (also the read-only children of a
@@ -353,7 +344,9 @@ account (`--account <name>`).
   `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
   `MailClient` (and `FakeMailClient`) use wire names only. `MailReader`
   decodes in `mailboxes()` and encodes before EXAMINE, and `MailWriter`
-  encodes before SELECT. Users only see and type the decoded names.
+  encodes before SELECT, APPENDs to the Drafts mailbox by the wire name
+  from LIST, and decodes that name for the iris ID. Users only see and type
+  the decoded names.
 - **Transport security:** iris passes `.startTLS` for port 143 and
   `.implicitTLS` for every other port. SwiftMail's `.automatic` would continue
   in plain text on 143 when the server has no STARTTLS.
