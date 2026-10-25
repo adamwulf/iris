@@ -385,7 +385,9 @@ for the user to save.
   quote that starts with a forward marker (unless the subject is a reply's,
   `QuotedHistory.isReply`: then it is the quoted forward the reply
   answers), or a forward marker line above the text's history
-  (`TextTrim.forward`). It keeps a body that would be
+  (`TextTrim.forward`). The HTML rule holds only for the DOM pass: the text
+  pass still cuts a quoted forward under an English attribution, which
+  marks a reply. It keeps a body that would be
   left empty, and the decoder parses the HTML again when the DOM pass cut
   something that the text pass then calls a forward or all history.
   `MessageDocument.bodyTrimmed` says

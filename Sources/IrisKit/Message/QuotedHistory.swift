@@ -37,10 +37,13 @@ enum QuotedHistory {
 
     /// Whether `line` starts a forwarded message: Gmail's
     /// `---------- Forwarded message ---------`, Thunderbird's
-    /// `-------- Forwarded Message --------`, or Apple Mail's `Begin forwarded message:`.
+    /// `-------- Forwarded Message --------`, Zoho's
+    /// `============ Forwarded message ============`, or Apple Mail's
+    /// `Begin forwarded message:`.
     static func isForwardMarker(_ line: some StringProtocol) -> Bool {
         let text = String(line).trimmingCharacters(in: .whitespaces)
         return text.wholeMatch(of: /-+ *forwarded message *-+/.ignoresCase()) != nil
+            || text.wholeMatch(of: /=+ *forwarded message *=+/.ignoresCase()) != nil
             || text.wholeMatch(of: /begin forwarded message:/.ignoresCase()) != nil
     }
 
@@ -71,7 +74,9 @@ enum QuotedHistory {
     /// - An attribution line, `On <date>, <name> wrote:` (it may wrap onto a
     ///   second line) or Zoho's `---- On <date> <name> wrote ----`, with only
     ///   quoted (`>`) and blank lines after it, at least one of them quoted,
-    ///   up to the signature or the end.
+    ///   up to the signature or the end. Also the same line quoted as the
+    ///   first line of a quote (`> On ... wrote:`, as iPhone and Apple Mail
+    ///   write it in plain text), with the same lines after it.
     /// - Outlook's header block: a `From:` line with `Sent:` (or `Date:`) and
     ///   `Subject:` among the label lines under it (the labels may be bold),
     ///   from the separator line above it when there is one (`_____`,
@@ -113,7 +118,9 @@ enum QuotedHistory {
     }
 
     /// The first line of the first attribution before `end` that only quoted
-    /// and blank lines follow, up to `end`.
+    /// and blank lines follow, up to `end`: an unquoted one
+    /// (`attributionStart(in:endingAt:)`), or a quoted one that starts a quote
+    /// (`isQuotedAttribution(in:at:)`).
     ///
     /// - Parameter allowingNoQuote: Whether the attribution may also have only
     ///   blank lines after it.
@@ -248,11 +255,16 @@ enum QuotedHistory {
     ///   tracking image or Zoho's separator line. A reader never sees it, so
     ///   it is removed without counting as history.
     ///
-    /// A quote or `div.gmail_quote` that starts a forward
-    /// (`isForwardMarker(_:)`) counts as content: it is kept whole, and so is
-    /// everything before it. In a reply, such a quote is the forward that the
-    /// reply quotes, so it is removed like any quote, and such a
-    /// `div.gmail_quote` is searched like any element.
+    /// A quote or quote container (`div.gmail_quote`, `div.zmail_extra`)
+    /// that starts a forward (`isForwardMarker(_:)`) counts as content: it is
+    /// kept whole, and so is everything before it. In a reply, such a quote
+    /// is the forward that the reply quotes, so it is removed like any quote,
+    /// and such a container is searched like any element. (The text pass
+    /// still cuts a quoted forward under an English attribution.)
+    ///
+    /// A quote container whose quote was removed, and that holds only inline
+    /// text after it, is removed too: that text is an attribution without a
+    /// class (Gmail's older markup, Superhuman).
     ///
     /// Outlook's reply header, `div#divRplyFwdMsg`, is removed with everything
     /// after it, and with the `<hr>` just above it: Outlook does not put the
@@ -350,10 +362,32 @@ enum QuotedHistory {
             let inner = removeTrailingHistory(in: child, inReply: inReply, depth: depth + 1)
             removal = removal + inner.removal
             if inner.contentLeft {
+                // Gmail's older markup and Superhuman put the attribution
+                // in the container as bare text, with no class. When the
+                // quote under it is gone and only such inline text is left,
+                // it is that attribution.
+                if isQuoteContainer(child) && inner.removal.quote && !hasBlockContent(child) {
+                    element.children.remove(at: index)
+                    continue
+                }
                 return (removal, true)
             }
         }
         return (removal, false)
+    }
+
+    /// Whether `element` holds a block element (`p`, `div`, `blockquote`,
+    /// and so on) with content.
+    static func hasBlockContent(_ element: DOMElement) -> Bool {
+        var pending: [DOMNode] = element.children
+        while let node = pending.popLast() {
+            guard let child = node as? DOMElement else { continue }
+            if child.isBlockLevelElement && hasContent(child) {
+                return true
+            }
+            pending.append(contentsOf: child.children)
+        }
+        return false
     }
 
     /// Whether `element` is a signature that `removeHistory(fromHTMLParts:inReply:)` removes.

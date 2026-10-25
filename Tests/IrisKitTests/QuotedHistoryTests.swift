@@ -27,6 +27,7 @@ final class QuotedHistoryTests: XCTestCase {
     func testForwardMarkers() {
         XCTAssertTrue(QuotedHistory.isForwardMarker("---------- Forwarded message ---------"))
         XCTAssertTrue(QuotedHistory.isForwardMarker("-------- Forwarded Message --------"))
+        XCTAssertTrue(QuotedHistory.isForwardMarker("============ Forwarded message ============"))
         XCTAssertTrue(QuotedHistory.isForwardMarker("Begin forwarded message:"))
         XCTAssertFalse(QuotedHistory.isForwardMarker("I forwarded the message to Jane."))
     }
@@ -79,6 +80,17 @@ final class QuotedHistoryTests: XCTestCase {
 
         Yes, Tuesday.
         """), .noMarker, "an answer under the quote keeps it")
+
+        XCTAssertEqual(
+            QuotedHistory.trim("Answer.\n\n> Some quote\n> On Mon, Oct 19, 2026, Bob wrote:\n> more"), .noMarker,
+            "a quoted attribution counts only as the first line of a quote"
+        )
+        XCTAssertEqual(QuotedHistory.trim("""
+        > On Oct 24, 2026, at 9:41 AM, Jane Doe <jane@example.com> wrote:
+        > Lunch on Tuesday?
+        Yes.
+        > Same place?
+        """), .noMarker, "an answer between quoted lines keeps the quote")
 
         XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
@@ -422,9 +434,17 @@ final class QuotedHistoryTests: XCTestCase {
         let result = try await trimmed("""
         <html><body>Thanks for the quick fix.<br/><br/>Bob<div class="gmail_signature"><div>Sent via Superhuman</div></div><div class="gmail_quote sh-color-black sh-color">On Fri, Oct 16, 2026 at 8:53 PM, Adam Wulf <span>&lt;<a href="mailto:adam@example.com">adam@example.com</a>&gt;</span> wrote:<br/><blockquote class="gmail_quote sh-color-black sh-color"><div>I just published the fix.</div></blockquote></div><div style="display: none; border: 0px; width: 0px; height: 0px; overflow: hidden; visibility: hidden;"><img src="https://example.com/pixel.gif" alt=" " width="1" height="0"/></div></body></html>
         """)
-        XCTAssertFalse(result.text.contains("published"), result.text)
-        XCTAssertFalse(result.text.contains("wrote:"), result.text)
-        XCTAssertTrue(result.text.hasPrefix("Thanks for the quick fix."), result.text)
+        // Its attribution is bare text in div.gmail_quote, so the signature above goes too.
+        XCTAssertEqual(result.text, "Thanks for the quick fix.\n\nBob")
+        XCTAssertTrue(result.trimmed)
+    }
+
+    func testAnAttributionWithoutAClassInGmailsContainerGoesInAnyLanguage() async throws {
+        // Gmail's older markup: the attribution is bare text in div.gmail_quote.
+        let result = try await trimmed("""
+        <div dir="ltr">Klingt gut.</div><div class="gmail_extra"><br><div class="gmail_quote">Am 24. Oktober 2026 um 09:41 schrieb Jane Doe <span dir="ltr">&lt;<a href="mailto:jane@example.com">jane@example.com</a>&gt;</span>:<br><blockquote class="gmail_quote">Mittagessen am Dienstag?</blockquote></div></div>
+        """)
+        XCTAssertEqual(result.text, "Klingt gut.")
         XCTAssertTrue(result.trimmed)
     }
 
@@ -441,6 +461,22 @@ final class QuotedHistoryTests: XCTestCase {
         """)
         XCTAssertEqual(result.text, "Gerne!\n\nAdam")
         XCTAssertTrue(result.trimmed)
+
+        // Zoho's ids count only inside its container.
+        let alone = try await trimmed(#"<div>See below:</div><blockquote id="blockquote_zmail"><div>My note.</div></blockquote>"#)
+        XCTAssertFalse(alone.trimmed)
+        XCTAssertTrue(alone.text.hasSuffix("My note."), alone.text)
+    }
+
+    func testAZohoForwardIsKept() async throws {
+        let html = """
+        <div><div>FYI<br></div><div><br></div><div class="zmail_extra_hr" style="border-top: 1px solid rgb(204, 204, 204); height: 0px; margin-top: 10px; margin-bottom: 10px; line-height: 0px;"><br></div><div class="zmail_extra" data-zbluepencil-ignore="true"><div><br></div><div id="1">============ Forwarded message ============<br>From: Jane Doe &lt;jane@example.com&gt;<br>Date: Fri, 16 Oct 2026 16:16:00 -0500<br>Subject: Lunch<br>============ Forwarded message ============<br></div><div><br></div><blockquote style="margin: 0px;" id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div></div>
+        """
+        let result = try await trimmed(html)
+        XCTAssertFalse(result.trimmed)
+        let full = try await whole(html)
+        XCTAssertEqual(result.text, full)
+        XCTAssertTrue(result.text.contains("Lunch on Tuesday?"))
     }
 
     func testAReplyToAForwardWithoutANoteLosesTheQuotedForward() async throws {

@@ -382,8 +382,9 @@ iris cuts only at the marks that mail apps leave:
   signature), and Outlook's reply header (`divRplyFwdMsg`), with
   everything under it (but not when it is inside another app's quote: then
   it is part of that quote). A quote that the sender made with Gmail's
-  Quote button is part of the new text, so it is kept. Hidden elements at
-  the end (a tracking image) are dropped too; nobody sees them.
+  Quote button is part of the new text, so it is kept (unless the sender
+  put an `On ... wrote:` line above it). Hidden elements at the end (a
+  tracking image) are dropped too; nobody sees them.
 - Text (also the Markdown from HTML): an `On <date>, <name> wrote:` line
   (or Zoho's `---- On <date> <name> wrote ----`) with only `>` lines under
   it, the same line quoted as the first line of a quote (iPhone writes
@@ -406,16 +407,18 @@ Limits:
   `Fwd:` or `Fw:`, so a forward from an Outlook in another language
   (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.
 - The text marks are in English. A plain-text reply with
-  `Am ... schrieb ...:` is shown whole; in older Gmail and Apple Mail HTML,
-  whose attribution line has no class, a non-English one stays at the end;
-  and a reply from classic desktop Outlook in another language
-  (`Von:` / `Gesendet:` / `Betreff:`) is shown whole. The classes and ids
-  that Gmail, Zoho, Apple Mail, Thunderbird, and Outlook on the web write
-  do not depend on the language.
-- A quoted forward at the end of a message is hidden only when the subject
-  starts with `Re:`. A reply whose subject does not (for example an edited
-  one) keeps it. A forward whose subject was changed to start with `Re:`
-  loses the Apple Mail message it forwards; `--full` shows it.
+  `Am ... schrieb ...:` is shown whole; in older Apple Mail HTML, whose
+  attribution line sits above the quote with no class, a non-English one
+  stays at the end; and a reply from classic desktop Outlook in another
+  language (`Von:` / `Gesendet:` / `Betreff:`) is shown whole. The classes
+  and ids that Gmail, Zoho, Apple Mail, Thunderbird, and Outlook on the web
+  write do not depend on the language.
+- A reply that quotes a forward with no note of its own: the quoted
+  forward is hidden when the subject starts with `Re:`, or when an English
+  `On ... wrote:` line (quoted or not) is above it. Otherwise (a Gmail
+  reply in another language with an edited subject) it is kept. A forward
+  whose subject was changed to start with `Re:` loses the Apple Mail
+  message it forwards; `--full` shows it.
 - A quote that an Apple Mail sender adds to the end of their own text
   (with "Increase Quote Level") looks like a reply's quote, so it is hidden.
 - A signature without the `-- ` line (most signatures that people type) is
