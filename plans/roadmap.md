@@ -18,10 +18,7 @@ describes them.
   host.
 - Run `iris download` once per provider (Gmail, iCloud, Zoho), on a PDF, an
   inline image, and a forwarded message (`message/rfc822`, which must save
-  as an `.eml`). Check that the filename from BODYSTRUCTURE matches the one
-  `iris show` lists: a name in RFC 2231 form (`filename*=`) may reach
-  SwiftMail undecoded, or not at all, depending on the server, and then the
-  file is `attachment-<id>`.
+  as an `.eml`), and check that the bytes match the attachment.
 - Run `iris read`, `iris unread`, and `iris draft` once per provider (Gmail,
   iCloud, Zoho). They have not run against a real server yet. For
   `iris draft`, check that the draft opens in Apple Mail as its own draft,

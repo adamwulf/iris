@@ -58,7 +58,7 @@ Sources/IrisKit/
                MailAddress (the one address type), DateText, ModifiedUTF7,
                CalendarDay (a YYYY-MM-DD day for --since and --before),
                Redaction (removes secrets from text that iris shows),
-               AttachmentOutput (`download`: stdout or a new file, safe filenames)
+               AttachmentOutput (`download`: stdout, or a new file at the -o path)
   IrisError.swift   the one error type; each message says what to do next
   IrisLog.swift     the logging seam
 Sources/iris/
@@ -100,7 +100,7 @@ the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
 EXAMINE, `fetchEnvelopes(uids:)` to check that the message exists (the
 BODYSTRUCTURE of a missing UID gets no answer, which SwiftMail reports as a
 failed FETCH), `fetchStructure(uid:)` (BODYSTRUCTURE, as `[PartStructure]`:
-the section, the filename, and the transfer encoding of each part), then
+the section and the transfer encoding of each part), then
 `fetchPart(_:uid:)` (`BODY.PEEK[<section>]`) for that one part, never
 `fetchRawMessage` (see "Gotchas"). A section that is not in the structure
 is `unknownAttachment`, which names `iris show`. The bytes come back
@@ -291,15 +291,17 @@ for the user to save.
   include attachment bytes.
 - `download` writes the attachment's decoded bytes to stdout, exactly, with
   nothing else (as `show --format raw` writes a message), or, with `-o`,
-  saves a new file and writes its path and a newline.
-  `AttachmentOutput(path:stdoutIsTerminal:)` picks one before the download:
-  without `-o`, a terminal on stdout is `attachmentStdoutIsTerminal`, so
-  binary never lands in a terminal. The CLI checks `isatty` and passes it
-  in, as `draft` passes `stdinIsTerminal`. `-o` naming a folder saves under
-  `AttachmentOutput.safeFilename(_:attachmentID:)`: the filename comes from
-  the sender, so only its last path component, without control characters,
-  leading dots, or outer white space, else `attachment-<id>`. A file is
-  never overwritten (`.withoutOverwriting`): `attachmentFileExists` says to
+  saves a new file at exactly that path and writes nothing (as `read` and
+  `unread`). `AttachmentOutput(path:stdoutIsTerminal:)` picks one before the
+  download: without `-o`, a terminal on stdout is
+  `attachmentStdoutIsTerminal`, so binary never lands in a terminal (the
+  CLI checks `isatty` and passes it in, as `draft` passes
+  `stdinIsTerminal`), and `-o` naming an existing folder is
+  `attachmentOutputIsFolder`, which says to add a file name. iris never
+  makes a file name from the sender's text: SwiftMail's BODYSTRUCTURE
+  filename skips RFC 2231 `filename*=`, so it would lose names such as
+  `Résumé.pdf`. A file is never overwritten (`.withoutOverwriting`, which
+  also refuses a symbolic link at the path): `attachmentFileExists` says to
   pass another `-o`.
 - `thread` takes `--format markdown|json|jsonl|id` (`ThreadOutputFormat`),
   default `markdown`. Its `messagesFormat` is the `ThreadMessagesFormat`
@@ -367,7 +369,7 @@ enforces it:
   and `new`) would work the same way as `auth`.
 - A **write command whose ro form drops the options that write** cannot
   be a `ReadOnlyCommand` either. `download` is one: `-o` writes a file
-  whose content and name come from the sender, and without `-o` it only
+  whose content comes from the sender, and without `-o` it only
   writes the bytes to stdout. Give it two types: the full command
   (`Download`, with `-o`) in `Iris.configuration.subcommands` after the
   shared commands, and a second type with the same `commandName`
@@ -458,9 +460,8 @@ account (`--account <name>`).
   section and then adds its inner parts (`2`, `2.1`, `2.2`; SwiftMail's
   `rfc822InsideMultipartMixed` test pins this). So every ID that `show`
   lists is in the structure, and `BODY[2]` gives the whole forwarded
-  message, an `.eml`. BODYSTRUCTURE also names a message/rfc822 part from
-  its subject (`Plans.eml`) when it has no filename, and falls back to the
-  Content-ID, so `download` may save a name that `show` does not list.
+  message, an `.eml`. iris reads only the section and the transfer encoding
+  from it, never the filename (see "Output").
 - **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
   `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
   `MailClient` (and `FakeMailClient`) use wire names only. `MailReader`

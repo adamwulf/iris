@@ -233,9 +233,8 @@ iris thread 'work/INBOX/4821' --format json   # an array of `iris show --format 
 iris thread 'work/INBOX/4821' --format jsonl  # the same objects, one per line
 iris thread 'work/INBOX/4821' --format id     # only the iris IDs, one per line
 
-iris download 'work/INBOX/4821' 2 > report.pdf     # attachment 2, as `iris show` lists it
-iris download 'work/INBOX/4821' 2 -o ~/Downloads   # saved in a folder, under its filename
-iris download 'work/INBOX/4821' 1.2 -o scan.png    # saved as scan.png
+iris download 'work/INBOX/4821' 2 > report.pdf           # attachment 2, as `iris show` lists it
+iris download 'work/INBOX/4821' 1.2 -o ~/Downloads/scan.png  # saved as that file
 
 iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
@@ -429,16 +428,16 @@ quoted-printable, and does not mark the message as read:
   so redirect stdout to a file: `iris download 'work/INBOX/4821' 2 >
   report.pdf`. When stdout is a terminal, iris stops with an error instead
   of filling the screen with binary.
-- With `-o <path>` (or `--output`), it saves a new file at that path, or,
-  when the path is a folder, in that folder under the attachment's
-  filename, and prints the saved path. It never overwrites a file: when
-  the file exists, it stops and says to pass `-o` with another path.
+- With `-o <path>` (or `--output`), it saves a new file at exactly that
+  path, file name included (for example the name that `iris show` lists),
+  and prints nothing, as `iris read` prints nothing. A folder is not a
+  path to write: iris stops and says to add a file name. It never
+  overwrites a file: when the file exists, it stops and says to pass `-o`
+  with another path.
 
-The filename comes from the sender, so iris uses only its last part (after
-the last `/` or `\`), without control characters and without leading dots
-(so never a hidden file). With no usable filename, the file is
-`attachment-<attachment-id>`, such as `attachment-1.2`. A forwarded message
-(`message/rfc822`) downloads whole, as an `.eml` file.
+iris never makes a file name from the sender's text: you choose the name,
+with `-o` or with your shell's `>`. A forwarded message (`message/rfc822`)
+downloads whole, as an `.eml` file.
 
 An attachment that does not download in 60 seconds fails (SwiftMail stops
 every part download then): try again on a faster connection.
