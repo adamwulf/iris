@@ -1,15 +1,17 @@
 # iris
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
-at a time and shows a full message, or a whole thread, as Markdown. Reading
-changes nothing: iris opens mailboxes read-only and never marks a message as
-read. The only commands that change mail are `iris read` and `iris unread`,
-which mark one message as read or unread.
+at a time, shows a full message, or a whole thread, as Markdown, and saves a
+reply as a draft. Reading changes nothing: iris opens mailboxes read-only and
+never marks a message as read. The only commands that change mail are
+`iris read` and `iris unread`, which mark one message as read or unread, and
+`iris draft`, which adds a new draft to the Drafts mailbox. iris never sends
+mail: you review and send the draft in your mail app.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. `check`, `mailboxes`, `list`,
-`show`, and `thread` were run against Zoho Mail on 2026-10-24; `read` and
-`unread` have not run against a real server yet, and Gmail and iCloud Mail
-are not checked yet.
+`show`, and `thread` were run against Zoho Mail on 2026-10-24; `read`,
+`unread`, and `draft` have not run against a real server yet, and Gmail and
+iCloud Mail are not checked yet.
 
 ## Install
 
@@ -52,6 +54,8 @@ IRIS_PERSONAL_IMAP_PASSWORD=abcdabcdabcdabcd
 IRIS_WORK_IMAP_HOST=imappro.zoho.com
 IRIS_WORK_IMAP_USERNAME=me@example.com
 IRIS_WORK_IMAP_PASSWORD=app-specific-password
+# The From line of drafts (optional; only `iris draft` reads it).
+IRIS_WORK_FROM=Jane Doe <jane@example.com>
 
 # Which account to use when --account is not given.
 # Not necessary when only one account is configured.
@@ -60,6 +64,14 @@ IRIS_DEFAULT_ACCOUNT=personal
 
 Run `iris accounts` to see the accounts and any missing keys, and
 `iris check` to log in once and confirm the settings.
+
+`IRIS_<NAME>_FROM` is the From line of the drafts that `iris draft` saves:
+`Name <address>`, or the address alone. Reading mail does not need it, so
+`iris accounts` does not check it. Without it, `iris draft` uses the username
+when the username is an address (for an account that signs in with Google,
+the address you sign in as). iCloud's username is not (`emily`, not
+`emily@icloud.com`), so an iCloud account needs `IRIS_<NAME>_FROM` to save
+drafts.
 
 ### Provider settings
 
@@ -108,6 +120,8 @@ IRIS_PERSONAL_IMAP_HOST=imap.gmail.com
 IRIS_PERSONAL_IMAP_USERNAME=me@gmail.com
 IRIS_PERSONAL_GOOGLE_CLIENT_ID=1234-abcd.apps.googleusercontent.com
 IRIS_PERSONAL_GOOGLE_CLIENT_SECRET=GOCSPX-...
+# The From line of drafts (optional; without it, drafts are from the username).
+# IRIS_PERSONAL_FROM=Your Name <me@gmail.com>
 ```
 
 and sign in:
@@ -126,8 +140,9 @@ the environment, iris writes no file: it prints the line for you to save.)
 Run `iris check --account personal` to test the account.
 
 From then on, each command gets a new access token from Google before it
-logs in. iris only reads mail, but Gmail's IMAP accepts only the
-`https://mail.google.com/` scope, which is full access to the mailbox.
+logs in, `iris draft` too. iris never sends mail, but Gmail's IMAP accepts
+only the `https://mail.google.com/` scope, which is full access to the
+mailbox.
 
 `iris auth status` checks the Google sign-in of every account that has a
 client ID (or one, with `--account`): which keys are set (never their
@@ -180,6 +195,10 @@ client ID but no refresh token yet.
 - `iris read` and `iris unread`: mark one message, by its iris ID, as read
   or unread (they add or remove the `\Seen` flag). Each one sets the state,
   so running it again changes nothing. They print nothing when they succeed.
+- `iris draft`: save a reply to a message, by its iris ID, as a draft in the
+  `\Drafts` mailbox. The reply is Markdown; the draft has it as plain text
+  and as HTML, with the original quoted below it. `--all` replies to all.
+  iris never sends the draft.
 
 ## Usage
 
@@ -207,6 +226,10 @@ iris thread 'work/INBOX/4821' --format id     # only the iris IDs, one per line
 
 iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
+
+iris draft 'work/INBOX/4821' 'Thanks, that works for me.'   # a reply, as a draft
+iris draft 'work/INBOX/4821' -F reply.md --all              # reply to all, from a file
+pbpaste | iris draft 'work/INBOX/4821' --no-quote           # from stdin, without the quote
 ```
 
 List commands (`accounts`, `mailboxes`, `list`, `auth status`) take
@@ -364,13 +387,46 @@ downloaded, so the URL works only when the account is also set up in Mail.
 When the same message ID is in more than one mailbox (INBOX and Sent, or two
 Gmail labels), Mail opens one of the copies.
 
+### Drafts
+
+`iris draft <iris-id>` saves a reply to that message as a draft. It never
+sends anything: open the draft in your mail app, check it, and send it from
+there. The reply is Markdown, from exactly one source:
+
+- the argument after the iris ID: `iris draft 'work/INBOX/4821' 'Thanks!'`
+- a file: `-F reply.md` (or `--file`); `-F -` reads stdin
+- stdin, when there is no argument and no `-F` and stdin is not a terminal:
+  `pbpaste | iris draft 'work/INBOX/4821'`
+
+With no reply on a terminal, iris stops with an error instead of waiting for
+you to type. An empty reply, or one that is not UTF-8, is an error too.
+
+The draft is built from the original message:
+
+- **To:** the original's `Reply-To`, else its `From`. With `--all`, **Cc:**
+  the original's To and Cc recipients, without the To addresses and without
+  you (your From address, and the username when it is an address).
+- **Subject:** `Re: ` and the original subject (no second `Re:`).
+- **In-Reply-To** and **References**, so mail apps show the draft in the
+  same thread.
+- **Body:** your reply, then `On <date>, <sender> wrote:` and the original's
+  body as a Markdown quote (`> `). `--no-quote` leaves the quote out. The
+  draft has a plain-text part (the Markdown) and an HTML part made from it.
+  HTML in the reply or the quote is shown as text, never run as HTML.
+
+iris saves the draft with the `\Draft` flag in the mailbox that the server
+marks `\Drafts` (`iris mailboxes` shows it; Gmail's is `[Gmail]/Drafts`), and
+prints the draft's iris ID, for example `work/Drafts/77`. A server without
+UIDPLUS does not report the new message's UID; then iris prints nothing on
+stdout and says on stderr where it saved the draft.
+
 ### Read-only access for agents
 
 `iris ro <command>` runs the same command as `iris <command>`, but only the
 read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
 `list`, `show`, `thread`, and `auth status`. Commands that change mail
-(`read`, `unread`, and drafts, when they come) are not there, so
-`iris ro read ...` fails. Neither is `iris auth login`, which opens a browser
+(`read`, `unread`, and `draft`) are not there, so `iris ro read ...` and
+`iris ro draft ...` fail. Neither is `iris auth login`, which opens a browser
 and writes `.env`.
 
 To let an agent read your mail but never change it, allow only that prefix.

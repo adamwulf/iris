@@ -4,14 +4,16 @@ Instructions for agents (Claude, Codex, and others) that work in this repo.
 
 ## What this is
 
-`iris` is a command-line email reader over IMAP. It follows the structure of
+`iris` is a command-line email reader over IMAP. It also saves replies as
+drafts, but it never sends mail. It follows the structure of
 Adam's other CLIs, `graham` (Google Workspace) and `hunch` (Notion): a library
 with all the logic (`IrisKit`) and a thin executable (`iris`) built on
 swift-argument-parser.
 
-iris does not write its own IMAP or MIME code. It uses SwiftMail for both, and
-SwiftText to turn HTML into Markdown. The reasons, the alternatives, and the
-risks are in `plans/research/imap-libraries.md`.
+iris does not write its own IMAP or MIME code. It uses SwiftMail for both,
+SwiftText to turn HTML into Markdown, and swift-markdown to turn a draft's
+Markdown into HTML. The reasons, the alternatives, and the risks are in
+`plans/research/imap-libraries.md`.
 
 ## Architecture
 
@@ -23,7 +25,8 @@ go (stderr).
 ```
 Sources/IrisKit/
   Config/      DotEnv (.env loader, and setValue for the refresh token),
-               AccountResolver (named accounts), Account (+ GoogleClient),
+               AccountResolver (named accounts, the From address of drafts),
+               Account (+ GoogleClient),
                RefreshTokenSave (where `iris auth login` put the token, and
                its stdout line and stderr message)
   Auth/        Google OAuth: HTTPTransport (the HTTP seam, URLSessionTransport,
@@ -38,10 +41,15 @@ Sources/IrisKit/
                MailWriter (the calls that change mail: read and unread),
                MessageFilter (the `list` filter options, sent as UID SEARCH),
                IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>),
-               ThreadSubject (the subject rule of `thread`)
+               ThreadSubject (the subject rule of `thread`),
+               DraftClient (the write seam: APPEND), DraftWriter (the draft
+               session, SavedDraft)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw,
                and a thread), AppleMailURL (the message: URL from the Message-ID header)
+  Draft/       DraftBody (the reply's one source: argument, -F, stdin),
+               ReplyComposer (MessageDocument -> DraftMessage), DraftMessage
+               (headers, parts, References folding), MarkdownHTML (the HTML part)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
                MailAddress (the one address type), DateText, ModifiedUTF7,
                CalendarDay (a YYYY-MM-DD day for --since and --before),
@@ -54,8 +62,8 @@ Sources/iris/
                     ArgumentHelp.irisID (the help for every iris ID argument)
   Commands/         one file per command
 Tests/IrisKitTests/ offline library tests (LoopbackServerTests binds 127.0.0.1);
-                    Support/ has FakeMailClient, LogRecorder, StubTransport
-                    (HTTP), and FakeRedirectReceiver (sign-in)
+                    Support/ has FakeMailClient, FakeDraftClient, LogRecorder,
+                    StubTransport (HTTP), and FakeRedirectReceiver (sign-in)
 Tests/CLITests/     argument parsing only, never run()
 ```
 
@@ -80,7 +88,7 @@ the error mapping (`irisError(for:command:account:accessToken:)`), the TLS choic
 (`transportSecurity(forPort:)`), the SEARCH keys
 (`searchCriteria(for:)`, `subjectSearchCriteria(_:)`, `messageIDSearchCriteria(_:)`),
 the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
-`MessageEnvelope(swiftMail:)`, and `ThreadHeaders(swiftMail:)`.
+`MessageEnvelope(swiftMail:)`, `ThreadHeaders(swiftMail:)`, and `Email(draft:)`.
 
 `MailWriteClient` refines `MailClient` with the calls that change mail:
 `select(mailbox:)` (SELECT, read-write) and `setSeen(_:uid:)` (UID STORE
@@ -126,8 +134,9 @@ logs one line, as a refused SUBJECT search does. Every other error fails
 the command.
 
 Tests never touch the network: no test reaches another host. They use
-`FakeMailClient`, which returns scripted results and records the calls. For
-`thread` it holds whole mailboxes (`mailboxMessages`) and searches them the
+`FakeMailClient` and `FakeDraftClient`, which return scripted results and
+record the calls. For
+`thread` `FakeMailClient` holds whole mailboxes (`mailboxMessages`) and searches them the
 way Zoho did in the 2026-10-24 probes (`SearchRules.zoho`), or by RFC 3501
 (`.rfc3501`); `refusesNonASCII` models a server that refuses non-ASCII
 SEARCH text, and `rawMessageErrors` a message that does not download (after
@@ -137,6 +146,23 @@ and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
 browser opener). One test opens a socket: `LoopbackServerTests` runs the
 real `LoopbackServer`, which binds 127.0.0.1 only, and sends it the
 favicon request and the redirect over loopback.
+
+### The write seam
+
+APPEND is not in `MailClient`. `DraftClient` is the protocol for the draft
+session: `login()`, `listMailboxes()`, `appendDraft(_:to:)`, `logout()`.
+`SwiftMailClient` conforms to it too (the three shared calls are the same
+methods), but `MailReader` holds it as `any MailClient`, which has no APPEND,
+and only `DraftWriter` holds an `any DraftClient`. `DraftWriter` owns the
+draft session's order the way `MailClient.session` does, finds the `\Drafts` mailbox in the merged
+LIST, APPENDs to its wire name, and makes the iris ID from the decoded name
+(it also puts that name back into a `draftMayBeSaved` error). A reply takes
+two sessions: `MailReader.rawMessage(_:)` reads the original, then
+`DraftWriter` saves. The composition (`ReplyComposer`) is pure and needs no
+fake. `appendDraft` calls SwiftMail's `createDraft(from:in:)`, which adds
+the `\Draft` flag and `X-Uniform-Type-Identifier: com.apple.mail-draft`.
+The draft session logs in through `SwiftMailClient.login()`, so a Google
+account sends AUTHENTICATE XOAUTH2 there as for reading.
 
 ### Accounts
 
@@ -165,6 +191,13 @@ client ID, client secret), and `saveGoogleRefreshToken` writes the token
 into the `.env` that sets the client ID. It returns a `RefreshTokenSave`
 (saved, client ID only in the environment, or write failed) whose
 `stdoutLine` and `message` the CLI prints unchanged, as `list` prints its hint.
+
+`IRIS_<NAME>_FROM` (optional) is the From line of drafts, read only by
+`AccountResolver.fromAddress(for:in:)`; without it, the username (for a
+Google account, the address chosen at sign-in) is used when it is an
+address, else `draftFromAddressMissing` names the key. It is not an
+`AccountResolver.Field`: reading needs no From address, so the key alone
+does not make an account, and `iris accounts` does not check it.
 
 Never put a secret in an error message, a log line, or JSON output: the
 password, the client secret, the refresh token, the access token, the code,
@@ -222,6 +255,10 @@ for the user to save.
   `MailReader.threadIDs` and prints with `MessageFormatter.render(threadIDs:)`,
   so it downloads and leaves out nothing, and only the walk's own lines go
   to stderr.
+- `draft` writes the new draft's iris ID and a newline to stdout, made with
+  `IrisID(account:mailbox:uid:)` from the decoded Drafts name and the
+  APPENDUID UID. Without a UID (no UIDPLUS), stdout is empty, and
+  `SavedDraft.missingIDNote` goes to stderr.
 - Hints (such as the next-page command) and errors go to stderr. stdout holds
   only data.
 
@@ -269,10 +306,12 @@ enforces it:
   `sharedCommands`) whose children are typed `[any ReadOnlyCommand.Type]`
   (only `Auth.Status`). Both use the same leaf types, so `iris ro auth status`
   behaves like `iris auth status`, and `iris ro auth login` fails to parse.
-  A future `draft` group (`show` and `new`) works the same way.
+  `draft` is a write command, not a group; a future `drafts` group (`list`
+  and `new`) would work the same way as `auth`.
 - Keep write calls out of `MailReader` and out of the IMAP calls it uses: put
   them in `MailWriter` and `MailWriteClient` (see "The IMAP seam"), so a
-  read-only command cannot reach them.
+  read-only command cannot reach them. `draft` uses `DraftClient` and
+  `DraftWriter` (see "The write seam").
 
 `ReadOnlyCommandTests` checks that `ro` has only read-only commands, that
 every read-only command is in both places (also the read-only children of a
@@ -281,7 +320,7 @@ group with both kinds), and that `iris ro <write command>` fails.
 ### Add an error
 
 Add a case to `IrisError` in its section (`// IMAP`, `// Message rendering`,
-`// Google sign-in`) with an `errorDescription` that says what the user can
+`// Drafts`, `// Google sign-in`) with an `errorDescription` that says what the user can
 do next. Map library errors to it in one place (for IMAP,
 `SwiftMailClient.irisError(for:command:account:accessToken:)`, with a test in
 `SwiftMailClientTests`; for Google's token endpoint,
@@ -305,7 +344,11 @@ account (`--account <name>`).
   `serverTimedOut`; before login it is `connectionFailed`. In the same way, a
   broken connection (a closed channel, BYE, or a network error) is
   `connectionFailed` on connect and LOGIN (or AUTHENTICATE), and `connectionLost` after it,
-  so only the first one tells the user to check the host and port.
+  so only the first one tells the user to check the host and port. APPEND
+  has 30 seconds (`AppendCommand.timeoutSeconds`). A timeout or a broken
+  connection during APPEND is `draftMayBeSaved` instead, because the server
+  may have saved the draft: it names the Drafts mailbox to look in before
+  trying again.
 - **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
   `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
   `MailClient` (and `FakeMailClient`) use wire names only. `MailReader`
@@ -362,6 +405,17 @@ account (`--account <name>`).
 - **libxml2** obeys a `<meta charset>` over the encoding it is given, so
   `MessageDecoder.declaringUTF8` points every `<meta>` charset at UTF-8 (the
   text is already decoded).
+- **Draft headers:** SwiftMail writes `Email.additionalHeaders` values
+  unchanged and unfolded, so `DraftMessage.folded` folds References between
+  IDs, and `ReplyComposer` drops a message ID with white space or a control
+  character (it could break the header). SwiftMail's `constructContent` adds
+  Date (now) and a new Message-ID.
+- **HTMLFormatter** (swift-markdown) writes text, code, and link targets
+  without escaping them, and passes raw HTML through. `MarkdownHTML` escapes
+  them first, and turns raw HTML into text: the quoted original is untrusted,
+  so iris never emits HTML that it did not make. It also parses with
+  `.disableSmartOpts`, so the HTML part has the same quotes and dashes as the
+  text part.
 - **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the
