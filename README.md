@@ -400,14 +400,17 @@ Limits:
 - Outlook writes the same header for a forward. A forward is known only by
   `Fwd:` or `Fw:`, so a forward from an Outlook in another language
   (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.
-- The text marks are in English: `Am ... schrieb ...:` and other languages
-  are not found in a plain-text body. The HTML quote marks do not depend
-  on the language, except in older Gmail mail, whose attribution line has
-  no mark of its own: a non-English one stays at the end of the body.
-- A reply to a forward is told from the forward itself by its `Re:`
-  subject. A reply whose subject starts with a translated prefix (`AW:`,
-  `SV:`) instead of `Re:`, and that quotes a forward with no note of its
-  own, is shown whole.
+- The text marks are in English. A plain-text reply with
+  `Am ... schrieb ...:` is shown whole; in older Gmail and Apple Mail HTML,
+  whose attribution line has no class, a non-English one stays at the end;
+  and a reply from classic desktop Outlook in another language
+  (`Von:` / `Gesendet:` / `Betreff:`) is shown whole. The classes and ids
+  that Gmail, Apple Mail, Thunderbird, and Outlook on the web write do not
+  depend on the language.
+- A quoted forward at the end of a message is hidden only when the subject
+  starts with `Re:`. A reply whose subject does not (for example an edited
+  one) keeps it. A forward whose subject was changed to start with `Re:`
+  loses the Apple Mail message it forwards; `--full` shows it.
 - A plain-text reply from Apple Mail is kept whole: Apple Mail quotes its
   `On ... wrote:` line too, so there is no mark. Its HTML part, which iris
   shows by default, is trimmed.
