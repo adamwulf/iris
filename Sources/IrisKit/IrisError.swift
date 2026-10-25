@@ -159,7 +159,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "to see the mailboxes and their attributes."
         case .draftTooLarge(let account, let size, let limit):
             return "The draft is \(size) bytes, and the server takes at most \(limit) bytes "
-                + "(account \"\(account)\"). Shorten the reply, or leave out the quoted message with --no-quote."
+                + "(account \"\(account)\"). Attach fewer or smaller files, shorten the reply, "
+                + "or leave out the quoted message with --no-quote."
         case .draftMayBeSaved(let account, let mailbox, let reason):
             let list = MessagePage.listCommand(
                 account: account, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit, format: .listDefault

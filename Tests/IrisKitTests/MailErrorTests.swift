@@ -174,7 +174,7 @@ final class MailErrorTests: XCTestCase {
         XCTAssertEqual(
             IrisError.draftTooLarge(account: "work", size: 2_000_000, limit: 1_000_000).errorDescription,
             "The draft is 2000000 bytes, and the server takes at most 1000000 bytes (account \"work\"). "
-                + "Shorten the reply, or leave out the quoted message with --no-quote."
+                + "Attach fewer or smaller files, shorten the reply, or leave out the quoted message with --no-quote."
         )
     }
 
