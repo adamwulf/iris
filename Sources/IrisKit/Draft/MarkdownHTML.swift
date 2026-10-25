@@ -66,7 +66,7 @@ enum MarkdownHTML {
 /// break as a bare newline, which HTML shows as a space, so "Thanks,\nAdam"
 /// would read "Thanks, Adam". And it drops `cid:` images: they point at a
 /// MIME part of the original (a signature logo, often), which the draft does
-/// not have.
+/// not have. The links and paragraphs they leave empty go too.
 private struct HTMLEscaper: MarkupRewriter {
     static func escaped(_ text: String) -> String {
         MarkdownHTML.escaped(text)
@@ -76,10 +76,17 @@ private struct HTMLEscaper: MarkupRewriter {
         LineBreak()
     }
 
-    /// Nil for a paragraph left empty, such as one that held only a `cid:` image.
+    /// Nil for a paragraph left with only white space and line breaks, such as
+    /// one that held only `cid:` images: two on lines next to each other leave
+    /// a line break, and two linked icons leave the space between the links.
     mutating func visitParagraph(_ paragraph: Paragraph) -> Markup? {
-        let rewritten = defaultVisit(paragraph)
-        return rewritten?.childCount == 0 ? nil : rewritten
+        guard let rewritten = defaultVisit(paragraph) else {
+            return nil
+        }
+        let isBlank = rewritten.children.allSatisfy { child in
+            child is LineBreak || child is SoftBreak || (child as? Text)?.string.allSatisfy(\.isWhitespace) == true
+        }
+        return isBlank ? nil : rewritten
     }
 
     mutating func visitText(_ text: Text) -> Markup? {
@@ -94,10 +101,15 @@ private struct HTMLEscaper: MarkupRewriter {
         CodeBlock(language: codeBlock.language.map(Self.escaped), Self.escaped(codeBlock.code))
     }
 
+    /// Nil for a link left with no children: signatures link their logo and
+    /// social icons, and SwiftText keeps that as `[![Image](cid:...)](https://...)`.
     mutating func visitLink(_ link: Link) -> Markup? {
         var link = link
         link.destination = link.destination.map(Self.escaped)
-        return defaultVisit(link)
+        guard let rewritten = defaultVisit(link), rewritten.childCount > 0 else {
+            return nil
+        }
+        return rewritten
     }
 
     mutating func visitImage(_ image: Image) -> Markup? {

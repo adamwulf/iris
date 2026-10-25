@@ -44,6 +44,25 @@ final class MarkdownHTMLTests: XCTestCase {
         )
     }
 
+    /// Signatures link their logo and social icons; SwiftText keeps that as `[![Image](cid:...)](url)`.
+    func testALinkLeftEmptyByACidImageIsLeftOut() {
+        XCTAssertEqual(
+            html("Jane\n\n[![Image](cid:logo)](https://acme.com) [![Image](cid:in)](https://linkedin.com/in/jane)"),
+            "<p>Jane</p>\n",
+            "the links go, then the paragraph with only the space between them"
+        )
+        XCTAssertEqual(
+            html("[Acme ![Image](cid:logo)](https://acme.com)"),
+            "<p><a href=\"https://acme.com\">Acme </a></p>\n",
+            "a link that keeps its text stays"
+        )
+    }
+
+    func testAParagraphLeftWithOnlyALineBreakIsLeftOut() {
+        XCTAssertEqual(html("Jane\n\n![Image](cid:logo)\n![Image](cid:icon)"), "<p>Jane</p>\n")
+        XCTAssertEqual(html("![Image](cid:logo)  \n![Image](cid:icon)"), "", "a hard break too")
+    }
+
     func testTextIsEscaped() {
         XCTAssertEqual(html("x < y & \"z\" > w"), "<p>x &lt; y &amp; &quot;z&quot; &gt; w</p>\n")
     }
