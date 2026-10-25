@@ -23,25 +23,12 @@ struct Auth: AsyncParsableCommand {
                 name: accountOptions.account, settings: AccountResolver.settings()
             )
             let refreshToken = try await GoogleSignIn(account: account, openURL: CLI.openInBrowser).run()
-
-            let tokenKey = AccountResolver.key(.googleRefreshToken, account: account.name)
-            let check = "iris check --account \(account.name)"
-            let problem: String
-            do {
-                if let file = try AccountResolver.saveGoogleRefreshToken(refreshToken, account: account.name) {
-                    CLI.printToStderr("Signed in. Saved \(tokenKey) in \(file.path).")
-                    CLI.printToStderr("Run `\(check)` to test the account.")
-                    return
-                }
-                problem = "\(AccountResolver.key(.googleClientID, account: account.name)) is not in a .env file "
-                    + "(it comes from the environment), so iris did not write one."
-            } catch {
-                problem = "iris could not write \(tokenKey) to .env: \(error.localizedDescription)"
+            let save = AccountResolver.saveGoogleRefreshToken(refreshToken, account: account.name)
+            // The only place iris shows a secret: a token it did not write, for the user to save.
+            if let line = save.stdoutLine {
+                print(line)
             }
-            // The only place iris shows a secret: the user must save it by hand.
-            print("\(tokenKey)=\(refreshToken)")
-            CLI.printToStderr("Signed in. \(problem) Save the line above where you keep the other keys "
-                + "of the account, then run `\(check)` to test it.")
+            CLI.printToStderr(save.message)
         }
     }
 }

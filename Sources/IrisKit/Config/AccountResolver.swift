@@ -93,19 +93,26 @@ public enum AccountResolver {
     /// Saves the refresh token from `iris auth login` as
     /// `IRIS_<NAME>_GOOGLE_REFRESH_TOKEN` in the `.env` file that sets the
     /// account's `IRIS_<NAME>_GOOGLE_CLIENT_ID` (the nearest one, from
-    /// `directory` up), and returns that file. Nil, with nothing written, when
-    /// no `.env` sets the client ID because it comes from the environment:
-    /// then the caller shows the line, so the user can save it.
+    /// `directory` up). It writes nothing when no `.env` sets the client ID,
+    /// because it comes from the environment. When it writes nothing, or the
+    /// write fails, the result shows the line, so the user can save it.
     public static func saveGoogleRefreshToken(
         _ refreshToken: String,
         account name: String,
         startingIn directory: URL? = nil
-    ) throws -> URL? {
-        guard let fileURL = DotEnv.fileURL(settingKey: key(.googleClientID, account: name), startingIn: directory) else {
-            return nil
+    ) -> RefreshTokenSave {
+        func save(_ outcome: RefreshTokenSave.Outcome) -> RefreshTokenSave {
+            RefreshTokenSave(account: name, refreshToken: refreshToken, outcome: outcome)
         }
-        try DotEnv.setValue(refreshToken, forKey: key(.googleRefreshToken, account: name), in: fileURL)
-        return fileURL
+        guard let fileURL = DotEnv.fileURL(settingKey: key(.googleClientID, account: name), startingIn: directory) else {
+            return save(.clientIDInEnvironment)
+        }
+        do {
+            try DotEnv.setValue(refreshToken, forKey: key(.googleRefreshToken, account: name), in: fileURL)
+            return save(.saved(fileURL))
+        } catch {
+            return save(.writeFailed(fileURL, reason: error.localizedDescription))
+        }
     }
 
     /// The lowercased name of the account a command uses: `name` if given,

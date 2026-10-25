@@ -113,8 +113,9 @@ An account with `IRIS_<NAME>_GOOGLE_CLIENT_ID` signs in with Google
 names `iris auth login`. `iris auth login` cannot use `resolve` (it has no
 refresh token yet): it uses `resolveGoogleSignIn(name:settings:)` (username,
 client ID, client secret), and `saveGoogleRefreshToken` writes the token
-into the `.env` that sets the client ID, or returns nil when the client ID
-comes from the environment.
+into the `.env` that sets the client ID. It returns a `RefreshTokenSave`
+(saved, client ID only in the environment, or write failed) whose
+`stdoutLine` and `message` the CLI prints unchanged, as `list` prints its hint.
 
 Never put a secret in an error message, a log line, or JSON output: the
 password, the client secret, the refresh token, the access token, the code,
@@ -123,7 +124,8 @@ or the PKCE verifier. `Account.secrets` lists an account's secrets, and
 token endpoint's answers (`SwiftMailClient` adds the access token during
 AUTHENTICATE). The one exception: when `iris auth login` does not write
 `.env` (no `.env` sets the client ID, or the write fails), it prints the
-refresh token's `KEY=value` line on stdout for the user to save.
+refresh token's `KEY=value` line (`RefreshTokenSave.stdoutLine`) on stdout
+for the user to save.
 
 ### Output
 

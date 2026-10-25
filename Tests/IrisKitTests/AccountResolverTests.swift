@@ -336,41 +336,103 @@ final class AccountResolverTests: XCTestCase {
         }
     }
 
-    func testSaveGoogleRefreshTokenWritesTheFileThatSetsTheClientID() throws {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AccountResolverTests-\(UUID().uuidString)", isDirectory: true)
-        let child = dir.appendingPathComponent("project", isDirectory: true)
-        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let parentFile = dir.appendingPathComponent(".env")
-        let childFile = child.appendingPathComponent(".env")
-        try "IRIS_PERSONAL_GOOGLE_CLIENT_ID=id\nIRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=old\n".write(
-            to: parentFile, atomically: true, encoding: .utf8)
-        try "IRIS_WORK_IMAP_HOST=imap.example.com\n".write(to: childFile, atomically: true, encoding: .utf8)
-
-        let saved = try AccountResolver.saveGoogleRefreshToken("1//new", account: "personal", startingIn: child)
-
-        XCTAssertEqual(saved?.path, parentFile.path)
-        XCTAssertEqual(
-            try String(contentsOf: parentFile, encoding: .utf8),
-            "IRIS_PERSONAL_GOOGLE_CLIENT_ID=id\nIRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=1//new\n"
-        )
-        XCTAssertEqual(try String(contentsOf: childFile, encoding: .utf8), "IRIS_WORK_IMAP_HOST=imap.example.com\n")
-        XCTAssertEqual(
-            AccountResolver.settings(environment: [:], startingIn: child)["IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN"], "1//new"
-        )
-    }
-
-    func testSaveGoogleRefreshTokenWritesNothingWhenNoEnvFileSetsTheClientID() throws {
+    /// A new empty directory, removed after the test.
+    private func temporaryDirectory() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AccountResolverTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
+        addTeardownBlock {
+            // A test may make the directory read-only; allow the removal again.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        return dir
+    }
+
+    func testSaveGoogleRefreshTokenWritesTheFileThatSetsTheClientID() throws {
+        let dir = try temporaryDirectory()
+        let child = dir.appendingPathComponent("my project", isDirectory: true)
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        let parentFile = dir.appendingPathComponent(".env")
+        let childFile = child.appendingPathComponent(".env")
+        try "IRIS_MY_GMAIL_GOOGLE_CLIENT_ID=id\nIRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN=old\n".write(
+            to: parentFile, atomically: true, encoding: .utf8)
+        try "IRIS_WORK_IMAP_HOST=imap.example.com\n".write(to: childFile, atomically: true, encoding: .utf8)
+
+        let save = AccountResolver.saveGoogleRefreshToken("1//new", account: "my_gmail", startingIn: child)
+
+        guard case .saved(let file) = save.outcome else {
+            return XCTFail("expected .saved, got \(save.outcome)")
+        }
+        XCTAssertEqual(file.path, parentFile.path)
+        XCTAssertNil(save.stdoutLine, "a saved token is never shown")
+        XCTAssertEqual(
+            save.message,
+            "Signed in. Saved IRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN in \(parentFile.path).\n"
+                + "Run `iris check --account my_gmail` to test the account."
+        )
+        XCTAssertFalse(save.message.contains("1//new"))
+        XCTAssertEqual(
+            try String(contentsOf: parentFile, encoding: .utf8),
+            "IRIS_MY_GMAIL_GOOGLE_CLIENT_ID=id\nIRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN=1//new\n"
+        )
+        XCTAssertEqual(try String(contentsOf: childFile, encoding: .utf8), "IRIS_WORK_IMAP_HOST=imap.example.com\n")
+        XCTAssertEqual(
+            AccountResolver.settings(environment: [:], startingIn: child)["IRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN"], "1//new"
+        )
+    }
+
+    func testSaveGoogleRefreshTokenPrintsTheLineWhenTheClientIDComesFromTheEnvironment() throws {
+        let dir = try temporaryDirectory()
         let file = dir.appendingPathComponent(".env")
         try "IRIS_WORK_IMAP_HOST=imap.example.com\n".write(to: file, atomically: true, encoding: .utf8)
 
-        XCTAssertNil(try AccountResolver.saveGoogleRefreshToken("1//new", account: "personal", startingIn: dir))
+        let save = AccountResolver.saveGoogleRefreshToken("1//new", account: "personal", startingIn: dir)
+
+        XCTAssertEqual(save.outcome, .clientIDInEnvironment)
+        XCTAssertEqual(save.stdoutLine, "IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=1//new")
+        XCTAssertEqual(
+            save.message,
+            "Signed in. IRIS_PERSONAL_GOOGLE_CLIENT_ID is not in a .env file (it comes from the environment), "
+                + "so iris wrote no file. Save the line IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=... that iris printed "
+                + "where you keep the other keys of the account. "
+                + "Run `iris check --account personal` to test the account."
+        )
+        XCTAssertFalse(save.message.contains("1//new"), "stderr never shows the token")
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "IRIS_WORK_IMAP_HOST=imap.example.com\n")
+    }
+
+    func testSaveGoogleRefreshTokenPrintsTheLineWhenTheWriteFails() throws {
+        let dir = try temporaryDirectory()
+        let file = dir.appendingPathComponent(".env")
+        try "IRIS_PERSONAL_GOOGLE_CLIENT_ID=id\n".write(to: file, atomically: true, encoding: .utf8)
+        // The write replaces the file through a new file in the same directory.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+
+        let save = AccountResolver.saveGoogleRefreshToken("1//new", account: "personal", startingIn: dir)
+
+        guard case .writeFailed(let failed, let reason) = save.outcome else {
+            return XCTFail("expected .writeFailed, got \(save.outcome)")
+        }
+        XCTAssertEqual(failed.path, file.path)
+        XCTAssertFalse(reason.isEmpty)
+        XCTAssertEqual(save.stdoutLine, "IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=1//new")
+        XCTAssertTrue(save.message.hasPrefix(
+            "Signed in, but iris could not write IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN to \(file.path): \(reason). "
+        ), save.message)
+        XCTAssertTrue(save.message.hasSuffix(
+            "Save the line IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=... that iris printed where you keep the other keys "
+                + "of the account. Run `iris check --account personal` to test the account."
+        ), save.message)
+        XCTAssertFalse(save.message.contains("1//new"), "stderr never shows the token")
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "IRIS_PERSONAL_GOOGLE_CLIENT_ID=id\n")
+    }
+
+    func testRefreshTokenSaveShellQuotesTheAccountInTheCommand() {
+        // Account names are letters, digits, and underscores, so quoting never shows today; the
+        // message still goes through MessagePage.shellQuoted, as the other messages do.
+        let save = RefreshTokenSave(account: "a b", refreshToken: "t", outcome: .clientIDInEnvironment)
+        XCTAssertTrue(save.message.contains("`iris check --account 'a b'`"), save.message)
     }
 
     func testSecretsListThePasswordOrTheClientSecretAndRefreshToken() throws {
