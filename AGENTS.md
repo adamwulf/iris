@@ -36,16 +36,20 @@ Sources/IrisKit/
                checks), LoopbackServer (the 127.0.0.1 redirect listener),
                GoogleURL (query escaping), GoogleSignInStatus (`iris auth
                status`: the keys set and one refresh per account)
-  Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
-               MailReader (sessions, paging, the thread walk, one attachment, errors),
-               MailModels (rows, pages, ThreadMessage),
+  Mail/        MailClient (the IMAP seam, and MessageOutline: a message's size,
+               header fields, and parts before it is downloaded),
+               SwiftMailClient (the real one),
+               MailReader (sessions, paging, a message whole or in parts,
+               the thread walk, one attachment, errors),
+               MailModels (rows, pages, ThreadMessage, DownloadedMessage),
                MailWriter (the calls that change mail: read, unread, and
                saving a draft; SavedDraft),
                MessageFilter (the `list` filter options, sent as UID SEARCH),
                IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>),
                AttachmentID (a part's MIME section, such as 1.2, inside one message),
                ThreadSubject (the subject rule of `thread`)
-  Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
+  Message/     MessageDecoder (raw RFC 822, or a large message's outline and
+               body parts -> MessageDocument), FlowedText,
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw,
                and a thread), AppleMailURL (the message: URL from the Message-ID header),
                TransferEncoding (base64 and quoted-printable of one downloaded part)
@@ -68,7 +72,8 @@ Sources/iris/
   Commands/         one file per command
 Tests/IrisKitTests/ offline library tests (LoopbackServerTests binds 127.0.0.1);
                     Support/ has FakeMailClient, LogRecorder, StubTransport
-                    (HTTP), and FakeRedirectReceiver (sign-in)
+                    (HTTP), FakeRedirectReceiver (sign-in), and
+                    ThreadMessage+Whole (a thread message by its raw bytes)
 Tests/CLITests/     argument parsing only, never run()
 ```
 
@@ -94,7 +99,34 @@ the error mapping (`irisError(for:command:account:accessToken:)`), the TLS choic
 (`searchCriteria(for:)`, `subjectSearchCriteria(_:)`, `messageIDSearchCriteria(_:)`),
 the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
 `MessageEnvelope(swiftMail:)`, `ThreadHeaders(swiftMail:)`,
-`PartStructure(swiftMail:)`, and `Email(draft:)`.
+`PartStructure(swiftMail:)`, the outline (`outline(in:uid:)`,
+`MessageHeaders(swiftMail:)`, `PartOutline(swiftMail:)`), and `Email(draft:)`.
+
+`show` in Markdown or JSON (`MailReader.message(_:)`) is one read-only
+session: EXAMINE, then `fetchOutline(uid:)`, one UID FETCH of RFC822.SIZE,
+BODYSTRUCTURE, and `BODY.PEEK[HEADER.FIELDS (...)]` for the fields of
+`MessageHeaders` (`SwiftMailClient.messageHeaderFields`), through
+`fetchMessageInfosBulk`. Nil is a missing message, `unknownMessage`, so it
+is the existence check. A message of at most `MailReader.wholeDownloadLimit`
+bytes (1 MiB), or of unknown size, is then downloaded whole with
+`fetchRawMessage` and decoded as before: `.whole(Data)` of
+`DownloadedMessage`. A larger one gets only its body parts, found by
+`MessageDecoder.bodyParts(of:)` on the outline's parts (the text/plain and
+text/html parts that are not attachments, as for a whole message), each
+with `fetchBodyPart(_:uid:)` (`BODY.PEEK[<section>]`, 60 seconds; its
+timeout is `bodyDownloadTimedOut`, and no bytes for a part whose size is
+above 0 is `bodyNotReceived`): `.parts(MessageParts)`, the outline and the
+body bytes, still transfer-encoded. The attachments stay on the server, but
+their attachment IDs are shown. A large message whose outline has no parts
+(no BODYSTRUCTURE that SwiftMail could read) is downloaded whole, the only
+way left, with one `IrisLog` line that says it can time out.
+`outline(in:uid:)` combines every answer with the UID: SwiftMail puts the
+header fields on the first answer with the sequence number, and the size and
+BODYSTRUCTURE on the last, so a CONDSTORE flag change before the answer
+splits them. `show --format raw` never takes this path: it reads
+`rawMessage(_:)`, the whole message at any size
+(`MessageOutputFormat.documentFormat` is nil for raw). See "Large messages"
+in "Gotchas" for what the parts path gives differently.
 
 `download` (`MailReader.attachment(_:of:)`) is one read-only session:
 EXAMINE, `fetchStructure(uid:)`, then `fetchPart(_:uid:)`
@@ -132,8 +164,9 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 `\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
 
 `MailWriter.saveReply` takes two sessions: a `MailReader` reads the original
-(`rawMessage(_:)`, decoded with `MessageFormatter.document`, as `show` and
-`thread` decode a message), and `saveDraft(_:)` saves the reply that `ReplyComposer`
+(`message(_:)`, so a large one in parts, decoded with
+`MessageFormatter.document(message:irisID:body:)`, as `show` and `thread`
+decode a message), and `saveDraft(_:)` saves the reply that `ReplyComposer`
 built (pure; it needs no fake). `saveDraft` finds the `\Drafts` mailbox in
 the merged LIST, APPENDs to its wire name, and makes the iris ID from the
 decoded name (it also puts that name back into a `draftMayBeSaved` or
@@ -166,8 +199,8 @@ multipart/alternative it was before `--attach`.
 
 `thread` (`MailReader.thread`) is one session too. It reads only headers
 until it knows the thread: `fetchThreadHeaders` (UID FETCH of
-`BODY.PEEK[HEADER.FIELDS (Message-ID In-Reply-To References Subject Date)]`
-and INTERNALDATE). It searches INBOX, each `\Sent`, `\Drafts`, `\Archive`,
+`BODY.PEEK[HEADER.FIELDS (Message-ID In-Reply-To References Subject Date)]`,
+INTERNALDATE, and RFC822.SIZE). It searches INBOX, each `\Sent`, `\Drafts`, `\Archive`,
 and `\All` mailbox, and the input mailbox (`threadMailboxes`), the input
 mailbox first because it is open already. Each gets one SUBJECT search
 (`searchUIDs(subjectContainingAll:)`, one SUBJECT key per text, ANDed) for
@@ -183,10 +216,14 @@ join until none joins. Each Message-ID is shown once, from the first
 mailbox in `threadMailboxes` order (lowest UID). That walk (`threadWalk`)
 gives those copies, oldest first, from headers alone. `MailReader.threadIDs`
 stops there (`thread --format id`), so it downloads nothing; `thread` then
-downloads only those copies with `fetchRawMessage` (`threadDownloads`), in
+downloads only those copies (`threadDownloads`), in
 the same session, mailbox by mailbox in name order, each opened once (not
 at all when it is the one the walk's last EXAMINE left open, which
-`ThreadWalk.openMailbox` records). A download that times out or
+`ThreadWalk.openMailbox` records). Each copy is downloaded as `show`
+downloads it, by the size the walk's headers gave (`ThreadWalk.sizes`): at
+most `wholeDownloadLimit`, or no size, is `fetchRawMessage` with no other
+FETCH; above it, the outline and the body parts. A download that times out
+(whole: `.timedOut`, a body part: `.bodyTimedOut`) or
 finds the message gone is kept as a `ThreadMessage.DownloadFailure`, and
 the mailbox is examined again before the next download (SwiftMail
 reconnects after a timeout, with no mailbox open). `MessageFormatter.render(thread:)`
@@ -207,7 +244,12 @@ SEARCH text, and `rawMessageErrors` a message that does not download (after
 a timeout no mailbox is open, as after SwiftMail's reconnect). For
 `download` it holds each UID's `structures` and `parts` (the bytes still
 transfer-encoded): `fetchStructure` gives nil for a UID it does not have,
-and an empty structure stands for an answer without a BODYSTRUCTURE. The
+and an empty structure stands for an answer without a BODYSTRUCTURE. For a
+large message it holds each UID's `outlines` (in `mailboxMessages`, a
+`Message`'s `outline` and `bodyParts`); `fetchBodyPart` reads `parts`, and
+`bodyPartErrors` throws for a UID (after `bodyDownloadTimedOut` no mailbox
+is open). A UID in `rawMessages` without an outline gets one with its size
+and nothing else, which the whole download does not read. The
 Google code has its own seams: `HTTPTransport` (tests use `StubTransport`)
 and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
 browser opener). One test opens a socket: `LoopbackServerTests` runs the
@@ -294,6 +336,10 @@ for the user to save.
   Markdown and JSON also show `appleMailURL`, the `message:` URL that opens
   the message in Apple Mail. `MessageDocument` makes it from `messageID` with
   `AppleMailURL`, so it is nil when there is no `Message-ID` header.
+  Markdown and JSON download a large message in parts
+  (`MessageFormatter.render(message:irisID:format:body:timeZone:)` takes the
+  `DownloadedMessage`); `raw` is always the whole message, so a large one can
+  still time out.
 - Every attachment that `show` and `thread` list (`MessageAttachment`) has
   an attachment ID (`AttachmentID`), the part's MIME section from
   `MessageDecoder.attachments(of:)`: first on its Markdown line, in code
@@ -301,7 +347,11 @@ for the user to save.
   string such as `"1.2"`, in JSON. Parse it with `AttachmentID(parsing:)`
   and take it as an `@Argument` with `transform: AttachmentID.init(parsing:)`.
   Words: user-facing text says "attachment ID". `show` and `thread` never
-  include attachment bytes.
+  include attachment bytes. Its `size` is the decoded size; for a large
+  message, downloaded in parts, it is an estimate for base64 and
+  quoted-printable (`sizeIsEstimate`, see "Large messages"): "about 19.7 MB"
+  in Markdown, and `"sizeIsEstimate": true` in JSON, which has the key only
+  then, so a whole message's JSON is what it always was.
 - `download` writes the attachment's decoded bytes to stdout, exactly, with
   nothing else (as `show --format raw` writes a message), or, with `-o`,
   saves a new file at exactly that path and writes nothing (as `read` and
@@ -433,12 +483,15 @@ account (`--account <name>`).
 - **10 second deadlines:** every SwiftMail FETCH but a part fetch (60
   seconds, below) gives up after 10 seconds (fixed in SwiftMail).
   `fetchRawMessage` turns that into `messageDownloadTimedOut`, and
-  `fetchPart` its 60 seconds into `attachmentDownloadTimedOut`.
-  `fetchEnvelopes` and `fetchThreadHeaders` use
+  `fetchPart` its 60 seconds into `attachmentDownloadTimedOut`
+  (`fetchBodyPart`, the same fetch for a body part, into
+  `bodyDownloadTimedOut`). That is why `show`, `thread`, and `draft`
+  download a message above `wholeDownloadLimit` in parts (see "Large
+  messages"). `fetchEnvelopes` and `fetchThreadHeaders` use
   the chunked `fetchMessageInfos(using:options:headerFields:chunkSize:)`
   stream (`envelopeChunkSize`, 100 messages per FETCH), so each chunk has
   its own deadline. Any other timeout after login (also the BODYSTRUCTURE
-  FETCH of `download`) is
+  FETCH of `download`, and the outline FETCH of `show`) is
   `serverTimedOut`; before login it is `connectionFailed`. In the same way, a
   broken connection (a closed channel, BYE, or a network error) is
   `connectionFailed` on connect and LOGIN (or AUTHENTICATE), and `connectionLost` after it,
@@ -471,8 +524,9 @@ account (`--account <name>`).
   SwiftMail's `fetchPart(section:of:)` (`FetchMessagePartCommand.timeoutSeconds`,
   fixed at 60, `SwiftMailClient.partTimeoutSeconds`). It never uses
   `fetchRawMessage`: its 10 seconds fail large messages, and attachments are
-  what make a message large. A part-fetch timeout is
-  `attachmentDownloadTimedOut`; a BODYSTRUCTURE timeout (10 seconds,
+  what make a message large. The parts path of `show` fetches each body
+  part the same way. A part-fetch timeout is `attachmentDownloadTimedOut`
+  (for a body part, `bodyDownloadTimedOut`); a BODYSTRUCTURE timeout (10 seconds,
   `FetchMessageInfoCommand.timeoutSeconds`, for a few hundred bytes) is
   `serverTimedOut`, as for the other small FETCHes. No chunked or ranged fetch is
   built, so an attachment that takes more than 60 seconds fails
@@ -485,8 +539,43 @@ account (`--account <name>`).
   section and then adds its inner parts (`2`, `2.1`, `2.2`; SwiftMail's
   `rfc822InsideMultipartMixed` test pins this). So every ID that `show`
   lists is in the structure, and `BODY[2]` gives the whole forwarded
-  message, an `.eml`. iris reads only the section and the transfer encoding
-  from it, never the filename (see "Output").
+  message, an `.eml`. `download` reads only the section and the transfer
+  encoding from it, never the filename (see "Output"). For a large message,
+  `MessageDecoder.message(of:bodies:)` drops the inner parts, so the list
+  is the one EMLParser gives.
+- **Large messages** (`MailReader.wholeDownloadLimit`, 1 MiB by RFC822.SIZE,
+  above it the parts path; at it, the whole download). 1 MiB in 10 seconds
+  needs about 0.84 Mbit/s, which nearly every link has, and mail without
+  attachments is far smaller, so nearly all mail keeps the exact whole
+  path. The parts path runs the same `MessageDecoder` steps on a SwiftMail
+  `Message(header:parts:)` built from BODYSTRUCTURE, whose body parts alone
+  have bytes, so the body and the attachment IDs match a whole download
+  (`MessageDecoderPartsTests` decodes one message both ways). What differs:
+  - The header fields come from the FETCH's `BODY.PEEK[HEADER.FIELDS]`,
+    which SwiftMail parses with EMLParser's code for the subject, the
+    addresses, and the Message-ID. The date uses SwiftMail's ENVELOPE date
+    parser, which drops a trailing `(CDT)` as `HeaderDate` does, but reads
+    no date without seconds (`HeaderDate` does); it also reads a date
+    without a zone (as GMT) and US zone names such as `PST`. In-Reply-To: SwiftMail
+    reads the whole value as one `MessageID` (`<a@x> (c)` gives
+    `<a@x> (c)>`), so `MessageHeaders(swiftMail:)` takes the first `<...>`
+    of it. SwiftMail leaves Date, In-Reply-To, and References out of
+    `additionalFields`, so the raw values are gone.
+  - BODYSTRUCTURE keeps only the `charset` parameter of a Content-Type
+    (`MessagePart+BodyStructure.swift`), so a `format=flowed` text body
+    keeps its soft line breaks. BODYSTRUCTURE gives the charset unquoted,
+    so `charset="koi8-r"` is read here, unlike in EMLParser (SwiftMail PR #268).
+  - Filenames: SwiftMail reads only `filename` and `name`, not RFC 2231
+    `filename*=`, so a non-ASCII name can show as "(no filename)" (the ID
+    still works). It also makes names up where a whole download shows
+    "(no filename)": the Content-ID of a part without a filename,
+    `invite.ics` for text/calendar, and `<subject>.eml` (or `message.eml`)
+    for a forwarded message.
+  - Sizes: an attachment has no bytes, only BODYSTRUCTURE's encoded size.
+    `MessageDecoder.decodedSize(of:)`: exact without an encoding (7bit,
+    8bit, binary); 57/78 of it for base64 (lines of 76 and CRLF; a part
+    without line breaks holds 3% more); all of it for quoted-printable,
+    which only shrinks. The last two are `sizeIsEstimate`.
 - **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
   `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
   `MailClient` (and `FakeMailClient`) use wire names only. `MailReader`
