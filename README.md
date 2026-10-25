@@ -233,7 +233,7 @@ iris thread 'work/INBOX/4821' --format json   # an array of `iris show --format 
 iris thread 'work/INBOX/4821' --format jsonl  # the same objects, one per line
 iris thread 'work/INBOX/4821' --format id     # only the iris IDs, one per line
 
-iris download 'work/INBOX/4821' 2 > report.pdf           # attachment 2, as `iris show` lists it
+iris download 'work/INBOX/4821' 2 > report.pdf               # attachment 2, as `iris show` lists it
 iris download 'work/INBOX/4821' 1.2 -o ~/Downloads/scan.png  # saved as that file
 
 iris read 'work/INBOX/4821'                # mark as read
