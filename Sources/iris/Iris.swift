@@ -18,26 +18,12 @@ struct Iris: AsyncParsableCommand {
 
     static func main() async {
         CLI.bootstrapSwiftLog()
-        var logging: IrisFileLog?
-        var commandName = "iris"
         do {
-            var command = try parseAsRoot()
-            logging = IrisFileLog.openIfPossible(
-                command: command, arguments: Array(CommandLine.arguments.dropFirst())
+            let arguments = Array(CommandLine.arguments.dropFirst())
+            try await CLI.run(
+                try parseAsRoot(arguments), arguments: arguments
             )
-            CLI.installLogHandler(fileLog: logging)
-            commandName = type(of: command).configuration.commandName ?? String(describing: type(of: command))
-            logging?.notice("Starting \(commandName).")
-            if var asyncCommand = command as? AsyncParsableCommand {
-                try await asyncCommand.run()
-            } else {
-                try command.run()
-            }
-            logging?.notice("Completed \(commandName).")
-            await logging?.drain()
         } catch {
-            logging?.failure(error, command: commandName)
-            await logging?.drain()
             exit(withError: error)
         }
     }

@@ -748,7 +748,7 @@ For Claude Code, in `.claude/settings.json`:
 
 Normal commands retain diagnostic logs in `~/Library/Logs/iris/iris.log`, using FellerBuncher with the same defaults as graham: rotation at 10 MiB, up to five rotated files (`iris-1.log` through `iris-5.log`), and seven-day retention for inactive logs. Timestamps are UTC. Pending writes are drained before successful or failed exit.
 
-The files record command starts and outcomes, Iris library notices, and Iris errors. Full command lines, stdout data, SwiftMail protocol logs, and the interactive Google sign-in URL are not copied into them. Configured passwords, client secrets, and refresh tokens are redacted; transient OAuth secrets are redacted at the network boundary. Diagnostics can still name accounts, servers, mailboxes, iris IDs, and file paths.
+The files record command starts and outcomes, Iris library notices, and Iris errors. Full command lines, stdout data, SwiftMail protocol logs, and the interactive Google sign-in URL are not copied into them. Configured passwords, client secrets, and refresh tokens are redacted; transient OAuth secrets are redacted at the network boundary. Diagnostics can still include account names, usernames and email addresses, servers, mailboxes, iris IDs, file paths, and server error text.
 
 `iris ro` disables file logging completely, including directory creation and pruning. Help and argument-parsing failures also create no logs. If the log directory cannot be opened, iris prints one warning on stderr and continues. Live notices and errors still go to stderr, and stdout remains data only.
 
@@ -763,7 +763,7 @@ swift run iris --help
 The tests use fake IMAP clients and HTTP transports; they do not connect
 to a mail provider or send mail. One test exercises the OAuth redirect
 listener on `127.0.0.1`. CLI tests check argument parsing and file logging in
-temporary directories without running commands. A passing suite does not
+temporary directories using synthetic commands. A passing suite does not
 replace the live provider checks.
 
 See [AGENTS.md](AGENTS.md) for the architecture and how to add a command.

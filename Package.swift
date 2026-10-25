@@ -26,7 +26,8 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.8.0"),
         // SwiftMail logs through swift-log. Only the executable picks the backend.
         .package(url: "https://github.com/apple/swift-log", from: "1.6.0"),
-        .package(url: "https://github.com/adamwulf/FellerBuncher.git", branch: "main"),
+        // The same audited FellerBuncher revision used by graham; no release tags yet.
+        .package(url: "https://github.com/adamwulf/FellerBuncher.git", revision: "39a70d805ceaa33f76c9e08c6371c4776ecc73f6"),
     ],
     targets: [
         // The library holds all logic and never prints: it logs through the

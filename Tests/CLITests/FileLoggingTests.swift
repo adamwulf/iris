@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import IrisKit
 import Logging
@@ -5,8 +6,73 @@ import XCTest
 @testable import iris
 
 /// Exercise the executable's real backend wiring in temporary directories.
-/// No command runs, network connection, or global logging bootstrap.
+/// Only synthetic commands run: no network connection or global bootstrap.
 final class FileLoggingTests: XCTestCase {
+    private struct Probe: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(commandName: "probe")
+        enum Outcome: String, Decodable, CaseIterable {
+            case success, irisError, exitStatus
+        }
+        var outcome: Outcome = .success
+
+        func run() async throws {
+            switch outcome {
+            case .success: break
+            case .irisError: throw IrisError.noAccountsConfigured
+            case .exitStatus: throw ExitCode.failure
+            }
+        }
+    }
+
+    func testCommandPathsMatchCLIIncludingNestedCommands() {
+        XCTAssertEqual(CLI.commandPath(for: Accounts.self), "accounts")
+        XCTAssertEqual(CLI.commandPath(for: Auth.Status.self), "auth status")
+        XCTAssertEqual(CLI.commandPath(for: Auth.Login.self), "auth login")
+        XCTAssertEqual(CLI.commandPath(for: Draft.Reply.self), "draft reply")
+        XCTAssertEqual(CLI.commandPath(for: Draft.Update.self), "draft update")
+        XCTAssertEqual(CLI.commandPath(for: ThreadCommand.self), "thread")
+    }
+
+    func testLifecycleDrainsSuccessErrorsAndExitStatusesBeforeReturning() async throws {
+        let previousHandler = IrisLog.handler
+        let previousFileHandler = IrisLog.fileHandler
+        defer {
+            IrisLog.handler = previousHandler
+            IrisLog.fileHandler = previousFileHandler
+        }
+        for outcome in Probe.Outcome.allCases {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            var command = Probe()
+            command.outcome = outcome
+            var caught: Error?
+            do {
+                try await CLI.run(command, arguments: ["probe"], logDirectory: directory, settings: [:])
+            } catch {
+                caught = error
+            }
+
+            // No test-side drain: run must finish the pending writes itself.
+            let text = try String(contentsOf: directory.appendingPathComponent("iris.log"), encoding: .utf8)
+            XCTAssertTrue(text.contains("Starting probe."), text)
+            switch outcome {
+            case .success:
+                XCTAssertNil(caught)
+                XCTAssertTrue(text.contains("Completed probe."), text)
+            case .irisError:
+                XCTAssertEqual(caught as? IrisError, .noAccountsConfigured)
+                XCTAssertTrue(text.contains("probe: No email account is configured."), text)
+                XCTAssertTrue(text.contains("ERROR"), text)
+                XCTAssertFalse(text.contains("Completed probe."), text)
+            case .exitStatus:
+                XCTAssertEqual(caught as? ExitCode, .failure)
+                XCTAssertTrue(text.contains("probe: exited with status 1."), text)
+                XCTAssertFalse(text.contains("ERROR"), text)
+                XCTAssertFalse(text.contains("did not complete"), text)
+            }
+        }
+    }
+
     func testFileDestinationAppendsAndDrainsWithoutCapturingOtherLoggers() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -49,13 +115,17 @@ final class FileLoggingTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: oldLog), Data("keep".utf8))
     }
 
-    func testUnavailableDirectoryDoesNotPreventCommandStartup() throws {
+    func testUnavailableDirectoryDoesNotPreventCommandStartup() async throws {
+        let previousHandler = IrisLog.handler
+        let previousFileHandler = IrisLog.fileHandler
+        defer {
+            IrisLog.handler = previousHandler
+            IrisLog.fileHandler = previousFileHandler
+        }
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: file) }
         try Data().write(to: file)
-        XCTAssertNil(IrisFileLog.openIfPossible(
-            command: try Iris.parseAsRoot(["accounts"]), arguments: ["accounts"], directory: file, settings: [:]
-        ))
+        try await CLI.run(Probe(), arguments: ["probe"], logDirectory: file, settings: [:])
     }
 
     func testHelpAndGroupsDoNotOpenLogs() throws {

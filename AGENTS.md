@@ -84,7 +84,8 @@ Tests/IrisKitTests/ offline library tests (LoopbackServerTests binds 127.0.0.1);
                     Support/ has FakeMailClient, LogRecorder, StubTransport
                     (HTTP), FakeRedirectReceiver (sign-in), and
                     ThreadMessage+Whole (a thread message by its raw bytes)
-Tests/CLITests/     argument parsing and file-log backend wiring, never run()
+Tests/CLITests/     argument parsing and file-log backend/lifecycle wiring;
+                    only synthetic test commands run, never real commands
 ```
 
 ### The IMAP seam
@@ -492,9 +493,11 @@ agent `Bash(iris ro:*)` and nothing else. `Sources/iris/Commands/ReadOnlyCommand
 enforces it:
 
 - A **read-only** command (it cannot send, draft, move, flag, or delete,
-  and writes no file) is
+  and writes no output file) is
   declared `struct X: ReadOnlyCommand` and added to `ReadOnly.sharedCommands`.
-  It then appears both as `iris x` and `iris ro x`.
+  It then appears both as `iris x` and `iris ro x`. Diagnostic file logging
+  is disabled under `ro` by `FileLogPolicy.writesFiles(arguments:)`; a
+  top-level invocation can still write diagnostic files.
 - A **write** command (such as `read`, `unread`, `draft`, and `download`)
   is declared `struct X: AsyncParsableCommand` and added only to
   `Iris.configuration.subcommands`, after the read-only ones. Never
@@ -780,12 +783,16 @@ account (`--account <name>`).
 - **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the
-  executable depends on swift-log and FellerBuncher. `IrisFileLog` uses a
+  executable depends on swift-log and FellerBuncher (pinned to `39a70d8`,
+  the revision used by graham; bump in Package.swift and re-resolve).
+  `IrisFileLog` uses a
   dedicated `FileDestination`, never FellerBuncher's global bootstrap: that
   would persist SwiftMail's protocol diagnostics. Outside `ro`, after parsing,
   it appends to `~/Library/Logs/iris/iris.log` with graham's defaults (10 MiB,
   five rotated siblings, seven-day retention). Startup failure warns and
-  continues; both exit paths await `drain()`. `IrisLog.fileHandler` receives
+  continues; `CLI.run` awaits `drain()` before returning or rethrowing on
+  both exit paths. It derives command paths from the parser tree and records
+  explicit `ExitCode` outcomes as exit statuses. `IrisLog.fileHandler` receives
   library notices, with a separate safe `fileMessage` for the interactive
   OAuth URL. Command starts/outcomes and Iris errors also go to disk; raw
   arguments, other error descriptions, and stdout never do. `FileLogPolicy`

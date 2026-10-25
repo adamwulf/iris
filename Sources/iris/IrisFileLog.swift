@@ -7,6 +7,11 @@ import IrisKit
 /// its global bootstrap would also persist SwiftMail's protocol diagnostics.
 /// Defaults match graham: 10 MiB, five rotated siblings, seven-day retention.
 struct IrisFileLog: Sendable {
+    static var defaultDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/iris", isDirectory: true)
+    }
+
     private let destination: FileDestination
     private let policy: FileLogPolicy
 
@@ -18,8 +23,7 @@ struct IrisFileLog: Sendable {
     static func openIfPossible(
         command: any ParsableCommand,
         arguments: [String],
-        directory: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/iris", isDirectory: true),
+        directory: URL = defaultDirectory,
         settings: [String: String]? = nil
     ) -> Self? {
         // Iris's executable leaves are async. Parser-generated help commands
