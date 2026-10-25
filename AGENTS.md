@@ -698,8 +698,8 @@ account (`--account <name>`).
   inside `div.gmail_quote` (or Zoho's `div.zmail_extra`) is history.
   Superhuman writes Gmail's classes but no `gmail_attr`: like Gmail's
   older markup, it puts the attribution as bare text in `div.gmail_quote`,
-  so a container left with one line (and no image) after its quote is
-  removed. Superhuman also ends with a hidden tracking image
+  so a container with no `gmail_attr` (or Zoho header) that is left with
+  one line (and no image) after its quote is removed. Superhuman also ends with a hidden tracking image
   (`display: none`). Zoho on the web puts a `From:` / `Date:` / `Subject:`
   block (id `Zm-_Id_-Sgn1`) above `blockquote#blockquote_zmail`, not an
   "On ... wrote:" line, and a Zoho forward starts `div.zmail_extra` with

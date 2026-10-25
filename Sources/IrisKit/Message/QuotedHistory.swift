@@ -262,9 +262,11 @@ enum QuotedHistory {
     /// and such a container is searched like any element. (The text pass
     /// still cuts a quoted forward under an English attribution.)
     ///
-    /// A quote container whose quote was removed, and that holds only one
-    /// line of text after that (no image), is removed too: that line is an
-    /// attribution without a class (Gmail's older markup, Superhuman).
+    /// A quote container with no marked attribution (`isMarkedAttribution(_:)`)
+    /// whose quote was removed, and that holds only one line of text after
+    /// that (no image), is removed too: that line is an attribution without
+    /// a class (Gmail's older markup, Superhuman). In a container with a
+    /// marked attribution, a line left above it is the sender's.
     ///
     /// Outlook's reply header, `div#divRplyFwdMsg`, is removed with everything
     /// after it, and with the `<hr>` just above it: Outlook does not put the
