@@ -2,8 +2,9 @@
 
 Reviewed against the code on 2026-10-25. This file tracks remaining work
 and known limits. Implemented features and recorded live checks are in
-[README.md](../README.md); the architecture and thread-search rationale
-are in [AGENTS.md](../AGENTS.md).
+[README.md](../README.md). The architecture is in [AGENTS.md](../AGENTS.md);
+thread-search constraints are described there and in the original
+[library research](research/imap-libraries.md).
 
 ## Next: live checks against real accounts
 
@@ -14,8 +15,11 @@ including the date, provider, and behavior checked.
 
 - Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` on
   Gmail and iCloud, including a wrong password and a wrong host. Repeat
-  `show` on Zoho to check the outline FETCH added after its first live
-  check, for a small message as well as a large one.
+  `show` and `thread` on Zoho to check the outline FETCH and thread-header
+  FETCH with RFC822.SIZE added after its first live check, for small
+  messages as well as large ones. For Gmail, record the commands and
+  authentication method used: the 2026-10-25 real-message checks did not
+  record that coverage.
 - Check `iris thread` on Gmail and iCloud. Confirm that SUBJECT finds
   replies, how each server matches words, and that `--format id` gives
   the same iris IDs as the rendered thread when all messages download.
@@ -24,7 +28,9 @@ including the date, provider, and behavior checked.
   the downloaded bytes with the attachment.
 - Show a 20 MB message (a large PDF attached) on Zoho and Gmail with
   `iris show`, `iris thread`, and `iris draft`: they must take the parts
-  path, show or quote the body, and leave the PDF for `iris download`.
+  path and show or quote the body. Then download the PDF with
+  `iris download`, check that its bytes match, and record the download
+  time against the 60 second part limit.
   Compare the body, filenames, and estimated sizes with
   `iris show --format raw` on a fast link, and with a message under 1 MiB
   that takes the whole path. Record what BODYSTRUCTURE sends for a
@@ -73,10 +79,12 @@ including the date, provider, and behavior checked.
   revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. `iris show`,
   `iris thread`, and `iris draft` download a message over 1 MiB in parts
   (its headers and BODYSTRUCTURE, then only its text and HTML parts, 60
-  seconds each), so they show its body and attachment IDs. Only
-  `iris show --format raw` still needs the whole message, so a large one can
-  time out there, and so can a message up to 1 MiB on a link slower than
-  about 0.84 Mbit/s. A chunked whole download is not possible with
+  seconds each), so they show or quote its body; `show` and `thread` also
+  list its attachment IDs. `iris show --format raw` always needs the whole
+  message. Other formats also download whole when the size is unknown or
+  at most 1 MiB, or when a large message has no readable BODYSTRUCTURE.
+  Each whole download can time out, including a message up to 1 MiB on a
+  link slower than about 0.84 Mbit/s. A chunked whole download is not possible with
   SwiftMail's API: the ranged `fetchPart(section:of:offset:count:)` cannot
   ask for `BODY[]`, because `Section([])` becomes `[1]`. Fix: an upstream
   SwiftMail change that adds a timeout parameter (or a ranged `BODY[]`),

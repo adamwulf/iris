@@ -13,7 +13,7 @@ Gmail-specific thread search are not implemented. For current behavior,
 see [README.md](../../README.md), especially "Threads" and "Large
 messages"; for remaining work, see [the roadmap](../roadmap.md).
 Section 5 records what had not been verified at research time; later
-Zoho checks are recorded in README.md under "Validation status".
+provider checks are recorded in README.md under "Validation status".
 
 ## Recommendation (short)
 

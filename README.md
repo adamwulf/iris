@@ -10,10 +10,11 @@ Drafts mailbox. iris never sends mail: you review and send the draft in your
 mail app.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. Live validation is partial:
-Zoho's initial reader and thread commands were checked on 2026-10-24;
-Gmail/iCloud connections and the newer write, attachment, and large-message
-paths still need live checks. See [Validation status](#validation-status-2026-10-25)
-for the recorded coverage.
+Zoho's initial reader and thread commands were checked on 2026-10-24,
+and real-message checks used Zoho and Gmail accounts on 2026-10-25.
+iCloud, the full Gmail command/authentication coverage, and the newer
+write, attachment, and large-message paths still need live checks. See
+[Validation status](#validation-status-2026-10-25) for the recorded coverage.
 
 ## Install
 
@@ -92,7 +93,7 @@ Gmail account that cannot make one signs in with Google instead (see
 Some Google accounts cannot make an app password: Google says "The setting
 you are looking for is not available for your account." Such an account
 signs in with Google instead (OAuth 2.0, and IMAP `AUTHENTICATE XOAUTH2`).
-This has not been tested against a live account yet.
+A complete live check of this sign-in flow has not been recorded yet.
 
 First make your own OAuth client in the Google Cloud console. You do this
 once:
@@ -219,13 +220,16 @@ checks cover less than the implementation:
 
 | Area | Recorded checks | Still to check live |
 | ---- | --------------- | ------------------- |
-| Zoho IMAP | `check`, `mailboxes`, `list`, `show`, and `thread` on 2026-10-24 | The later outline FETCH and large-message parts path, `download`, `read`/`unread`, drafts and attachments, and ordinary TEXT/TO searches |
-| Gmail and iCloud IMAP | Pre-login capabilities captured during library research | Authenticated commands, thread searching, and post-login capabilities/mailbox names |
+| Zoho IMAP | `check`, `mailboxes`, `list`, `show`, and `thread` on 2026-10-24; real-message checks on 2026-10-25 | The later outline FETCH, thread-header FETCH with RFC822.SIZE, and large-message parts path; `download`, `read`/`unread`, drafts and attachments, and ordinary TEXT/TO searches |
+| Gmail | Pre-login capabilities; read-only real-message checks on 2026-10-25 | Record the commands and authentication method checked; complete command coverage, thread searching, and post-login capabilities/mailbox names |
+| iCloud IMAP | Pre-login capabilities captured during library research | Authenticated commands, thread searching, and post-login capabilities/mailbox names |
 | Gmail OAuth | Implementation and offline tests | Browser sign-in, token refresh/expiry, XOAUTH2 login, and draft saving |
 | Quoted-history trimming | Real messages from several mail apps checked on 2026-10-25; see "Quoted history and signatures" | Thunderbird, new Outlook, and a Gmail reply with answers between quoted lines |
 
-A Gmail-authored message read through Zoho checks that message's formatting,
-not the Gmail IMAP or OAuth connection. The remaining checks are in
+Commit `dffca9a` records the 2026-10-25 read-only checks against real replies
+in Zoho and Gmail accounts. It does not identify the commands or
+authentication method used, or establish coverage of the later FETCH
+changes and large-message parts path. Those checks remain open in
 [the roadmap](plans/roadmap.md).
 
 The Zoho check used `imappro.zoho.com`. Its post-login CAPABILITY was:
