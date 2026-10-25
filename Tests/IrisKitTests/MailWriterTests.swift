@@ -316,6 +316,29 @@ final class MailWriterTests: XCTestCase {
         ])
     }
 
+    func testSaveReplyAppendsTheDraftWithItsAttachments() async throws {
+        let fake = server(holding: original, uid: 9)
+        let files = [
+            DraftAttachment(filename: "plan.pdf", mimeType: "application/pdf", data: Data("%PDF".utf8)),
+            DraftAttachment(filename: "empty.txt", mimeType: "text/plain", data: Data()),
+        ]
+
+        let saved = try await writer(fake).saveReply(
+            to: id(9), body: "See the files.", from: me, replyAll: false, quote: false, attachments: files
+        )
+
+        XCTAssertEqual(saved.irisID, id(43, in: "Drafts"))
+        let calls = await fake.calls
+        let appended = calls.compactMap { call -> DraftMessage? in
+            guard case .appendDraft(let draft, "Drafts") = call else {
+                return nil
+            }
+            return draft
+        }
+        XCTAssertEqual(appended.map(\.attachments), [files], "one APPEND, with the files in order")
+        XCTAssertEqual(appended.first?.markdown, "See the files.")
+    }
+
     func testSaveReplyToAMissingMessageNeverStartsTheSaveSession() async {
         let fake = server(holding: original, uid: 9)
 

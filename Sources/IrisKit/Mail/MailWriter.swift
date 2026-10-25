@@ -57,16 +57,17 @@ public struct MailWriter: Sendable {
     }
 
     /// Saves a reply to the message `id` as a draft: `body` (Markdown), then,
-    /// with `quote`, the original's body as a quote (see `ReplyComposer`).
-    /// `id` must name this writer's account. It takes two sessions: a
-    /// `MailReader` reads the original (without marking it as read), then
-    /// `saveDraft(_:)` saves the reply.
+    /// with `quote`, the original's body as a quote (see `ReplyComposer`),
+    /// with `attachments` attached. `id` must name this writer's account. It
+    /// takes two sessions: a `MailReader` reads the original (without marking
+    /// it as read), then `saveDraft(_:)` saves the reply.
     public func saveReply(
         to id: IrisID,
         body: String,
         from: MailAddress,
         replyAll: Bool,
         quote: Bool,
+        attachments: [DraftAttachment] = [],
         timeZone: TimeZone = .current
     ) async throws -> SavedDraft {
         let reader = MailReader(account: account, makeClient: { makeClient($0) })
@@ -81,6 +82,7 @@ public struct MailWriter: Sendable {
             username: account.username,
             replyAll: replyAll,
             quote: quote,
+            attachments: attachments,
             timeZone: timeZone
         )
         return try await saveDraft(draft)
