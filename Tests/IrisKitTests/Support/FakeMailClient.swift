@@ -16,6 +16,8 @@ actor FakeMailClient: MailWriteClient {
         case fetchEnvelopesByUID([UInt32])
         case fetchThreadHeaders([UInt32])
         case fetchRawMessage(UInt32)
+        case fetchStructure(UInt32)
+        case fetchPart(AttachmentID, UInt32)
         case select(String)
         case setSeen(Bool, UInt32)
         case appendDraft(DraftMessage, String)
@@ -25,7 +27,7 @@ actor FakeMailClient: MailWriteClient {
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
         case login, capabilities, listMailboxes, examine, searchUIDs, searchSubject, searchMessageIDs, fetchEnvelopes,
-             fetchThreadHeaders, fetchRawMessage, select, setSeen, appendDraft
+             fetchThreadHeaders, fetchRawMessage, fetchStructure, fetchPart, select, setSeen, appendDraft
     }
 
     /// How the fake answers a search in a mailbox of `mailboxMessages`.
@@ -100,6 +102,8 @@ actor FakeMailClient: MailWriteClient {
     private let searchRules: SearchRules
     private let refusesNonASCII: Bool
     private let rawMessageErrors: [UInt32: any Error]
+    private let structures: [UInt32: [PartStructure]]
+    private let parts: [UInt32: [AttachmentID: Data]]
     private let appendedUID: UInt32?
     private let errors: [Method: any Error]
     /// The wire name of the mailbox that the last EXAMINE opened.
@@ -125,6 +129,11 @@ actor FakeMailClient: MailWriteClient {
     /// UTF-8 SEARCH does (NO [BADCHARSET]); Zoho accepted it in the probes.
     /// `fetchRawMessage` throws the error in `rawMessageErrors` for its UID;
     /// after `messageDownloadTimedOut` no mailbox is open, as after SwiftMail's reconnect.
+    ///
+    /// `fetchStructure` returns the `structures` of its UID, and throws the
+    /// `serverError` that SwiftMailClient makes of SwiftMail's failed FETCH
+    /// for a UID that is not in it. `fetchPart` returns the `parts` bytes,
+    /// still transfer-encoded, and empty data for a part that is not in it.
     init(
         accountName: String = "work",
         capabilities: [String] = [],
@@ -137,6 +146,8 @@ actor FakeMailClient: MailWriteClient {
         searchRules: SearchRules = .zoho,
         refusesNonASCII: Bool = false,
         rawMessageErrors: [UInt32: any Error] = [:],
+        structures: [UInt32: [PartStructure]] = [:],
+        parts: [UInt32: [AttachmentID: Data]] = [:],
         appendedUID: UInt32? = nil,
         errors: [Method: any Error] = [:]
     ) {
@@ -151,6 +162,8 @@ actor FakeMailClient: MailWriteClient {
         self.searchRules = searchRules
         self.refusesNonASCII = refusesNonASCII
         self.rawMessageErrors = rawMessageErrors
+        self.structures = structures
+        self.parts = parts
         self.appendedUID = appendedUID
         self.errors = errors
     }
@@ -320,6 +333,20 @@ actor FakeMailClient: MailWriteClient {
             return message.raw
         }
         return rawMessages[uid] ?? Data()
+    }
+
+    func fetchStructure(uid: UInt32) async throws -> [PartStructure] {
+        try record(.fetchStructure(uid), .fetchStructure)
+        guard let structure = structures[uid] else {
+            // SwiftMail fails the FETCH when the server sends no BODYSTRUCTURE.
+            throw IrisError.serverError(account: accountName, command: "FETCH", reason: "Fetch failed: No body structure received")
+        }
+        return structure
+    }
+
+    func fetchPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {
+        try record(.fetchPart(id, uid), .fetchPart)
+        return parts[uid]?[id] ?? Data()
     }
 
     func select(mailbox: String) async throws {

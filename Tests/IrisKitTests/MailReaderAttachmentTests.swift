@@ -1,0 +1,203 @@
+import Foundation
+import XCTest
+@testable import IrisKit
+
+/// `MailReader.attachment`: one part of a message, found in its BODYSTRUCTURE
+/// and fetched alone, then decoded from its Content-Transfer-Encoding.
+final class MailReaderAttachmentTests: XCTestCase {
+    private let account = Account(
+        name: "work", host: "imap.example.com", port: 993, username: "me@example.com",
+        authentication: .password("secret")
+    )
+
+    private func reader(_ fake: FakeMailClient) -> MailReader {
+        MailReader(account: account, makeClient: { _ in fake })
+    }
+
+    /// The iris ID of `uid` in `mailbox` of the test account.
+    private func id(_ uid: UInt32, in mailbox: String = "INBOX") -> IrisID {
+        IrisID(account: account.name, mailbox: mailbox, uid: uid)
+    }
+
+    /// The attachment ID of the part with these section numbers.
+    private func part(_ components: Int...) -> AttachmentID {
+        AttachmentID(components: components)
+    }
+
+    /// The envelope of the message with this UID, so that the reader finds it.
+    private func envelope(_ uid: UInt32) -> MessageEnvelope {
+        MessageEnvelope(
+            sequenceNumber: 1, uid: uid, seen: false, from: nil, subject: "Report", date: nil, internalDate: nil
+        )
+    }
+
+    /// A fake whose `mailbox` (a wire name) holds the message UID 150 with these parts.
+    private func server(
+        structure: [PartStructure],
+        parts: [AttachmentID: Data],
+        mailbox: String = "INBOX",
+        errors: [FakeMailClient.Method: any Error] = [:]
+    ) -> FakeMailClient {
+        FakeMailClient(
+            statuses: [mailbox: MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)],
+            envelopes: [envelope(150)],
+            structures: [150: structure],
+            parts: [150: parts],
+            errors: errors
+        )
+    }
+
+    /// multipart/mixed(text/plain, application/pdf), as SwiftMail gives its BODYSTRUCTURE.
+    private var report: [PartStructure] {
+        [
+            PartStructure(id: part(1), filename: nil, encoding: "7BIT"),
+            PartStructure(id: part(2), filename: "report.pdf", encoding: "BASE64"),
+        ]
+    }
+
+    private func assertThrows<T>(
+        _ expected: IrisError,
+        _ body: () async throws -> T,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await body()
+            XCTFail("expected \(expected), but nothing was thrown", file: file, line: line)
+        } catch {
+            XCTAssertEqual(error as? IrisError, expected, file: file, line: line)
+        }
+    }
+
+    func testAttachmentFetchesOnlyThatPartAndDecodesBase64() async throws {
+        let fake = server(structure: report, parts: [part(2): Data("SGVsbG8g\r\nV29ybGQ=\r\n".utf8)])
+
+        let attachment = try await reader(fake).attachment(part(2), of: id(150))
+
+        XCTAssertEqual(attachment, DownloadedAttachment(
+            attachmentID: part(2), filename: "report.pdf", data: Data("Hello World".utf8)
+        ))
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [
+            .login, .examine("INBOX"), .fetchEnvelopesByUID([150]), .fetchStructure(150), .fetchPart(part(2), 150),
+            .logout,
+        ], "EXAMINE and PEEK only, and never the whole message")
+    }
+
+    func testAttachmentDecodesQuotedPrintable() async throws {
+        let structure = [PartStructure(id: part(2), filename: "notes.txt", encoding: "QUOTED-PRINTABLE")]
+        let fake = server(structure: structure, parts: [part(2): Data("caf=C3=A9 au =\r\nlait\r\n".utf8)])
+
+        let attachment = try await reader(fake).attachment(part(2), of: id(150))
+
+        XCTAssertEqual(attachment.data, Data("café au lait\r\n".utf8))
+    }
+
+    func testAttachmentWithoutATransferEncodingKeepsItsBytes() async throws {
+        let bytes = Data([0x00, 0xFF, 0x0D, 0x0A, 0x41])
+        for encoding in [nil, "7BIT", "8BIT", "BINARY"] {
+            let structure = [PartStructure(id: part(1), filename: nil, encoding: encoding)]
+            let fake = server(structure: structure, parts: [part(1): bytes])
+
+            let attachment = try await reader(fake).attachment(part(1), of: id(150))
+
+            XCTAssertEqual(attachment.data, bytes, "\(encoding ?? "no encoding")")
+        }
+    }
+
+    /// SwiftMail keeps a message/rfc822 part at its own section, then adds the
+    /// parts of the message inside it, so the forwarded message downloads whole.
+    func testAForwardedMessageDownloadsWholeAsAnEMLFile() async throws {
+        let forwarded = Data("From: jane@example.com\r\nSubject: Plans\r\n\r\nThe plans.\r\n".utf8)
+        let structure = [
+            PartStructure(id: part(1), filename: nil, encoding: "7BIT"),
+            PartStructure(id: part(2), filename: "Plans.eml", encoding: "7BIT"),
+            PartStructure(id: part(2, 1), filename: nil, encoding: "7BIT"),
+            PartStructure(id: part(2, 2), filename: "plans.pdf", encoding: "BASE64"),
+            PartStructure(id: part(3), filename: "notes.pdf", encoding: "BASE64"),
+        ]
+        let fake = server(structure: structure, parts: [part(2): forwarded, part(2, 2): Data("SGVsbG8=".utf8)])
+
+        let message = try await reader(fake).attachment(part(2), of: id(150))
+        XCTAssertEqual(message, DownloadedAttachment(attachmentID: part(2), filename: "Plans.eml", data: forwarded))
+
+        let inner = try await reader(fake).attachment(part(2, 2), of: id(150))
+        XCTAssertEqual(inner.data, Data("Hello".utf8), "a part inside the forwarded message downloads too")
+    }
+
+    func testAnAttachmentIDThatTheMessageDoesNotHaveThrowsUnknownAttachmentAndLogsOut() async {
+        let fake = server(structure: report, parts: [:])
+
+        for missing in [part(3), part(2, 1), part(1, 1)] {
+            await assertThrows(.unknownAttachment(id(150), missing)) {
+                try await self.reader(fake).attachment(missing, of: self.id(150))
+            }
+        }
+
+        let calls = await fake.calls
+        XCTAssertFalse(calls.contains { if case .fetchPart = $0 { return true } else { return false } })
+        XCTAssertEqual(calls.last, .logout)
+    }
+
+    func testAMissingMessageThrowsUnknownMessageBeforeTheStructureFetch() async {
+        let fake = server(structure: report, parts: [:])
+
+        await assertThrows(.unknownMessage(id(999))) {
+            try await self.reader(fake).attachment(self.part(2), of: self.id(999))
+        }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchEnvelopesByUID([999]), .logout])
+    }
+
+    func testUIDZeroIsRejectedBeforeConnecting() async {
+        let fake = server(structure: report, parts: [:])
+
+        await assertThrows(.unknownMessage(id(0))) {
+            try await self.reader(fake).attachment(self.part(2), of: self.id(0))
+        }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [])
+    }
+
+    func testAttachmentExaminesTheModifiedUTF7NameAndKeepsTheDecodedOneInErrors() async throws {
+        let fake = server(
+            structure: report, parts: [part(2): Data("SGVsbG8=".utf8)], mailbox: "[Gmail]/Entw&APw-rfe"
+        )
+
+        let attachment = try await reader(fake).attachment(part(2), of: id(150, in: "[Gmail]/Entwürfe"))
+        XCTAssertEqual(attachment.data, Data("Hello".utf8))
+        await assertThrows(.unknownAttachment(id(150, in: "[Gmail]/Entwürfe"), part(9))) {
+            try await self.reader(fake).attachment(self.part(9), of: self.id(150, in: "[Gmail]/Entwürfe"))
+        }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls[1], .examine("[Gmail]/Entw&APw-rfe"))
+    }
+
+    func testATimeoutOfThePartFetchPassesThroughAndLogsOut() async {
+        let failure = IrisError.attachmentDownloadTimedOut(seconds: 60)
+        let fake = server(structure: report, parts: [:], errors: [.fetchPart: failure])
+
+        await assertThrows(failure) { try await self.reader(fake).attachment(self.part(2), of: self.id(150)) }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls.suffix(2), [.fetchPart(part(2), 150), .logout])
+    }
+
+    func testUnknownAttachmentPointsToShowForThatMessage() {
+        XCTAssertEqual(
+            IrisError.unknownAttachment(id(150, in: "Sent Items"), part(1, 2)).errorDescription,
+            "The message \"work/Sent Items/150\" has no attachment 1.2. "
+                + "Run `iris show 'work/Sent Items/150'` to see its attachment IDs."
+        )
+    }
+
+    func testAttachmentTimeoutExplainsTheSwiftMailLimit() throws {
+        let message = try XCTUnwrap(IrisError.attachmentDownloadTimedOut(seconds: 60).errorDescription)
+        XCTAssertTrue(message.contains("did not download in 60 seconds"), message)
+        XCTAssertTrue(message.contains("large"), message)
+        XCTAssertTrue(message.contains("known limit of SwiftMail"), message)
+    }
+}

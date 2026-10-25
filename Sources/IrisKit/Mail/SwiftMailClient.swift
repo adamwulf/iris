@@ -9,6 +9,10 @@ struct SwiftMailClient: MailWriteClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
 
+    /// `IMAPServer.fetchPart` always gives up after this many seconds
+    /// (`FetchMessagePartCommand.timeoutSeconds`).
+    static let partTimeoutSeconds = 60
+
     /// The most messages one FETCH of `fetchEnvelopes` or `fetchThreadHeaders`
     /// asks for. SwiftMail gives every FETCH 10 seconds
     /// (`FetchMessageInfoCommand.timeoutSeconds`), so a page is fetched in
@@ -36,6 +40,8 @@ struct SwiftMailClient: MailWriteClient {
         case fetchEnvelopes
         case fetchThreadHeaders
         case fetchRawMessage
+        case fetchStructure
+        case fetchPart
         /// `mailbox` is the wire name, in modified UTF-7.
         case select(mailbox: String)
         case store
@@ -51,7 +57,7 @@ struct SwiftMailClient: MailWriteClient {
             case .list: return "LIST"
             case .examine: return "EXAMINE"
             case .search, .headerSearch: return "SEARCH"
-            case .fetchEnvelopes, .fetchThreadHeaders, .fetchRawMessage: return "FETCH"
+            case .fetchEnvelopes, .fetchThreadHeaders, .fetchRawMessage, .fetchStructure, .fetchPart: return "FETCH"
             case .select: return "SELECT"
             case .store: return "STORE"
             case .append: return "APPEND"
@@ -273,6 +279,22 @@ struct SwiftMailClient: MailWriteClient {
         }
     }
 
+    func fetchStructure(uid: UInt32) async throws -> [PartStructure] {
+        // A second FETCH reads the named parts' MIME headers, to put back the
+        // backslashes that some servers drop from filenames.
+        let parts = try await run(.fetchStructure) {
+            try await server.fetchStructure(UID(uid))
+        }
+        return parts.map(PartStructure.init(swiftMail:))
+    }
+
+    func fetchPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {
+        // One BODY.PEEK[<section>], with SwiftMail's fixed 60-second deadline.
+        try await run(.fetchPart) {
+            try await server.fetchPart(section: Section(id.components), of: UID(uid))
+        }
+    }
+
     func logout() async {
         // After a failed connect there is nothing to close, and SwiftMail would
         // connect again to send LOGOUT.
@@ -381,6 +403,8 @@ struct SwiftMailClient: MailWriteClient {
             return .unknownMailbox(account: account.name, name: mailbox, reason: redacted(reason))
         case (.fetchRawMessage, IMAPError.timeout):
             return .messageDownloadTimedOut(seconds: rawMessageTimeoutSeconds)
+        case (.fetchPart, IMAPError.timeout):
+            return .attachmentDownloadTimedOut(seconds: partTimeoutSeconds)
         case (.append, IMAPError.appendLimitExceeded(let size, let limit)):
             return .draftTooLarge(account: account.name, size: size, limit: limit)
         case (.append(let mailbox), IMAPError.timeout):
@@ -535,6 +559,19 @@ extension MessageEnvelope {
             subject: info.subject,
             date: info.date,
             internalDate: info.internalDate
+        )
+    }
+}
+
+extension PartStructure {
+    /// `part` from BODYSTRUCTURE, as `IMAPServer.fetchStructure` gives it.
+    /// SwiftMail keeps a message/rfc822 part at its own section, so it can be
+    /// fetched whole, and adds the parts inside it after it (`2`, then `2.1`, `2.2`).
+    init(swiftMail part: MessagePart) {
+        self.init(
+            id: AttachmentID(components: part.section.components),
+            filename: part.filename.flatMap { $0.isEmpty ? nil : $0 },
+            encoding: part.encoding
         )
     }
 }

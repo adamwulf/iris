@@ -92,6 +92,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
 
     /// The text is not an attachment ID: dot-separated numbers, each 1 or more.
     case invalidAttachmentID(String)
+    /// The message has no part with this attachment ID.
+    case unknownAttachment(IrisID, AttachmentID)
+    /// The part did not arrive inside SwiftMail's fixed time limit for one part.
+    case attachmentDownloadTimedOut(seconds: Int)
 
     // Google sign-in
 
@@ -250,6 +254,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "\"\(text)\" is not an attachment ID. An attachment ID is the number that `iris show` lists "
                 + "first on each attachment line, such as 2 or 1.2: numbers of 1 or more, joined by dots. "
                 + "Run `iris show '<iris-id>'` to see the attachment IDs of a message."
+        case .unknownAttachment(let id, let attachment):
+            return "The message \"\(id)\" has no attachment \(attachment). "
+                + "Run `iris show \(id.shellQuoted)` to see its attachment IDs."
+        case .attachmentDownloadTimedOut(let seconds):
+            return "The attachment did not download in \(seconds) seconds. It may be large, or the connection "
+                + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
+                + "every attachment download after \(seconds) seconds. Try again on a faster connection."
         // Google sign-in
         case .noGoogleAccounts:
             return "No account signs in with Google. To sign in with Google, add the lines "

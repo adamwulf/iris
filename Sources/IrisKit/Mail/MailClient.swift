@@ -45,6 +45,16 @@ protocol MailClient: Sendable {
     /// The raw RFC 822 bytes of one message, fetched with `BODY.PEEK[]` so `\Seen`
     /// is never set. Empty when the open mailbox has no message with this UID.
     func fetchRawMessage(uid: UInt32) async throws -> Data
+    /// The parts of the message with this UID in the open mailbox, from its
+    /// BODYSTRUCTURE, in section order: each part that is not a multipart,
+    /// and after a message/rfc822 part, the parts of the message inside it.
+    /// The message must be in the open mailbox.
+    func fetchStructure(uid: UInt32) async throws -> [PartStructure]
+    /// The bytes of the part `id` of the message with this UID in the open
+    /// mailbox, fetched with `BODY.PEEK[<section>]` so `\Seen` is never set.
+    /// They are still in the part's Content-Transfer-Encoding. A timeout is
+    /// `attachmentDownloadTimedOut`.
+    func fetchPart(_ id: AttachmentID, uid: UInt32) async throws -> Data
     /// Logs out and closes the connection. It is safe to call after a failed
     /// login, and it never throws, so it cannot hide the error that came before it.
     func logout() async
@@ -103,6 +113,17 @@ struct MessageEnvelope: Sendable, Equatable {
     let date: Date?
     /// When the server received the message (INTERNALDATE).
     let internalDate: Date?
+}
+
+/// One part of a message as BODYSTRUCTURE describes it, without its bytes.
+struct PartStructure: Sendable, Equatable {
+    /// The part's section, which `BODY[<section>]` fetches.
+    let id: AttachmentID
+    /// The filename that the server read from the part's headers, decoded. Nil
+    /// when the part has none. It comes from the sender, so it is not safe as a path.
+    let filename: String?
+    /// The Content-Transfer-Encoding, such as `BASE64`. Nil when the part has none.
+    let encoding: String?
 }
 
 /// The headers of one message that `iris thread` follows, as FETCH (UID

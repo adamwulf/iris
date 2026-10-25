@@ -237,6 +237,24 @@ public struct ThreadMessage: Sendable, Equatable {
     }
 }
 
+/// One part of a message as `iris download` downloaded it: its bytes without
+/// the transfer encoding, and the filename that the sender gave it.
+public struct DownloadedAttachment: Sendable, Equatable {
+    public let attachmentID: AttachmentID
+    /// The filename from the part's headers, decoded. Nil when the part has
+    /// none. It comes from the sender, so it is not safe as a path:
+    /// `AttachmentFile` makes a safe name of it.
+    public let filename: String?
+    /// The part's bytes, decoded from its Content-Transfer-Encoding.
+    public let data: Data
+
+    init(attachmentID: AttachmentID, filename: String?, data: Data) {
+        self.attachmentID = attachmentID
+        self.filename = filename
+        self.data = data
+    }
+}
+
 /// What `iris check` reports. It never holds the password.
 public struct AccountCheck: Sendable, Equatable {
     public let account: String

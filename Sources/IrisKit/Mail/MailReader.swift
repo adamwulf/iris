@@ -112,6 +112,43 @@ public struct MailReader: Sendable {
         }
     }
 
+    /// The part `attachmentID` of the message `id`, without its
+    /// Content-Transfer-Encoding, and its filename. Only that part is
+    /// downloaded (`BODY.PEEK[<section>]`, with SwiftMail's 60-second limit),
+    /// never the whole message, whose download stops after 10 seconds.
+    /// Reading it does not mark the message as read. A missing message throws
+    /// `unknownMessage`, and a part that the message does not have
+    /// `unknownAttachment`. `id` must name this reader's account, as for `rawMessage(_:)`.
+    ///
+    /// Any part in the message's BODYSTRUCTURE can be downloaded: each ID that
+    /// `iris show` lists, and also a part inside a forwarded message (`2.1`).
+    /// A forwarded message's own ID (`2`) gives the whole message, an `.eml` file.
+    public func attachment(_ attachmentID: AttachmentID, of id: IrisID) async throws -> DownloadedAttachment {
+        precondition(id.account == account.name, "\(id) is not in the account \(account.name)")
+        // UIDs start at 1; the server would answer UID 0 with BAD.
+        guard id.uid >= 1 else {
+            throw IrisError.unknownMessage(id)
+        }
+        return try await withClient { client in
+            _ = try await examine(id.mailbox, with: client)
+            // The server answers the BODYSTRUCTURE of a missing UID with
+            // nothing, which SwiftMail reports as a failed FETCH, so look for
+            // the message first. FETCH (UID FLAGS ENVELOPE INTERNALDATE) does not set \Seen.
+            guard try await client.fetchEnvelopes(uids: [id.uid]).contains(where: { $0.uid == id.uid }) else {
+                throw IrisError.unknownMessage(id)
+            }
+            guard let part = try await client.fetchStructure(uid: id.uid).first(where: { $0.id == attachmentID }) else {
+                throw IrisError.unknownAttachment(id, attachmentID)
+            }
+            let data = try await client.fetchPart(attachmentID, uid: id.uid)
+            return DownloadedAttachment(
+                attachmentID: attachmentID,
+                filename: part.filename,
+                data: TransferEncoding.decoded(data, encoding: part.encoding)
+            )
+        }
+    }
+
     /// The most message IDs in one Message-ID SEARCH of `thread`. Zoho gave
     /// wrong answers for large OR trees of HEADER keys, so each search stays small.
     static let messageIDSearchChunkSize = 10

@@ -81,6 +81,29 @@ final class SwiftMailClientTests: XCTestCase {
         )
     }
 
+    func testTimeoutOnAPartBecomesAttachmentDownloadTimedOut() {
+        XCTAssertEqual(
+            irisError(IMAPError.timeout, .fetchPart),
+            .attachmentDownloadTimedOut(seconds: SwiftMailClient.partTimeoutSeconds)
+        )
+        XCTAssertEqual(SwiftMailClient.partTimeoutSeconds, 60, "FetchMessagePartCommand.timeoutSeconds in SwiftMail 88c45cbd")
+        XCTAssertEqual(
+            irisError(IMAPError.timeout, .fetchStructure), .serverTimedOut(account: "work", command: "FETCH"),
+            "BODYSTRUCTURE is small, so its timeout says nothing about the attachment's size"
+        )
+    }
+
+    func testOtherPartAndStructureErrorsBecomeServerErrorsOrConnectionLost() {
+        XCTAssertEqual(
+            irisError(IMAPError.fetchFailed("No body structure received"), .fetchStructure),
+            .serverError(account: "work", command: "FETCH", reason: "Fetch failed: No body structure received")
+        )
+        XCTAssertEqual(
+            irisError(IMAPError.connectionFailed("Server terminated connection: secret"), .fetchPart),
+            .connectionLost(account: "work", command: "FETCH", reason: "Server terminated connection: <redacted>")
+        )
+    }
+
     func testTimeoutOnLoginBecomesConnectionFailed() {
         XCTAssertEqual(
             irisError(IMAPError.timeout, .login),
@@ -298,6 +321,8 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.Command.fetchEnvelopes.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchThreadHeaders.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchRawMessage.name, "FETCH")
+        XCTAssertEqual(SwiftMailClient.Command.fetchStructure.name, "FETCH")
+        XCTAssertEqual(SwiftMailClient.Command.fetchPart.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.select(mailbox: "INBOX").name, "SELECT")
         XCTAssertEqual(SwiftMailClient.Command.store.name, "STORE")
         XCTAssertEqual(SwiftMailClient.Command.append(mailbox: "Drafts").name, "APPEND")
@@ -679,6 +704,45 @@ final class SwiftMailClientTests: XCTestCase {
         let sender = try XCTUnwrap(MessageEnvelope(swiftMail: info)?.from)
         XCTAssertEqual(sender.name, "Doe, Jane")
         XCTAssertEqual(sender.address, "jane@example.com")
+    }
+
+    // MARK: - Parts
+
+    func testPartStructureKeepsTheSectionFilenameAndEncoding() {
+        let part = MessagePart(
+            sectionString: "1.2", contentType: "application/pdf; name=\"report.pdf\"", disposition: "attachment",
+            encoding: "BASE64", filename: "report.pdf", size: 1234
+        )
+        XCTAssertEqual(
+            PartStructure(swiftMail: part),
+            PartStructure(id: AttachmentID(components: [1, 2]), filename: "report.pdf", encoding: "BASE64")
+        )
+    }
+
+    func testPartStructureWithAnEmptyFilenameHasNone() {
+        let named = MessagePart(sectionString: "2", contentType: "image/png", filename: "")
+        let unnamed = MessagePart(sectionString: "3", contentType: "image/png")
+        XCTAssertNil(PartStructure(swiftMail: named).filename)
+        XCTAssertNil(PartStructure(swiftMail: unnamed).filename)
+        XCTAssertNil(PartStructure(swiftMail: unnamed).encoding)
+    }
+
+    // MARK: - Transfer encoding
+
+    func testTransferDecodingUndoesBase64AndQuotedPrintableInAnyCase() {
+        XCTAssertEqual(TransferEncoding.decoded(Data("SGVs\r\nbG8=".utf8), encoding: "BASE64"), Data("Hello".utf8))
+        XCTAssertEqual(TransferEncoding.decoded(Data("SGVsbG8=".utf8), encoding: "base64"), Data("Hello".utf8))
+        XCTAssertEqual(
+            TransferEncoding.decoded(Data("a=3Db =\r\nc=C3=A9".utf8), encoding: "Quoted-Printable"),
+            Data("a=b cé".utf8)
+        )
+    }
+
+    func testTransferDecodingKeepsTheBytesOfTheOtherEncodings() {
+        let bytes = Data([0x00, 0xFF, 0x3D, 0x0D, 0x0A])
+        for encoding in [nil, "7BIT", "8bit", "BINARY", "x-uuencode"] {
+            XCTAssertEqual(TransferEncoding.decoded(bytes, encoding: encoding), bytes, "\(encoding ?? "no encoding")")
+        }
     }
 
     // MARK: - Thread headers
