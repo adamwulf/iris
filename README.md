@@ -6,8 +6,9 @@ changes nothing: iris opens mailboxes read-only and never marks a message as
 read. The only commands that change mail are `iris read` and `iris unread`,
 which mark one message as read or unread.
 
-Made for Gmail, iCloud Mail, and Zoho Mail. It has not yet been tested
-against a live server.
+Made for Gmail, iCloud Mail, and Zoho Mail. `check`, `mailboxes`, `list`,
+`show`, and `thread` were run against Zoho Mail on 2026-10-24; Gmail and
+iCloud Mail are not checked yet.
 
 ## Install
 
@@ -283,6 +284,8 @@ and writes a line to stderr with its iris ID, why, and what to do next:
   `iris show '<iris-id>' --format raw` shows its source. With
   `--body html`, a message that also has a text part says to use
   `iris show '<iris-id>' --body text`.
+- It is gone (deleted or moved after iris found it, before the download):
+  run the command again.
 
 When no message of the thread can be shown (in practice, a thread of one
 large message), the command fails with the error `iris show` would give
