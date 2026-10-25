@@ -123,6 +123,25 @@ final class MarkdownHTMLTests: XCTestCase {
         XCTAssertEqual(html("```\nlog line\n=====\n```"), "<pre><code>log line\n=====\n</code></pre>\n")
     }
 
+    /// A signature with a footer rule: a setext heading right after another one's underline joins it.
+    func testASetextHeadingRightAfterAnotherJoinsIt() {
+        XCTAssertEqual(
+            html("Bob\n-- \nBob Smith\n-----\nAcme Inc."),
+            "<p>Bob<br />\n--<br />\nBob Smith<br />\n-----<br />\nAcme Inc.</p>\n"
+        )
+    }
+
+    func testABlockOnTheNextLineThatIsNotAParagraphStaysApart() {
+        XCTAssertEqual(
+            html("Title\n=====\n- item"),
+            "<p>Title<br />\n=====</p>\n<ul>\n<li><p>item</p>\n</li>\n</ul>\n"
+        )
+    }
+
+    func testAThematicBreakWithBlankLinesAroundItStays() {
+        XCTAssertEqual(html("Text\n\n---\n\nMore"), "<p>Text</p>\n<hr />\n<p>More</p>\n")
+    }
+
     func testTextIsEscaped() {
         XCTAssertEqual(html("x < y & \"z\" > w"), "<p>x &lt; y &amp; &quot;z&quot; &gt; w</p>\n")
     }

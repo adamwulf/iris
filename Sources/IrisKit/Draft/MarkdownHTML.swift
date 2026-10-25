@@ -146,11 +146,14 @@ private struct HTMLEscaper: MarkupRewriter {
     /// The underline of a setext heading (`---` or `===`) and its line
     /// number. Nil for an ATX heading (`# Title`), whose range is one line.
     ///
-    /// swift-markdown ends a setext heading's range at the end of its
-    /// container, not at the underline, so this looks for the underline: the
-    /// first line after the first that holds only `-` or only `=` after the
-    /// markers of its containers (`> > `, or a list item's indent). A line of
-    /// the heading's text cannot look like that: it would be the underline.
+    /// swift-cmark ends a setext heading's range on the line that closed it:
+    /// the line after the underline, or the underline itself at the end of the
+    /// input (it can even reach past the heading's block quote). The range
+    /// always reaches the underline, so this looks for it: the first line
+    /// after the first that holds only `-` or only `=` after the markers of
+    /// its containers (`> > `, or a list item's indent). A lazy continuation
+    /// line or a line indented 4 or more spaces of only `-` or `=` could match
+    /// first, but neither happens in a typed reply or in SwiftText's output.
     private func setextUnderline(of heading: Heading) -> (text: String, line: Int)? {
         guard let range = heading.range, range.upperBound.line > range.lowerBound.line else {
             return nil
