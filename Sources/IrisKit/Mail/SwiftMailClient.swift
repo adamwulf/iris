@@ -19,6 +19,7 @@ struct SwiftMailClient: MailClient {
         case list
         /// `mailbox` is the wire name, in modified UTF-7.
         case examine(mailbox: String)
+        case search
         case fetchEnvelopes
         case fetchRawMessage
 
@@ -29,6 +30,7 @@ struct SwiftMailClient: MailClient {
             case .capability: return "CAPABILITY"
             case .list: return "LIST"
             case .examine: return "EXAMINE"
+            case .search: return "SEARCH"
             case .fetchEnvelopes, .fetchRawMessage: return "FETCH"
             }
         }
@@ -97,29 +99,62 @@ struct SwiftMailClient: MailClient {
         )
     }
 
+    func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32] {
+        // extendedSearch sends ESEARCH when the server has it, which answers with
+        // ranges (101:250), else a plain SEARCH. Both give the matches in `all`.
+        let result: ExtendedSearchResult<UID> = try await run(.search) {
+            try await server.extendedSearch(criteria: Self.searchCriteria(for: filter), calendar: CalendarDay.calendar)
+        }
+        return result.all?.toArray().map(\.value) ?? []
+    }
+
+    /// The SEARCH keys for `filter`, one per condition; SEARCH needs all of them
+    /// to match. The days use `CalendarDay.calendar`, so pass it to SwiftMail.
+    static func searchCriteria(for filter: MessageFilter) -> [SearchCriteria] {
+        var criteria: [SearchCriteria] = []
+        if filter.unread {
+            criteria.append(.unseen)
+        }
+        if filter.flagged {
+            criteria.append(.flagged)
+        }
+        if let from = filter.from {
+            criteria.append(.from(from))
+        }
+        if let subject = filter.subject {
+            criteria.append(.subject(subject))
+        }
+        if let since = filter.since {
+            criteria.append(.since(since.start))
+        }
+        if let before = filter.before {
+            criteria.append(.before(before.start))
+        }
+        return criteria
+    }
+
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope] {
+        try await fetchEnvelopes(using: SequenceNumberSet(sequenceNumbers))
+    }
+
+    func fetchEnvelopes(uids: [UInt32]) async throws -> [MessageEnvelope] {
+        try await fetchEnvelopes(using: UIDSet(uids.map(UID.init)))
+    }
+
+    private func fetchEnvelopes<T: MessageIdentifier>(using identifiers: MessageIdentifierSet<T>) async throws -> [MessageEnvelope] {
         // The stream sends one FETCH per chunk, and each FETCH has its own deadline.
         let infos = server.fetchMessageInfos(
-            using: SequenceNumberSet(sequenceNumbers),
-            options: [.envelope, .internalDate],
+            using: identifiers,
+            options: [.envelope, .internalDate, .flags],
             chunkSize: Self.envelopeChunkSize
         )
         return try await run(.fetchEnvelopes) {
             var envelopes: [MessageEnvelope] = []
             for try await info in infos {
                 // FETCH always asks for the UID, so a message without one is a server bug. Skip it.
-                guard let uid = info.uid else {
-                    continue
+                if let envelope = MessageEnvelope(swiftMail: info) {
+                    envelopes.append(envelope)
                 }
-                let sender = info.fromAddresses.mailboxes.first
-                envelopes.append(MessageEnvelope(
-                    sequenceNumber: Int(info.sequenceNumber.value),
-                    uid: uid.value,
-                    from: sender.map { MailAddress(name: $0.name, address: $0.address) },
-                    subject: info.subject,
-                    date: info.date,
-                    internalDate: info.internalDate
-                ))
             }
             return envelopes
         }
@@ -188,6 +223,12 @@ struct SwiftMailClient: MailClient {
             // The login worked, so the host and port are right. SwiftMail
             // reports a closed connection and a BYE this way.
             return connectionLost(reason: reason(of: error), command: command, account: account)
+        case (.search, let error as IMAPError):
+            // The login and EXAMINE worked, so the account is fine, and the cause is
+            // usually the filter: NO or BAD (commandFailed), or NO [BADCHARSET] for
+            // text that is not ASCII (searchCharsetNotSupported). A busy server can
+            // also answer NO; the reason in the message shows that.
+            return .searchFailed(account: account.name, reason: redacting(password, in: error.description))
         case (_, let error as IMAPError):
             return .serverError(
                 account: account.name,
@@ -252,6 +293,25 @@ extension MailboxInfo {
         self.init(
             name: info.name,
             attributes: Self.specialUseNames.filter { info.attributes.contains($0.attribute) }.map(\.name)
+        )
+    }
+}
+
+extension MessageEnvelope {
+    /// `info` from FETCH (UID FLAGS ENVELOPE INTERNALDATE). Nil when it has no UID.
+    init?(swiftMail info: MessageInfo) {
+        guard let uid = info.uid else {
+            return nil
+        }
+        let sender = info.fromAddresses.mailboxes.first
+        self.init(
+            sequenceNumber: Int(info.sequenceNumber.value),
+            uid: uid.value,
+            seen: info.flags.contains(.seen),
+            from: sender.map { MailAddress(name: $0.name, address: $0.address) },
+            subject: info.subject,
+            date: info.date,
+            internalDate: info.internalDate
         )
     }
 }

@@ -25,12 +25,14 @@ Sources/IrisKit/
   Config/      DotEnv (.env loader), AccountResolver (named accounts), Account
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
                MailReader (sessions, paging, errors), MailModels (rows, pages),
+               MessageFilter (the `list` filter options, sent as UID SEARCH),
                IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw),
                AppleMailURL (the message: URL from the Message-ID header)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
-               MailAddress (the one address type), DateText, ModifiedUTF7
+               MailAddress (the one address type), DateText, ModifiedUTF7,
+               CalendarDay (a YYYY-MM-DD day for --since and --before)
   IrisError.swift   the one error type; each message says what to do next
   IrisLog.swift     the logging seam
 Sources/iris/
@@ -49,11 +51,16 @@ order (`withClient` logs out on success, on error, and after a failed login)
 and holds the logic: paging math, ordering, date fallback, and modified
 UTF-7 in both directions (it decodes LIST names in `mailboxes()`, encodes
 `--mailbox` before EXAMINE, and puts the typed name back into an
-`unknownMailbox` error). `MailClient` speaks wire names only. `SwiftMailClient` only
+`unknownMailbox` error). Without a filter, `list` pages by sequence number
+and sends no SEARCH. With one, it sends UID SEARCH, pages the sorted
+matching UIDs with the same math (UIDs grow in arrival order, as sequence
+numbers do), and fetches the page by UID. `MailClient` speaks wire names only. `SwiftMailClient` only
 converts SwiftMail types and errors. Its parts that need no server are static
 and tested in `SwiftMailClientTests`: the error mapping
 (`irisError(for:command:account:)`), the TLS choice
-(`transportSecurity(forPort:)`), and `MailboxInfo(swiftMail:)`.
+(`transportSecurity(forPort:)`), the SEARCH keys
+(`searchCriteria(for:)`), `MailboxInfo(swiftMail:)`, and
+`MessageEnvelope(swiftMail:)`.
 
 Tests never touch the network. They use `FakeMailClient`, which returns
 scripted results and records the calls.
@@ -96,8 +103,9 @@ Never put a password in an error message, a log line, or JSON output.
   header line, and `jsonl`/`id` are empty), and the CLI writes it unchanged
   with `CLI.printRows`. Output is deterministic: sorted JSON keys, no trailing
   whitespace in tables, and cells padded by `Character` (emoji are safe).
-- The next-page hint keeps `--account`, `--mailbox`, `--limit`, and
-  `--format`, and is written to stderr for every format.
+- The next-page hint keeps `--account`, `--mailbox`, the filter options
+  (`MessageFilter.options`), `--limit`, and `--format`, and is written to
+  stderr for every format.
 - `show` takes `--format markdown|json|raw`, default `markdown`. Markdown and
   JSON show the iris ID (`MessageFormatter.render` sets
   `MessageDocument.irisID`); `raw` is the exact message source, never changed.
@@ -189,6 +197,12 @@ names the account (`--account <name>`).
   sets `\Seen`.
 - **UIDs** belong to one mailbox. A missing UID gets an empty answer, not an
   error; `MailReader` turns that into `unknownMessage`.
+- **SEARCH days:** SwiftMail takes a `Date` for SINCE and BEFORE and turns
+  it into a day with the `Calendar` it is given. Its `IMAPCalendarDay`
+  holds only the years 1900 to 2500, and SwiftMail stops the program
+  (a force unwrap) for other years. So `CalendarDay(parsing:)` rejects those
+  years, and `searchUIDs` passes `CalendarDay.calendar` (UTC), the calendar
+  that made `CalendarDay.start`, so no time zone moves the day.
 - **Special-use:** a plain LIST may leave out the attributes, so
   `SwiftMailClient.listMailboxes` merges LIST with LIST RETURN (SPECIAL-USE).
   Servers without SPECIAL-USE get SwiftMail's guess from mailbox names.

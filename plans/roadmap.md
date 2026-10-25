@@ -62,7 +62,7 @@ done; README.md describes it.
 ## Later, maybe
 
 - XOAUTH2 login for Gmail.
-- Search, mark as read, archive/move.
+- More `list` filters (body text, To, Cc), mark as read, archive/move.
 - A live smoke test (`iris test`) against a real account, like graham's.
 - A file log (FellerBuncher) like graham's.
 - `skill/iris/SKILL.md` for agents.
@@ -84,6 +84,13 @@ done; README.md describes it.
 - SwiftMail's full-message fetch keeps only the first FETCH answer. If the
   server sends an unsolicited `* n FETCH (FLAGS ...)` first, iris reports
   that the message does not exist. Rare in a short session; fix upstream.
+- A filtered `iris list` gets every matching UID in one SEARCH reply, and
+  SwiftMail reads at most 1 MiB per reply
+  (`IMAPServer.defaultResponseBufferLimit`). A plain SEARCH reply takes
+  about 11 bytes per UID, so a filter that matches more than about 90,000
+  messages fails. ESEARCH (Gmail and iCloud have it) sends ranges such as
+  `101:250`, which are much shorter. Fix if it happens: send the search in
+  UID ranges, newest first, until a page is full.
 - An iris ID (`<account>/<mailbox>/<UID>`) is valid only while the
   mailbox's UIDVALIDITY stays the same. If the server rebuilds the mailbox,
   the old IDs name other messages or none; run `iris list` again. iris does
@@ -103,4 +110,5 @@ done; README.md describes it.
 ## Open questions
 
 - Paging: page numbers (`--page 2`) are simple but shift when new mail
-  arrives; a cursor (`--before <iris-id>`) is stable. Possibly both.
+  arrives; a cursor (for example `--older-than <iris-id>`) is stable.
+  Possibly both. (`--before` is taken: it is the date filter.)

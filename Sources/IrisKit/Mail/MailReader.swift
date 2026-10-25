@@ -39,10 +39,12 @@ public struct MailReader: Sendable {
         return MailboxInfo.merged(decoded).sorted(by: MailboxInfo.areInNameOrder)
     }
 
-    /// One page of `mailbox`, newest message first. Page 1 holds the newest
-    /// `limit` messages. A page past the end is empty, not an error.
+    /// One page of the messages in `mailbox` that match `filter` (all of them
+    /// when it is empty), newest message first. Page 1 holds the newest `limit`
+    /// messages. A page past the end is empty, not an error.
     public func list(
         mailbox: String = defaultMailbox,
+        filter: MessageFilter = MessageFilter(),
         page: Int = 1,
         limit: Int = defaultPageLimit
     ) async throws -> MessagePage {
@@ -54,18 +56,35 @@ public struct MailReader: Sendable {
         }
         return try await withClient { client in
             let status = try await examine(mailbox, with: client)
+            // Without a filter, a page is a range of sequence numbers. With one, it
+            // is the same range of positions in the sorted matching UIDs: UIDs grow
+            // in arrival order, as sequence numbers do.
+            let matches: [UInt32]?
+            if filter.isEmpty {
+                matches = nil
+            } else {
+                matches = try await client.searchUIDs(matching: filter).sorted()
+            }
+            let count = matches?.count ?? status.messageCount
             var messages: [MessageSummary] = []
             var hasMore = false
-            if let range = MessagePage.sequenceRange(messageCount: status.messageCount, page: page, limit: limit) {
-                messages = try await client.fetchEnvelopes(sequenceNumbers: range)
+            if let range = MessagePage.sequenceRange(messageCount: count, page: page, limit: limit) {
+                let envelopes: [MessageEnvelope]
+                if let matches {
+                    envelopes = try await client.fetchEnvelopes(uids: Array(matches[(range.lowerBound - 1)..<range.upperBound]))
+                } else {
+                    envelopes = try await client.fetchEnvelopes(sequenceNumbers: range)
+                }
+                messages = envelopes
                     .sorted { $0.sequenceNumber > $1.sequenceNumber }
                     .map { MessageSummary(envelope: $0, account: account.name, mailbox: mailbox) }
                 hasMore = range.lowerBound > 1
             }
             return MessagePage(
                 mailbox: mailbox,
+                filter: filter,
                 messages: messages,
-                totalCount: status.messageCount,
+                totalCount: count,
                 page: page,
                 limit: limit,
                 hasMore: hasMore

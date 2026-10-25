@@ -283,7 +283,7 @@ final class MailReaderTests: XCTestCase {
             statuses: ["INBOX": MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)],
             envelopes: [
                 MessageEnvelope(
-                    sequenceNumber: 1, uid: 101, from: sender, subject: nil, date: nil, internalDate: nil
+                    sequenceNumber: 1, uid: 101, seen: true, from: sender, subject: nil, date: nil, internalDate: nil
                 ),
             ]
         )
@@ -291,8 +291,128 @@ final class MailReaderTests: XCTestCase {
         let page = try await reader(fake).list()
 
         XCTAssertEqual(page.messages, [
-            MessageSummary(irisID: IrisID(account: "work", mailbox: "INBOX", uid: 101), from: sender, subject: "", date: nil),
+            MessageSummary(
+                irisID: IrisID(account: "work", mailbox: "INBOX", uid: 101), from: sender, subject: "", date: nil, unread: false
+            ),
         ])
+    }
+
+    func testListMarksTheMessagesWithoutTheSeenFlagAsUnread() async throws {
+        let fake = FakeMailClient(
+            statuses: ["INBOX": MailboxStatus(messageCount: 3, uidValidity: 7, uidNext: 200)],
+            envelopes: [
+                FakeMailClient.envelope(sequenceNumber: 1, seen: true),
+                FakeMailClient.envelope(sequenceNumber: 2, seen: false),
+                FakeMailClient.envelope(sequenceNumber: 3, seen: true),
+            ]
+        )
+
+        let page = try await reader(fake).list()
+
+        XCTAssertEqual(page.messages.map(\.unread), [false, true, false])
+    }
+
+    // MARK: - list filter
+
+    func testFilteredListSearchesAndFetchesTheNewestMatchesByUID() async throws {
+        // 32 matches in an INBOX of 60, in the order the server sent them.
+        let matches = (131...160).reversed().map { UInt32($0) } + [101, 102]
+        let fake = FakeMailClient.inbox(count: 60, searchResult: matches)
+        let filter = MessageFilter(unread: true)
+
+        let page = try await reader(fake).list(filter: filter)
+
+        XCTAssertEqual(page.messages.map(\.irisID.uid), uidsNewestFirst(136...160))
+        XCTAssertEqual(page.totalCount, 32)
+        XCTAssertEqual(page.filter, filter)
+        XCTAssertTrue(page.hasMore)
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [
+            .login, .examine("INBOX"), .searchUIDs(filter), .fetchEnvelopesByUID((136...160).map { UInt32($0) }), .logout,
+        ])
+    }
+
+    func testFilteredListLastPageHasTheOldestMatches() async throws {
+        let fake = FakeMailClient.inbox(count: 60, searchResult: [150, 103, 120, 101, 140])
+        let filter = MessageFilter(flagged: true)
+
+        let page = try await reader(fake).list(filter: filter, page: 2, limit: 2)
+
+        XCTAssertEqual(page.messages.map(\.irisID.uid), [120, 103])
+        XCTAssertTrue(page.hasMore)
+        let last = try await reader(fake).list(filter: filter, page: 3, limit: 2)
+        XCTAssertEqual(last.messages.map(\.irisID.uid), [101])
+        XCTAssertFalse(last.hasMore)
+        XCTAssertEqual(last.totalCount, 5)
+    }
+
+    func testFilteredListWithNoMatchesFetchesNothing() async throws {
+        let fake = FakeMailClient.inbox(count: 60, searchResult: [])
+        let filter = MessageFilter(from: "nobody")
+
+        let page = try await reader(fake).list(filter: filter)
+
+        XCTAssertEqual(page.messages, [])
+        XCTAssertEqual(page.totalCount, 0)
+        XCTAssertFalse(page.hasMore)
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .searchUIDs(filter), .logout])
+    }
+
+    func testFilteredPagePastTheEndFetchesNothing() async throws {
+        let fake = FakeMailClient.inbox(count: 60, searchResult: [101, 102, 103])
+        let filter = MessageFilter(subject: "Hi")
+
+        let page = try await reader(fake).list(filter: filter, page: 2)
+
+        XCTAssertEqual(page.messages, [])
+        XCTAssertEqual(page.totalCount, 3)
+        XCTAssertFalse(page.hasMore)
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .searchUIDs(filter), .logout])
+    }
+
+    func testFilteredListSearchesTheGivenMailboxAndKeepsTheDecodedName() async throws {
+        let fake = FakeMailClient(
+            statuses: ["[Gmail]/Entw&APw-rfe": MailboxStatus(messageCount: 2, uidValidity: 7, uidNext: 200)],
+            searchResult: [102],
+            envelopes: [FakeMailClient.envelope(sequenceNumber: 1), FakeMailClient.envelope(sequenceNumber: 2, seen: false)]
+        )
+        let filter = MessageFilter(unread: true)
+
+        let page = try await reader(fake).list(mailbox: "[Gmail]/Entwürfe", filter: filter)
+
+        XCTAssertEqual(page.messages.map(\.irisID), [IrisID(account: "work", mailbox: "[Gmail]/Entwürfe", uid: 102)])
+        XCTAssertEqual(page.messages.map(\.unread), [true])
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [
+            .login, .examine("[Gmail]/Entw&APw-rfe"), .searchUIDs(filter), .fetchEnvelopesByUID([102]), .logout,
+        ])
+    }
+
+    func testUnfilteredListSendsNoSearch() async throws {
+        let fake = FakeMailClient.inbox(count: 3, searchResult: [101])
+
+        let page = try await reader(fake).list(filter: MessageFilter())
+
+        XCTAssertEqual(page.messages.map(\.irisID.uid), [103, 102, 101])
+        XCTAssertTrue(page.filter.isEmpty)
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchEnvelopes(1...3), .logout])
+    }
+
+    func testFailedSearchStillLogsOut() async {
+        let failure = IrisError.searchFailed(account: "work", reason: "BAD Could not parse command")
+        let fake = FakeMailClient(
+            statuses: ["INBOX": MailboxStatus(messageCount: 5, uidValidity: 7, uidNext: 200)],
+            errors: [.searchUIDs: failure]
+        )
+        let filter = MessageFilter(unread: true)
+
+        await assertThrows(failure) { try await self.reader(fake).list(filter: filter) }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .searchUIDs(filter), .logout])
     }
 
     // MARK: - list errors
