@@ -12,7 +12,11 @@ mail app.
 Made for Gmail, iCloud Mail, and Zoho Mail. `check`, `mailboxes`, `list`,
 `show`, and `thread` were run against Zoho Mail on 2026-10-24; `read`,
 `unread`, `draft`, and `download` have not run against a real server yet,
-and Gmail and iCloud Mail are not checked yet.
+and Gmail and iCloud Mail are not checked yet. Since then, `show`, `draft`,
+and `download` first ask for the message's size and parts in a new FETCH,
+`thread` asks for each message's size with its headers, and a message over
+1 MiB is read in parts (see "Large messages"); none of that has run against
+a real server yet.
 
 ## Install
 
@@ -338,6 +342,8 @@ why, and what to do next:
   `iris show '<iris-id>' --format raw` shows its source. With
   `--body html`, a message that also has a text part says to use
   `iris show '<iris-id>' --body text`.
+- The server sent no bytes for its body (a large message, read in parts;
+  another mail app changed a flag at that moment): run the command again.
 - It is gone (deleted or moved after iris found it, before the download):
   run the command again.
 
