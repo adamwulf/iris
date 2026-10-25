@@ -26,12 +26,12 @@ struct ThreadCommand: ReadOnlyCommand {
     func run() async throws {
         let account = try AccountResolver.resolve(name: irisID.account, settings: AccountResolver.settings())
         let reader = MailReader(account: account)
-        if format == .id {
+        if let messagesFormat = format.messagesFormat {
+            let messages = try await reader.thread(irisID)
+            FileHandle.standardOutput.write(try await MessageFormatter.render(thread: messages, format: messagesFormat, body: body))
+        } else {
             // The walk reads only headers, so the iris IDs need no download.
             FileHandle.standardOutput.write(MessageFormatter.render(threadIDs: try await reader.threadIDs(irisID)))
-        } else {
-            let messages = try await reader.thread(irisID)
-            FileHandle.standardOutput.write(try await MessageFormatter.render(thread: messages, format: format, body: body))
         }
     }
 }

@@ -10,7 +10,7 @@ public enum MessageOutputFormat: String, CaseIterable, Sendable {
     case raw
 }
 
-/// How `iris thread` prints the messages of a thread.
+/// How `iris thread` prints a thread (its `--format`).
 public enum ThreadOutputFormat: String, CaseIterable, Sendable {
     /// Each message as `iris show` prints it in Markdown, between separators.
     case markdown
@@ -20,8 +20,27 @@ public enum ThreadOutputFormat: String, CaseIterable, Sendable {
     case jsonl
     /// The iris ID of each message, one per line, as `iris list --format id`
     /// prints them. The walk finds them from headers alone, so `iris thread`
-    /// downloads no message for it (`MailReader.threadIDs(_:)`).
+    /// downloads no message for it.
     case id
+
+    /// The format in which `MessageFormatter.render(thread:format:body:timeZone:)`
+    /// prints the downloaded messages, or nil for `id`, which needs no
+    /// download: `MailReader.threadIDs(_:)` gives the iris IDs, and
+    /// `MessageFormatter.render(threadIDs:)` prints them.
+    public var messagesFormat: ThreadMessagesFormat? {
+        switch self {
+        case .markdown: return .markdown
+        case .json: return .json
+        case .jsonl: return .jsonl
+        case .id: return nil
+        }
+    }
+}
+
+/// The `ThreadOutputFormat`s that show the messages themselves, so that
+/// `iris thread` downloads them.
+public enum ThreadMessagesFormat: CaseIterable, Sendable {
+    case markdown, json, jsonl
 }
 
 /// Prints a `MessageDocument` the way `iris show` does.
@@ -116,13 +135,9 @@ public enum MessageFormatter {
     /// it, so the rest of the thread is still shown. When no message is left
     /// to show, the error of the input message (`ThreadMessage.isInput`) is
     /// thrown, as `iris show` would throw it. Every other error throws.
-    ///
-    /// `id` decodes nothing, so it leaves nothing out: it is `render(threadIDs:)`
-    /// of every message. `iris thread` gets those IDs from
-    /// `MailReader.threadIDs(_:)` instead, which downloads nothing.
     public static func render(
         thread messages: [ThreadMessage],
-        format: ThreadOutputFormat,
+        format: ThreadMessagesFormat,
         body preference: BodyPreference = .auto,
         timeZone: TimeZone = .current
     ) async throws -> Data {
@@ -135,36 +150,11 @@ public enum MessageFormatter {
     /// `render(thread:format:body:timeZone:)` with the HTML converter as a parameter, so that tests can make it fail.
     static func render(
         thread messages: [ThreadMessage],
-        format: ThreadOutputFormat,
+        format: ThreadMessagesFormat,
         body preference: BodyPreference,
         timeZone: TimeZone,
         convertingHTMLWith htmlToMarkdown: (String) async throws -> String
     ) async throws -> Data {
-        switch format {
-        case .markdown:
-            let documents = try await shownDocuments(messages, body: preference, convertingHTMLWith: htmlToMarkdown)
-            let markdowns = documents.map { markdown($0, timeZone: timeZone) }
-            return Data((markdowns.joined(separator: "\n\n\(threadSeparator)\n\n") + "\n").utf8)
-        case .json:
-            let documents = try await shownDocuments(messages, body: preference, convertingHTMLWith: htmlToMarkdown)
-            return Data((try OutputFormatter.json(documents, pretty: true) + "\n").utf8)
-        case .jsonl:
-            let documents = try await shownDocuments(messages, body: preference, convertingHTMLWith: htmlToMarkdown)
-            return Data(try documents.map { try OutputFormatter.json($0, pretty: false) + "\n" }.joined().utf8)
-        case .id:
-            return render(threadIDs: messages.map(\.irisID))
-        }
-    }
-
-    /// The documents of `messages` that can be shown, in their order, for
-    /// `render(thread:format:body:timeZone:)`: it logs a `leftOutLine` for
-    /// each of the others, and throws the error of the input message when none
-    /// can be shown.
-    private static func shownDocuments(
-        _ messages: [ThreadMessage],
-        body preference: BodyPreference,
-        convertingHTMLWith htmlToMarkdown: (String) async throws -> String
-    ) async throws -> [MessageDocument] {
         var documents: [MessageDocument] = []
         var leftOut: [(message: ThreadMessage, error: IrisError, line: String)] = []
         for message in messages {
@@ -202,7 +192,15 @@ public enum MessageFormatter {
         for item in leftOut {
             IrisLog.log(item.line)
         }
-        return documents
+        switch format {
+        case .markdown:
+            let markdowns = documents.map { markdown($0, timeZone: timeZone) }
+            return Data((markdowns.joined(separator: "\n\n\(threadSeparator)\n\n") + "\n").utf8)
+        case .json:
+            return Data((try OutputFormatter.json(documents, pretty: true) + "\n").utf8)
+        case .jsonl:
+            return Data(try documents.map { try OutputFormatter.json($0, pretty: false) + "\n" }.joined().utf8)
+        }
     }
 
     /// The message as Markdown: a subject heading, the From/To/Cc/Date lines,

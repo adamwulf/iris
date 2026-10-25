@@ -210,14 +210,16 @@ for the user to save.
   the message in Apple Mail. `MessageDocument` makes it from `messageID` with
   `AppleMailURL`, so it is nil when there is no `Message-ID` header.
 - `thread` takes `--format markdown|json|jsonl|id` (`ThreadOutputFormat`),
-  default `markdown`, through `MessageFormatter.render(thread:format:body:timeZone:)`:
-  each message as `show` prints it, oldest first, with a `* * *` line
-  between messages, a JSON array of the `show --format json` objects, or
-  those objects one per line (compact, sorted keys, as the list commands'
-  `jsonl`). `id` is one iris ID per line, as `list --format id` writes
-  them: the CLI gets them from `MailReader.threadIDs` and prints them with
-  `MessageFormatter.render(threadIDs:)`, so it downloads and leaves out
-  nothing, and only the walk's own lines go to stderr.
+  default `markdown`. Its `messagesFormat` is the `ThreadMessagesFormat`
+  of `MessageFormatter.render(thread:format:body:timeZone:)`, which prints
+  the downloaded messages: each message as `show` prints it, oldest first,
+  with a `* * *` line between messages, a JSON array of the
+  `show --format json` objects, or those objects one per line (compact,
+  sorted keys, as the list commands' `jsonl`). For `id` it is nil: one iris
+  ID per line, as `list --format id` writes them, which the CLI gets from
+  `MailReader.threadIDs` and prints with `MessageFormatter.render(threadIDs:)`,
+  so it downloads and leaves out nothing, and only the walk's own lines go
+  to stderr.
 - Hints (such as the next-page command) and errors go to stderr. stdout holds
   only data.
 
