@@ -9,27 +9,53 @@ final class FileLogPolicyTests: XCTestCase {
         XCTAssertTrue(FileLogPolicy.writesFiles(arguments: ["list", "--subject", "ro"]))
     }
 
-    func testRedactsEveryAccountsSecretsEvenWithoutCompleteConfiguration() {
-        let policy = FileLogPolicy(settings: [
-            "IRIS_WORK_IMAP_PASSWORD": "password",
-            "IRIS_MY_GMAIL_GOOGLE_CLIENT_SECRET": "password-longer",
-            "IRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN": "refresh-token",
-            "IRIS_EMPTY_IMAP_PASSWORD": "",
-        ])
-        XCTAssertEqual(
-            policy.redacting("password-longer password refresh-token password"),
-            "<redacted> <redacted> <redacted> <redacted>"
-        )
-        XCTAssertEqual(policy.redacting("Downloading work/INBOX/1"), "Downloading work/INBOX/1")
+    func testErrorsDiscardAllAssociatedDataIncludingServerAndMailContent() {
+        let sensitive = "private-account https://private.example key=secret-token sender@example.com subject draft-body"
+        let cases: [(IrisError, String)] = [
+            (.invalidSetting(key: sensitive, reason: sensitive), "invalid_setting"),
+            (.missingSetting(key: sensitive), "missing_setting"),
+            (.loginFailed(account: sensitive, username: sensitive, host: sensitive, reason: sensitive), "login_failed"),
+            (.serverError(account: sensitive, command: sensitive, reason: sensitive), "server_error"),
+            (.searchFailed(account: sensitive, reason: sensitive), "search_failed"),
+            (.unknownMailbox(account: sensitive, name: sensitive, reason: sensitive), "unknown_mailbox"),
+            (.googleTokenFailed(account: sensitive, reason: sensitive), "google_token_failed"),
+            (.googleSignInFailed(account: sensitive, reason: sensitive), "google_sign_in_failed"),
+            (.messageNotParsed(reason: sensitive), "message_not_parsed"),
+            (.htmlNotConverted(reason: sensitive, hasTextPart: true), "html_not_converted"),
+            (.draftRefused(account: sensitive, mailbox: sensitive, reason: sensitive), "draft_refused"),
+            (.draftNotPreserved(reason: sensitive), "draft_not_preserved"),
+            (.draftBodyNotRead(source: sensitive, reason: sensitive), "draft_body_not_read"),
+            (.attachmentNotSaved(path: sensitive, reason: sensitive), "attachment_not_saved"),
+            (.invalidIrisID(sensitive), "invalid_iris_id"),
+        ]
+        for (error, code) in cases {
+            XCTAssertEqual(FileLogPolicy.failureCode(error), code)
+        }
     }
 
-    func testFailureKeepsActionableIrisErrorsButDoesNotCopyArbitraryErrors() {
-        let policy = FileLogPolicy(settings: ["IRIS_WORK_IMAP_PASSWORD": "secret"])
-        let error = IrisError.invalidSetting(key: "IRIS_WORK_IMAP_PORT", reason: "secret is not a port")
-        XCTAssertTrue(policy.failure(error, command: "check").contains("<redacted> is not a port"))
-        XCTAssertEqual(
-            policy.failure(NSError(domain: "private draft body", code: 1), command: "reply"),
-            "reply: Command did not complete."
-        )
+    func testUnknownErrorsAreNeverRendered() {
+        struct UnprintableError: Error, CustomStringConvertible, LocalizedError {
+            var description: String { XCTFail("must not render errors for disk"); return "private" }
+            var errorDescription: String? { XCTFail("must not localize errors for disk"); return "private" }
+        }
+        XCTAssertEqual(FileLogPolicy.failureCode(UnprintableError()), "command_failed")
+    }
+
+    func testInteractiveMessagesNeverReachPersistentSink() {
+        let console = LogRecorder()
+        let file = LogRecorder()
+        let previousHandler = IrisLog.handler
+        let previousFileHandler = IrisLog.fileHandler
+        defer {
+            IrisLog.handler = previousHandler
+            IrisLog.fileHandler = previousFileHandler
+        }
+        IrisLog.handler = console.record
+        IrisLog.fileHandler = { file.record($0.rawValue) }
+        let sensitive = "private URL, token, email subject and body"
+        IrisLog.log(sensitive)
+        IrisLog.log(sensitive, fileEvent: .threadSearchFallback)
+        XCTAssertEqual(console.lines, [sensitive, sensitive])
+        XCTAssertEqual(file.lines, ["thread_search_fallback"])
     }
 }

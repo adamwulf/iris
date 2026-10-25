@@ -44,7 +44,7 @@ public enum DraftBody {
             return try nonEmpty(argument, source: "the argument")
         case (nil, let path?) where path == stdinPath:
             if stdinIsTerminal {
-                IrisLog.log("Reading the draft body from stdin; end it with Ctrl-D.")
+                IrisLog.log("Reading the draft body from stdin; end it with Ctrl-D.", fileEvent: .readingDraftFromStdin)
             }
             return try text(of: readStdin, source: "stdin")
         case (nil, let path?):

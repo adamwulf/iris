@@ -246,7 +246,7 @@ final class GoogleSignInTests: XCTestCase {
         let previousHandler = IrisLog.handler
         let previousFileHandler = IrisLog.fileHandler
         IrisLog.handler = console.record
-        IrisLog.fileHandler = file.record
+        IrisLog.fileHandler = { file.record($0.rawValue) }
         defer {
             IrisLog.handler = previousHandler
             IrisLog.fileHandler = previousFileHandler
@@ -258,7 +258,7 @@ final class GoogleSignInTests: XCTestCase {
         let refreshToken = try await signIn.run()
 
         XCTAssertTrue(console.lines.joined().contains("https://accounts.google.com/"))
-        XCTAssertEqual(file.lines, ["Opening the Google sign-in page in your browser."])
+        XCTAssertEqual(file.lines, ["google_sign_in_started"])
         XCTAssertEqual(refreshToken, "1//refresh")
         let events = receiver.events
         XCTAssertEqual(events.count, 4, "\(events)")

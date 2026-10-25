@@ -20,8 +20,8 @@ Markdown into HTML. The reasons, the alternatives, and the risks are in
 
 **The one rule:** if it can be unit-tested, it belongs in `IrisKit`. The
 executable only parses arguments, calls the library, and prints. IrisKit never
-prints: it logs through `IrisLog`, and the executable decides where the lines
-go (stderr and, outside `ro`, rotating diagnostic files).
+prints: it reports through `IrisLog`. The executable sends interactive lines
+to stderr and fixed behavior events to rotating diagnostic files outside `ro`.
 
 ```
 Sources/IrisKit/
@@ -68,8 +68,8 @@ Sources/IrisKit/
                MailAddress (the one address type), DateText, ModifiedUTF7,
                CalendarDay (a YYYY-MM-DD day for --since and --before),
                Redaction (removes secrets from text that iris shows),
-               FileLogPolicy (no disk writes under ro, configured secret redaction,
-               and safe failure text for persistent diagnostics),
+               FileLogPolicy (no disk writes under ro, fixed error codes that
+               discard every associated value for persistent diagnostics),
                AttachmentOutput (`download`: stdout, or a new file at the -o path)
   IrisError.swift   the one error type; each message says what to do next
   IrisLog.swift     the logging seam
@@ -344,6 +344,13 @@ AUTHENTICATE). The one exception: when `iris auth login` does not write
 refresh token's `KEY=value` line (`RefreshTokenSave.stdoutLine`) on stdout
 for the user to save.
 
+Persistent logs describe **behavior, never content**. Never forward an
+interactive `IrisLog` string or an `IrisError.errorDescription` to disk.
+`IrisLog.fileHandler` takes only payload-free `FileEvent` cases, and
+`FileLogPolicy.failureCode` discards every associated error value. No account
+details, URLs, keys, credentials, message subjects/bodies, draft text, attachment
+data, user paths, IDs, or server replies may enter diagnostic files.
+
 ### Output
 
 - A message is always named by its iris ID (`IrisID`), `<account>/<mailbox>/<UID>`
@@ -540,6 +547,9 @@ top-level write command (`auth`, `download`), and that
 `iris ro <write command>` and `iris ro download -o` fail.
 
 ### Add an error
+
+Add a fixed behavior code to the exhaustive `FileLogPolicy.failureCode` switch;
+never put the error's associated values or description in persistent logs.
 
 Add a case to `IrisError` in its section (`// IMAP`, `// Message rendering`,
 `// Drafts`, `// Attachments`, `// Google sign-in`) with an `errorDescription` that says what the user can
@@ -783,8 +793,9 @@ account (`--account <name>`).
 - **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the
-  executable depends on swift-log and FellerBuncher (pinned to `39a70d8`,
-  the revision used by graham; bump in Package.swift and re-resolve).
+  executable depends on swift-log and FellerBuncher (pinned to `2e24570`,
+  which includes O_APPEND for overlapping writers; bump in Package.swift
+  and re-resolve).
   `IrisFileLog` uses a
   dedicated `FileDestination`, never FellerBuncher's global bootstrap: that
   would persist SwiftMail's protocol diagnostics. Outside `ro`, after parsing,
@@ -793,11 +804,12 @@ account (`--account <name>`).
   continues; `CLI.run` awaits `drain()` before returning or rethrowing on
   both exit paths. It derives command paths from the parser tree and records
   explicit `ExitCode` outcomes as exit statuses. `IrisLog.fileHandler` receives
-  library notices, with a separate safe `fileMessage` for the interactive
-  OAuth URL. Command starts/outcomes and Iris errors also go to disk; raw
-  arguments, other error descriptions, and stdout never do. `FileLogPolicy`
-  redacts configured credentials; network boundaries redact transient OAuth
-  secrets as before. `ro` never opens the destination, even for pruning.
+  only fixed, payload-free `FileEvent` cases. Untagged interactive messages
+  never persist. `FileLogPolicy.failureCode` maps Iris errors exhaustively to
+  fixed behavior codes and maps other errors to `command_failed`, without
+  rendering errors or reading associated values. The file sink exposes no
+  free-text API and does not read account settings. Source locations are
+  forwarded by its wrappers. `ro` never opens the destination, even for pruning.
 - **Google OAuth, 7 days:** Adam's Google Cloud app is External and in
   Testing, so Google ends each refresh token after 7 days (and when the
   Google password changes). The refresh then answers HTTP 400

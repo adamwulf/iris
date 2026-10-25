@@ -1,22 +1,38 @@
 import Foundation
 
-/// The library's only way to report progress. IrisKit never prints; the
-/// executable installs a handler that decides where these lines go.
+/// IrisKit never prints. The executable installs separate handlers for
+/// interactive text and payload-free events suitable for persistent logs.
 public enum IrisLog {
     /// Set once at startup, before any command runs.
     nonisolated(unsafe) public static var handler: (@Sendable (String) -> Void)?
 
-    /// Optional persistent sink. A call can give it a summary instead of
-    /// interactive details, such as the URL that opens an OAuth consent page.
-    /// Set once at startup, like `handler`.
-    nonisolated(unsafe) public static var fileHandler: (@Sendable (String) -> Void)?
-
-    static func log(_ message: String) {
-        log(message, fileMessage: message)
+    /// Only fixed behavior events may reach persistent storage. This enum
+    /// deliberately has no payloads: no account, URL, key, server text, or mail
+    /// content can cross this boundary. Interactive messages stay on `handler`.
+    public enum FileEvent: String, Sendable {
+        case googleSignInStarted = "google_sign_in_started"
+        case wholeMessageFallback = "whole_message_fallback"
+        case threadSearchFallback = "thread_search_fallback"
+        case logoutFailed = "logout_failed"
+        case readingDraftFromStdin = "reading_draft_from_stdin"
+        case htmlConversionFallback = "html_conversion_fallback"
+        case bodyFormatFallback = "body_format_fallback"
+        case threadMessageOmitted = "thread_message_omitted"
     }
 
-    static func log(_ message: String, fileMessage: String) {
+    /// Set once at startup, like `handler`.
+    nonisolated(unsafe) public static var fileHandler: (@Sendable (FileEvent) -> Void)?
+
+    static func log(_ message: String) {
         handler?(message)
-        fileHandler?(fileMessage)
+    }
+
+    static func log(_ message: String, fileEvent: FileEvent) {
+        handler?(message)
+        record(fileEvent)
+    }
+
+    static func record(_ event: FileEvent) {
+        fileHandler?(event)
     }
 }

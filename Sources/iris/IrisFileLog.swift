@@ -2,6 +2,7 @@ import ArgumentParser
 import FellerBuncher
 import Foundation
 import IrisKit
+import Logging
 
 /// The executable's file sink. Use FellerBuncher's destination directly:
 /// its global bootstrap would also persist SwiftMail's protocol diagnostics.
@@ -13,18 +14,15 @@ struct IrisFileLog: Sendable {
     }
 
     private let destination: FileDestination
-    private let policy: FileLogPolicy
 
-    init(directory: URL, settings: [String: String]) throws {
+    init(directory: URL) throws {
         destination = try FileDestination(logDirectory: directory, processName: "iris")
-        policy = FileLogPolicy(settings: settings)
     }
 
     static func openIfPossible(
         command: any ParsableCommand,
         arguments: [String],
-        directory: URL = defaultDirectory,
-        settings: [String: String]? = nil
+        directory: URL = defaultDirectory
     ) -> Self? {
         // Iris's executable leaves are async. Parser-generated help commands
         // are synchronous; Iris's groups only display help when run themselves.
@@ -32,20 +30,45 @@ struct IrisFileLog: Sendable {
               type(of: command).configuration.subcommands.isEmpty else { return nil }
         guard FileLogPolicy.writesFiles(arguments: arguments) else { return nil }
         do {
-            return try Self(directory: directory, settings: settings ?? AccountResolver.settings())
+            return try Self(directory: directory)
         } catch {
             CLI.printToStderr("iris: file logging unavailable; check access to ~/Library/Logs/iris.")
             return nil
         }
     }
 
-    func notice(_ message: String) {
-        destination.receive(LogRecord(level: .notice, label: "iris", message: policy.redacting(message)))
+    enum CommandEvent {
+        case started, completed
+        case exited(Int32)
+        case failed(Error)
     }
 
-    func failure(_ error: Error, command: String) {
+    /// There is no free-text logging API: command names come from static
+    /// parser declarations, and failures contribute only fixed behavior codes.
+    func record(
+        _ event: CommandEvent, command: any ParsableCommand.Type,
+        file: String = #fileID, function: String = #function, line: UInt = #line
+    ) {
+        let name = CLI.commandPath(for: command)
+        let message: String
+        let level: Logger.Level
+        switch event {
+        case .started: (message, level) = ("Starting \(name).", .notice)
+        case .completed: (message, level) = ("Completed \(name).", .notice)
+        case .exited(let status): (message, level) = ("\(name): exited with status \(status).", .notice)
+        case .failed(let error): (message, level) = ("\(name): \(FileLogPolicy.failureCode(error)).", .error)
+        }
         destination.receive(LogRecord(
-            level: .error, label: "iris", message: policy.failure(error, command: command)
+            level: level, label: "iris", message: message, file: file, function: function, line: line
+        ))
+    }
+
+    func record(
+        _ event: IrisLog.FileEvent,
+        file: String = #fileID, function: String = #function, line: UInt = #line
+    ) {
+        destination.receive(LogRecord(
+            level: .notice, label: "iris", message: event.rawValue, file: file, function: function, line: line
         ))
     }
 

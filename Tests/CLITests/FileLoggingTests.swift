@@ -47,7 +47,7 @@ final class FileLoggingTests: XCTestCase {
             command.outcome = outcome
             var caught: Error?
             do {
-                try await CLI.run(command, arguments: ["probe"], logDirectory: directory, settings: [:])
+                try await CLI.run(command, arguments: ["probe"], logDirectory: directory)
             } catch {
                 caught = error
             }
@@ -61,7 +61,7 @@ final class FileLoggingTests: XCTestCase {
                 XCTAssertTrue(text.contains("Completed probe."), text)
             case .irisError:
                 XCTAssertEqual(caught as? IrisError, .noAccountsConfigured)
-                XCTAssertTrue(text.contains("probe: No email account is configured."), text)
+                XCTAssertTrue(text.contains("probe: no_accounts_configured."), text)
                 XCTAssertTrue(text.contains("ERROR"), text)
                 XCTAssertFalse(text.contains("Completed probe."), text)
             case .exitStatus:
@@ -76,26 +76,37 @@ final class FileLoggingTests: XCTestCase {
     func testFileDestinationAppendsAndDrainsWithoutCapturingOtherLoggers() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let settings = ["IRIS_WORK_IMAP_PASSWORD": "private-password"]
         let log = try XCTUnwrap(IrisFileLog.openIfPossible(
             command: try Iris.parseAsRoot(["accounts"]), arguments: ["accounts"],
-            directory: directory, settings: settings
+            directory: directory
         ))
-        log.notice("first private-password")
-        log.failure(IrisError.noAccountsConfigured, command: "accounts")
+        // Open both handles before writing: without O_APPEND the second
+        // writer would overwrite the first writer's records at its old offset.
+        let next = try IrisFileLog(directory: directory)
+        log.record(.started, command: Accounts.self)
+        log.record(.googleSignInStarted)
+        let sensitive = "private-password private-account https://private.example key token mail-subject mail-body"
+        log.record(.failed(IrisError.serverError(account: sensitive, command: sensitive, reason: sensitive)), command: Accounts.self)
         var protocolLog = Logger(label: "SwiftMail")
         protocolLog.logLevel = .debug
         protocolLog.debug("protocol-payload-must-stay-out")
         await log.drain()
 
-        let next = try IrisFileLog(directory: directory, settings: settings)
-        next.notice("last line before exit")
+        next.record(.completed, command: Accounts.self)
         await next.drain()
+        log.record(.logoutFailed)
+        await log.drain()
         let text = try String(contentsOf: directory.appendingPathComponent("iris.log"), encoding: .utf8)
-        XCTAssertTrue(text.contains("first <redacted>"), text)
-        XCTAssertTrue(text.contains("accounts:"), text)
-        XCTAssertTrue(text.contains("last line before exit"), text)
-        XCTAssertFalse(text.contains("private-password"), text)
+        XCTAssertTrue(text.contains("Starting accounts."), text)
+        XCTAssertTrue(text.contains("accounts: server_error."), text)
+        XCTAssertTrue(text.contains("Completed accounts."), text)
+        XCTAssertTrue(text.contains("google_sign_in_started"), text)
+        XCTAssertTrue(text.contains("logout_failed"), text)
+        XCTAssertTrue(text.contains("FileLoggingTests"), text)
+        XCTAssertFalse(text.contains("IrisFileLog.swift"), text)
+        for value in sensitive.split(separator: " ") {
+            XCTAssertFalse(text.contains(value), text)
+        }
         XCTAssertFalse(text.contains("protocol-payload-must-stay-out"), text)
     }
 
@@ -104,14 +115,14 @@ final class FileLoggingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let arguments = ["ro", "accounts"]
         let command = try Iris.parseAsRoot(arguments)
-        XCTAssertNil(IrisFileLog.openIfPossible(command: command, arguments: arguments, directory: directory, settings: [:]))
+        XCTAssertNil(IrisFileLog.openIfPossible(command: command, arguments: arguments, directory: directory))
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let oldLog = directory.appendingPathComponent("iris-1.log")
         try Data("keep".utf8).write(to: oldLog)
         try FileManager.default.setAttributes([.modificationDate: Date.distantPast], ofItemAtPath: oldLog.path)
-        XCTAssertNil(IrisFileLog.openIfPossible(command: command, arguments: arguments, directory: directory, settings: [:]))
+        XCTAssertNil(IrisFileLog.openIfPossible(command: command, arguments: arguments, directory: directory))
         XCTAssertEqual(try Data(contentsOf: oldLog), Data("keep".utf8))
     }
 
@@ -125,7 +136,7 @@ final class FileLoggingTests: XCTestCase {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: file) }
         try Data().write(to: file)
-        try await CLI.run(Probe(), arguments: ["probe"], logDirectory: file, settings: [:])
+        try await CLI.run(Probe(), arguments: ["probe"], logDirectory: file)
     }
 
     func testHelpAndGroupsDoNotOpenLogs() throws {
@@ -136,7 +147,7 @@ final class FileLoggingTests: XCTestCase {
             // parser's help command, which must not open a file either.
             if let command = try? Iris.parseAsRoot(arguments) {
                 XCTAssertNil(IrisFileLog.openIfPossible(
-                    command: command, arguments: arguments, directory: directory, settings: [:]
+                    command: command, arguments: arguments, directory: directory
                 ))
             }
         }

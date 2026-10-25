@@ -70,7 +70,7 @@ public struct GoogleSignIn: Sendable {
                 IrisLog.log(
                     "Opening the Google sign-in page in your browser. Sign in as \(account.username). "
                         + "If the page does not open, open this URL:\n\(url.absoluteString)",
-                    fileMessage: "Opening the Google sign-in page in your browser."
+                    fileEvent: .googleSignInStarted
                 )
                 openURL(url)
             }

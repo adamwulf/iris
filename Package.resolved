@@ -1,12 +1,12 @@
 {
-  "originHash" : "d98fd8224194577b93f6b7b3f9383f19fbe0cbd180efc35897b8f6e37a1dbfd2",
+  "originHash" : "d78ac1326688737fdd44bae3b9c3c0ce2a90273007ad6e1b10e4310cb4a44e73",
   "pins" : [
     {
       "identity" : "fellerbuncher",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/adamwulf/FellerBuncher.git",
       "state" : {
-        "revision" : "39a70d805ceaa33f76c9e08c6371c4776ecc73f6"
+        "revision" : "2e24570d248d04c5811d8c6b9cfb733387312e03"
       }
     },
     {

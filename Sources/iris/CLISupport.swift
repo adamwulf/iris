@@ -6,33 +6,31 @@ import Logging
 enum CLI {
     /// Run one parsed command, draining diagnostics before returning or
     /// rethrowing to main's exit(withError:). Tests pass a temporary directory
-    /// and settings so they exercise the same lifecycle without real accounts.
+    /// so they exercise the same lifecycle without real accounts.
     static func run(
         _ parsedCommand: any ParsableCommand,
         arguments: [String],
-        logDirectory: URL = IrisFileLog.defaultDirectory,
-        settings: [String: String]? = nil
+        logDirectory: URL = IrisFileLog.defaultDirectory
     ) async throws {
         var command = parsedCommand
         let logging = IrisFileLog.openIfPossible(
-            command: command, arguments: arguments, directory: logDirectory, settings: settings
+            command: command, arguments: arguments, directory: logDirectory
         )
         installLogHandler(fileLog: logging)
-        let name = commandPath(for: type(of: command))
-        logging?.notice("Starting \(name).")
+        logging?.record(.started, command: type(of: command))
         do {
             if var asyncCommand = command as? AsyncParsableCommand {
                 try await asyncCommand.run()
             } else {
                 try command.run()
             }
-            logging?.notice("Completed \(name).")
+            logging?.record(.completed, command: type(of: command))
             await logging?.drain()
         } catch {
             if let exitCode = error as? ExitCode {
-                logging?.notice("\(name): exited with status \(exitCode.rawValue).")
+                logging?.record(.exited(exitCode.rawValue), command: type(of: command))
             } else {
-                logging?.failure(error, command: name)
+                logging?.record(.failed(error), command: type(of: command))
             }
             await logging?.drain()
             throw error
@@ -54,14 +52,14 @@ enum CLI {
         return path(under: Iris.self)?.dropFirst().joined(separator: " ") ?? command._commandName
     }
 
-    /// Live lines go to stderr; persistent summaries go to the optional file
+    /// Live lines go to stderr; fixed behavior events go to the optional file
     /// sink. Neither destination mixes diagnostics with stdout data.
     static func installLogHandler(fileLog: IrisFileLog?) {
         IrisLog.handler = { message in
             printToStderr("iris: \(message)")
         }
-        IrisLog.fileHandler = { message in
-            fileLog?.notice(message)
+        IrisLog.fileHandler = { event in
+            fileLog?.record(event)
         }
     }
 
