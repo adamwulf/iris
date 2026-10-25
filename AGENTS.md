@@ -391,10 +391,12 @@ for the user to save.
   `Removal.keptAnswers`, set where the walk stops at the sender's text
   inside a quote container (not at a forward, `keptForward`, or a quote it
   does not know), after which a signature does not start the cut; and
-  `hasZohoHeader`, read after the DOM pass, which turns off Outlook's
-  header block in the text pass (`findingOutlookHeader`): a Zoho header
-  that is left may have the sender's text under it, and in English it
-  reads as Outlook's. The text pass's signature rule also keeps a quoted
+  `zohoHeaderBlocks`, read after the DOM pass: the Zoho headers left there
+  (which may have the sender's text under them) read as Outlook's header
+  block in English, so the text pass ignores that many of the last header
+  blocks (`zohoHeaders`). They are the last ones, because what follows a
+  Zoho container is quoted or a footer; an Outlook header above them
+  still cuts. The text pass's signature rule also keeps a quoted
   forward under the signature, which the DOM pass kept on purpose. It keeps a body that would be
   left empty, and the decoder parses the HTML again when the DOM pass cut
   something that the text pass then calls a forward or all history.

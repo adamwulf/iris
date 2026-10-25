@@ -49,7 +49,7 @@ enum QuotedHistory {
 
     // MARK: - Text
 
-    /// What `trim(_:fromHTML:afterRemovedQuote:findingOutlookHeader:keptAnswers:)` did with a text.
+    /// What `trim(_:fromHTML:afterRemovedQuote:zohoHeaders:keptAnswers:)` did with a text.
     enum TextTrim: Equatable {
         /// The text has no marker, so nothing is cut.
         case noMarker
@@ -94,10 +94,12 @@ enum QuotedHistory {
     ///     Then an attribution line with nothing after it starts the cut too:
     ///     it was the removed quote's (older Apple Mail puts it above the
     ///     `blockquote`).
-    ///   - findingOutlookHeader: Whether Outlook's header block starts the
-    ///     cut. False when Zoho's marked header is left after the HTML pass
-    ///     (`hasZohoHeader(in:)`): in English its From/Date/Subject lines
-    ///     look like Outlook's, and what follows it may be the sender's.
+    ///   - zohoHeaders: How many of the last header blocks are Zoho's headers
+    ///     left after the HTML pass (`zohoHeaderBlocks(in:)`), which are not
+    ///     Outlook's: in English their From/Date/Subject lines look like
+    ///     Outlook's, and what follows them may be the sender's. They are the
+    ///     last ones, because what follows a Zoho container is quoted or a
+    ///     footer. An Outlook header block above them still starts the cut.
     ///   - keptAnswers: Whether the HTML pass stopped at the sender's text
     ///     inside a reply's quote container (`Removal.keptAnswers`). Then the
     ///     signature does not start the cut.
@@ -105,7 +107,7 @@ enum QuotedHistory {
         _ text: String,
         fromHTML: Bool = false,
         afterRemovedQuote: Bool = false,
-        findingOutlookHeader: Bool = true,
+        zohoHeaders: Int = 0,
         keptAnswers: Bool = false
     ) -> TextTrim {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
@@ -119,7 +121,7 @@ enum QuotedHistory {
             (signatures + [lines.count]).compactMap { end in
                 trailingAttributionStart(in: lines, before: end, allowingNoQuote: afterRemovedQuote)
             }.min(),
-            findingOutlookHeader ? outlookHeaderStart(in: lines) : nil,
+            outlookHeaderStarts(in: lines).dropLast(zohoHeaders).first,
         ].compactMap { $0 }.min()
 
         // A forward marker above the history is the start of a forward. One
@@ -225,7 +227,17 @@ enum QuotedHistory {
     /// The first line of the first Outlook header block (with the separator
     /// line above it), or nil when there is none.
     static func outlookHeaderStart(in lines: [Substring]) -> Int? {
-        for index in lines.indices where headerLabel(lines[index]) == "from" {
+        outlookHeaderStarts(in: lines).first
+    }
+
+    /// The first line of each Outlook header block (with the separator line
+    /// above it), in order.
+    static func outlookHeaderStarts(in lines: [Substring]) -> [Int] {
+        var starts: [Int] = []
+        var index = 0
+        while index < lines.count {
+            defer { index += 1 }
+            guard headerLabel(lines[index]) == "from" else { continue }
             var labels: Set<String> = []
             var next = index + 1
             while next < lines.count, labels.count < maxHeaderLabels {
@@ -243,9 +255,11 @@ enum QuotedHistory {
             while above >= 0, isBlank(lines[above]) {
                 above -= 1
             }
-            return above >= 0 && isHeaderSeparator(lines[above]) ? above : index
+            starts.append(above >= 0 && isHeaderSeparator(lines[above]) ? above : index)
+            // The block's own lines start no other block.
+            index = next - 1
         }
-        return nil
+        return starts
     }
 
     /// The label of a header line such as `From: Jane` or `**Sent:** Friday`,
@@ -345,20 +359,31 @@ enum QuotedHistory {
         return removal
     }
 
-    /// Whether `documents` still have Zoho's marked header (id
-    /// `Zm-_Id_-Sgn1`) in Zoho's quote container. Read it after
-    /// `removeHistory`, which removes the header when nothing follows it:
-    /// a header that is left is either above the sender's text or above
-    /// something the HTML pass stopped at (a footer, a reply under the
-    /// quote), and in English it reads like Outlook's header block.
-    static func hasZohoHeader(in documents: [HTMLDocument]) -> Bool {
-        documents.contains { document in
-            path(in: contentRoot(of: document)) { element in
-                isQuoteContainer(element) && element.children.contains { node in
-                    (node as? DOMElement).flatMap { attribute("id", of: $0) }.map(containerAttributionIDs.contains) == true
+    /// How many of Zoho's marked headers (id `Zm-_Id_-Sgn1`, in Zoho's quote
+    /// container, not inside a blockquote) are left in `documents` and read
+    /// like Outlook's header block (English labels). Read it after
+    /// `removeHistory`, which removes a header when nothing follows it: a
+    /// header that is left is above the sender's text, or above something
+    /// the HTML pass stopped at (a footer, a disclaimer, a reply under the
+    /// quote), and may sit in history that only the text pass cuts (under
+    /// a classic Outlook header).
+    static func zohoHeaderBlocks(in documents: [HTMLDocument]) -> Int {
+        var count = 0
+        for document in documents {
+            var pending: [(element: DOMElement, inQuote: Bool)] = [(contentRoot(of: document), false)]
+            while let entry = pending.popLast() {
+                let inQuote = entry.inQuote || entry.element.name == "blockquote"
+                for case let child as DOMElement in entry.element.children {
+                    if !inQuote, isQuoteContainer(entry.element),
+                       attribute("id", of: child).map(containerAttributionIDs.contains) == true {
+                        let lines = child.text().split(separator: "\n", omittingEmptySubsequences: false)
+                        count += outlookHeaderStarts(in: lines).isEmpty ? 0 : 1
+                    }
+                    pending.append((child, inQuote))
                 }
-            } != nil
+            }
         }
+        return count
     }
 
     /// The element that `HTMLDocument.markdown()` converts: the `<html>`

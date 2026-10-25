@@ -540,7 +540,27 @@ final class QuotedHistoryTests: XCTestCase {
             let result = try await trimmed("<div><p>Great, see you then.</p>" + header + "<div>" + zoho + "</div></div>")
             XCTAssertEqual(result.text, "Great, see you then.", header)
             XCTAssertTrue(result.trimmed, header)
+
+            // A disclaimer that the Outlook side's server adds stops the HTML
+            // walk, so Zoho's header is left; Outlook's header still cuts.
+            let disclaimer = try await trimmed(
+                "<div><p>Great, see you then.</p>" + header + "<div>" + zoho + "</div></div><div>CONFIDENTIALITY NOTICE: This email is for its recipients only.</div>"
+            )
+            XCTAssertEqual(disclaimer.text, "Great, see you then.", header)
+
+            // The Zoho reply has an answer under its header, which keeps it.
+            let answered = zoho.replacingOccurrences(of: #"<div><br></div><blockquote"#, with: #"<div>Noon works.</div><blockquote"#)
+            let under = try await trimmed("<div><p>Great, see you then.</p>" + header + "<div>" + answered + "</div></div>")
+            XCTAssertEqual(under.text, "Great, see you then.", header)
         }
+
+        // New Outlook wraps the history in its container; with a disclaimer
+        // under it, that container is not at the end either.
+        let newOutlook = try await trimmed(
+            #"<div>Great, see you then.</div><div id="mail-editor-reference-message-container"><div><b>From:</b> Jane Doe &lt;jane@example.com&gt;<br><b>Sent:</b> Friday, October 23, 2026 11:00 AM<br><b>Subject:</b> RE: Lunch</div>"#
+                + zoho + "</div><div>This message is confidential.</div>"
+        )
+        XCTAssertEqual(newOutlook.text, "Great, see you then.")
     }
 
     func testAZohoForwardIsKept() async throws {
