@@ -696,12 +696,16 @@ account (`--account <name>`).
 - **Quote marks in real mail** (checked 2026-10-25): Gmail's Quote button
   writes the same `blockquote.gmail_quote` as a reply's quote, so only one
   inside `div.gmail_quote` (or Zoho's `div.zmail_extra`) is history.
-  Superhuman writes Gmail's classes and ends with a hidden tracking image
+  Superhuman writes Gmail's classes but no `gmail_attr`: like Gmail's
+  older markup, it puts the attribution as bare text in `div.gmail_quote`,
+  so a container left with one line (and no image) after its quote is
+  removed. Superhuman also ends with a hidden tracking image
   (`display: none`). Zoho on the web puts a `From:` / `Date:` / `Subject:`
   block (id `Zm-_Id_-Sgn1`) above `blockquote#blockquote_zmail`, not an
-  "On ... wrote:" line. iPhone plain text quotes its attribution
-  (`> On ... wrote:`). Outlook's quoted HTML inside another app's quote
-  keeps its ids with an `x_` prefix.
+  "On ... wrote:" line, and a Zoho forward starts `div.zmail_extra` with
+  `============ Forwarded message ============`. iPhone plain text quotes
+  its attribution (`> On ... wrote:`). Outlook's quoted HTML inside another
+  app's quote keeps its ids with an `x_` prefix.
 - **SwiftText's DOM:** `DOMElement.children` is a public `var`, so
   `QuotedHistory` removes nodes in place before `HTMLDocument.markdown()`;
   `DOMText` is internal, so a text node is read with `DOMNode.text()`.

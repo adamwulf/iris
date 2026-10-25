@@ -262,9 +262,9 @@ enum QuotedHistory {
     /// and such a container is searched like any element. (The text pass
     /// still cuts a quoted forward under an English attribution.)
     ///
-    /// A quote container whose quote was removed, and that holds only inline
-    /// text after it, is removed too: that text is an attribution without a
-    /// class (Gmail's older markup, Superhuman).
+    /// A quote container whose quote was removed, and that holds only one
+    /// line of text after that (no image), is removed too: that line is an
+    /// attribution without a class (Gmail's older markup, Superhuman).
     ///
     /// Outlook's reply header, `div#divRplyFwdMsg`, is removed with everything
     /// after it, and with the `<hr>` just above it: Outlook does not put the
@@ -363,10 +363,11 @@ enum QuotedHistory {
             removal = removal + inner.removal
             if inner.contentLeft {
                 // Gmail's older markup and Superhuman put the attribution
-                // in the container as bare text, with no class. When the
-                // quote under it is gone and only such inline text is left,
-                // it is that attribution.
-                if isQuoteContainer(child) && inner.removal.quote && !hasBlockContent(child) {
+                // in the container with no class, as bare text or in a
+                // plain div. When the quote under it is gone and only one
+                // line is left, it is that attribution: an answer written in
+                // the container adds a line (or an earlier quote does).
+                if isQuoteContainer(child) && inner.removal.quote && isOneLine(child) {
                     element.children.remove(at: index)
                     continue
                 }
@@ -376,18 +377,18 @@ enum QuotedHistory {
         return (removal, false)
     }
 
-    /// Whether `element` holds a block element (`p`, `div`, `blockquote`,
-    /// and so on) with content.
-    static func hasBlockContent(_ element: DOMElement) -> Bool {
+    /// Whether `element` holds exactly one line of text, and no image.
+    static func isOneLine(_ element: DOMElement) -> Bool {
         var pending: [DOMNode] = element.children
         while let node = pending.popLast() {
-            guard let child = node as? DOMElement else { continue }
-            if child.isBlockLevelElement && hasContent(child) {
-                return true
+            if let child = node as? DOMElement {
+                if child.name == "img" {
+                    return false
+                }
+                pending.append(contentsOf: child.children)
             }
-            pending.append(contentsOf: child.children)
         }
-        return false
+        return element.text().split(whereSeparator: \.isNewline).filter { !$0.allSatisfy(\.isWhitespace) }.count == 1
     }
 
     /// Whether `element` is a signature that `removeHistory(fromHTMLParts:inReply:)` removes.

@@ -414,11 +414,13 @@ Limits:
   and ids that Gmail, Zoho, Apple Mail, Thunderbird, and Outlook on the web
   write do not depend on the language.
 - A reply that quotes a forward with no note of its own: the quoted
-  forward is hidden when the subject starts with `Re:`, or when an English
-  `On ... wrote:` line (quoted or not) is above it. Otherwise (a Gmail
-  reply in another language with an edited subject) it is kept. A forward
-  whose subject was changed to start with `Re:` loses the Apple Mail
-  message it forwards; `--full` shows it.
+  forward is hidden when the subject starts with `Re:`, when an English
+  `On ... wrote:` line (quoted or not) is above it, or when the quote
+  starts with its attribution (Apple Mail on the Mac). It is kept when the
+  quote starts with the forward line and nothing marks the reply, for
+  example a Gmail reply in another language with an edited subject. A
+  forward whose subject was changed to start with `Re:` loses the message
+  it forwards when that message is in a quote; `--full` shows it.
 - A quote that an Apple Mail sender adds to the end of their own text
   (with "Increase Quote Level") looks like a reply's quote, so it is hidden.
 - A signature without the `-- ` line (most signatures that people type) is

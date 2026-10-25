@@ -440,12 +440,42 @@ final class QuotedHistoryTests: XCTestCase {
     }
 
     func testAnAttributionWithoutAClassInGmailsContainerGoesInAnyLanguage() async throws {
-        // Gmail's older markup: the attribution is bare text in div.gmail_quote.
-        let result = try await trimmed("""
-        <div dir="ltr">Klingt gut.</div><div class="gmail_extra"><br><div class="gmail_quote">Am 24. Oktober 2026 um 09:41 schrieb Jane Doe <span dir="ltr">&lt;<a href="mailto:jane@example.com">jane@example.com</a>&gt;</span>:<br><blockquote class="gmail_quote">Mittagessen am Dienstag?</blockquote></div></div>
+        // Gmail's older markup: the attribution is bare text in div.gmail_quote,
+        // or a plain div.
+        for attribution in [
+            #"Am 24. Oktober 2026 um 09:41 schrieb Jane Doe <span dir="ltr">&lt;<a href="mailto:jane@example.com">jane@example.com</a>&gt;</span>:<br>"#,
+            #"<div dir="ltr">Am Fr., 24. Okt. 2026 um 09:41 Uhr schrieb Jane Doe &lt;jane@example.com&gt;:<br></div>"#,
+        ] {
+            let result = try await trimmed("""
+            <div dir="ltr">Klingt gut.</div><div class="gmail_extra"><br><div class="gmail_quote">\(attribution)<blockquote class="gmail_quote">Mittagessen am Dienstag?</blockquote></div></div>
+            """)
+            XCTAssertEqual(result.text, "Klingt gut.", attribution)
+            XCTAssertTrue(result.trimmed, attribution)
+        }
+    }
+
+    func testAnAnswerUnderABareAttributionIsKept() async throws {
+        // The attribution has no class, so only the lines left in the
+        // container tell it from an answer written there.
+        for answer in ["Yes, Tuesday works.<br><br>", #"<img src="cid:photo"><br>"#] {
+            let result = try await trimmed("""
+            <div dir="ltr">See below.</div><div class="gmail_quote">On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <span>&lt;jane@example.com&gt;</span> wrote:<br><br>\(answer)<blockquote class="gmail_quote">Lunch on Tuesday?</blockquote></div>
+            """)
+            XCTAssertTrue(result.text.contains("wrote:"), "\(answer): \(result.text)")
+            XCTAssertTrue(result.trimmed, answer)
+        }
+        let kept = try await trimmed("""
+        <div dir="ltr">See below.</div><div class="gmail_quote">On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <span>&lt;jane@example.com&gt;</span> wrote:<br><br>Yes, Tuesday works.<br><br><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote></div>
         """)
-        XCTAssertEqual(result.text, "Klingt gut.")
-        XCTAssertTrue(result.trimmed)
+        XCTAssertTrue(kept.text.hasSuffix("Yes, Tuesday works."), kept.text)
+
+        // Bare-text answers between quoted lines: the earlier quote stays too.
+        let inline = try await trimmed("""
+        <div>See inline.</div><div class="gmail_quote">On Fri, Jane wrote:<br><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote>Yes, Tuesday works.<br><blockquote class="gmail_quote">See you!</blockquote></div>
+        """)
+        XCTAssertTrue(inline.trimmed)
+        XCTAssertTrue(inline.text.contains("> Lunch on Tuesday?"), inline.text)
+        XCTAssertTrue(inline.text.hasSuffix("Yes, Tuesday works."), inline.text)
     }
 
     func testAHiddenElementAloneIsNotHistory() async throws {
