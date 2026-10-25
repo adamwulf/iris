@@ -5,6 +5,16 @@ Method: GitHub API and README data, source reading at pinned commits, live pre-l
 `CAPABILITY` captures from the three providers, and throwaway `swift build` tests run on this
 machine (not committed).
 
+This is the original library-selection research, not a current status
+report. Library versions, activity, capabilities, and unverified items
+below are snapshots from that investigation. The implementation plan in
+section 4 is superseded: its proposed larger raw-download timeout and
+Gmail-specific thread search are not implemented. For current behavior,
+see [README.md](../../README.md), especially "Threads" and "Large
+messages"; for remaining work, see [the roadmap](../roadmap.md).
+Section 5 records what had not been verified at research time; later
+provider checks are recorded in README.md under "Validation status".
+
 ## Recommendation (short)
 
 Use **SwiftMail** (Cocoanetics) for IMAP and MIME decoding, **pinned by revision**, plus
@@ -122,7 +132,7 @@ Trade-offs and risks:
   "all messages in this thread" with `X-GM-THRID` needs swift-nio-imap after PR #853, which is
   newer than SwiftMail's pin[^11][^45].
 
-What IrisKit still writes:
+Original implementation plan (superseded; see the current README and roadmap):
 
 1. A `MailClient` protocol over `IMAPServer`, a fake for tests, and `.env` multi-account config.
 2. Paging: `examineMailbox`, then newest-first UID or sequence windows through
@@ -142,7 +152,7 @@ What IrisKit still writes:
 7. Quote and history trimming (no candidate has it).
 8. Provider notes: Gmail label/UID duplication, iCloud username form, Zoho data-center hosts.
 
-## 5. Limitations / not verified
+## 5. Limitations / not verified at research time
 
 - **Post-login CAPABILITY** for all three providers was not captured (no credentials here). The
   "full CAPABILITY" row comes from SwiftMail's README table, which has no capture dates for Gmail

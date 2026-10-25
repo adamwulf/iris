@@ -115,9 +115,9 @@ final class MessageDecoderPartsTests: XCTestCase {
     /// The header fields here are the outline's, written by hand to match the
     /// whole message, so their checks show only that the document carries the
     /// outline's fields unchanged, not that SwiftMail's parsing of
-    /// `BODY[HEADER.FIELDS]` agrees with EMLParser. That rests on SwiftMail's
-    /// source (it parses them with EMLParser's `buildMessageInfo`; see "Large
-    /// messages" in AGENTS.md) and on the live check in plans/roadmap.md.
+    /// `BODY[HEADER.FIELDS]` agrees with EMLParser. SwiftMail's source uses
+    /// EMLParser's `buildMessageInfo` for those fields; see "Large messages"
+    /// in AGENTS.md for the parsing differences.
     func testABodyPartsMessageHasTheBodyAndAttachmentIDsOfTheWholeMessage() async throws {
         for preference in BodyPreference.allCases {
             let fromWhole = try await MessageDecoder.decode(whole, body: preference)
