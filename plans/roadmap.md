@@ -6,69 +6,31 @@ and known limits. Implemented features and recorded live checks are in
 thread-search constraints are described there and in the original
 [library research](research/imap-libraries.md).
 
-## Next: iCloud validation
+## Validation status
 
-Adam confirmed on 2026-10-25 that all functionality works well with agents
-on his Zoho and Gmail accounts. Routine validation of those providers is
-complete. iCloud remains the provider to check end to end.
+Adam considers validation complete for his use as of 2026-10-25. Iris
+works with agents on his Zoho and Gmail accounts; `read`, `unread`, and
+`draft` are explicitly confirmed, and he believes an agent has also used
+attachment download. Direct iCloud testing is out of scope. Further
+provider or failure-case testing is not an active milestone; the known
+limits below remain useful when diagnosing a problem.
 
-- Run `iris check`, `iris mailboxes`, `iris list`, `iris show`, and
-  `iris thread` on iCloud. Check the list filters, subject matching, and
-  that `thread --format id` gives the same iris IDs as a rendered thread
-  when all messages download.
-- Run `iris download` on a PDF, an inline image, and a forwarded message
-  (`message/rfc822`, saved as an `.eml`), and compare the bytes. Check
-  `show`, `thread`, and `draft` with a large original as well as a small
-  one.
-- Run `iris read`, `iris unread`, and `iris draft`. Confirm the flags in
-  another mail app, and that the draft opens in Apple Mail as its own
-  draft in the thread. Check the returned iris ID and `--attach`, including
-  a non-ASCII filename.
-- Record post-login CAPABILITY and Drafts/Sent names. The original
-  research captured only iCloud's pre-login capabilities.
+## Feature candidates
 
-## Targeted validation and provider details
+These are the remaining ideas, not a committed implementation order:
 
-These checks cover specific limits and failure handling beyond regular
-use. Keep results in README.md with the date, provider, and case checked.
+- **Archive and move messages:** let an agent file mail after processing it.
+- **An iris skill for agents:** `skill/iris/SKILL.md`, with guidance for
+  reading mail, using iris IDs, handling attachments, and saving drafts.
+- **Cc filtering:** extend `list` alongside the existing From and To
+  filters.
+- **File logging:** use FellerBuncher, as graham does, to retain diagnostic
+  logs for troubleshooting.
+- **Stable paging:** consider a cursor that does not shift when new mail
+  arrives; the interface is still an open question below.
 
-- Check wrong-password and wrong-host errors. For Gmail OAuth, check the
-  expired/revoked-token behavior in `iris auth status` and `iris check`.
-  Verify the README console setup steps when setting up another client.
-- Compare a 20 MB message's body, filenames, and estimated attachment
-  sizes in `show` and `thread` with `show --format raw` on a fast link;
-  check that `draft` quotes its body correctly. Download the PDF, compare
-  its bytes, and record the time against the 60 second part limit. On
-  Zoho and Gmail, record what BODYSTRUCTURE sends for a non-ASCII filename
-  (`filename*=`), and whether the outline's size, structure, and headers
-  arrive in one FETCH response or several.
-- On Zoho and Gmail, attach a file larger than the server accepts: record
-  APPENDLIMIT (`draftTooLarge`) or a tagged NO (`draftRefused` and its
-  reason), and the upload time against the 30 second limit.
-- On Zoho and Gmail, save a draft with `--attach` of a non-ASCII filename
-  (RFC 2231 `filename*=`). Check the name in Apple Mail and, for Gmail,
-  in its web view.
-- Record how Gmail and iCloud match SUBJECT, TEXT (`list --search`), and
-  TO (`list --to`) words, and how Zoho matches ordinary TEXT/TO words.
-  Zoho's earlier TEXT probe with a Message-ID does not establish those
-  matching rules.
-- Record Gmail's post-login CAPABILITY and Drafts/Sent names alongside
-  the existing Zoho record.
-
-## Quoted-history validation
-
-- Check trimming on a real Thunderbird reply, a new Outlook reply, and a
-  Gmail reply with answers between quoted lines. The existing real-message
-  checks and heuristic limits are in README.md, "Quoted history and
-  signatures". Use `--full` to compare the original body with the trimmed
-  output.
-
-## Later, maybe
-
-- More `list` filters (Cc), archive/move.
-- A live smoke test (`iris test`) against a real account, like graham's.
-- A file log (FellerBuncher) like graham's.
-- `skill/iris/SKILL.md` for agents.
+A live smoke-test command (`iris test`), like graham's, remains an optional
+future diagnostic tool. It is not a prerequisite for the features above.
 
 ## Known limits
 

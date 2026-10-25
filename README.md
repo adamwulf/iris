@@ -11,7 +11,7 @@ mail app.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. Adam confirms that all
 functionality works well with agents on his Zoho and Gmail accounts.
-iCloud still needs live validation. See
+Direct iCloud testing is outside the current validation scope. See
 [Validation status](#validation-status-2026-10-25) for the recorded coverage.
 
 ## Install
@@ -91,8 +91,7 @@ Gmail account that cannot make one signs in with Google instead (see
 Some Google accounts cannot make an app password: Google says "The setting
 you are looking for is not available for your account." Such an account
 signs in with Google instead (OAuth 2.0, and IMAP `AUTHENTICATE XOAUTH2`).
-Gmail functionality is working in Adam's regular use. Token-expiry and
-revocation checks remain in the roadmap as targeted failure-case tests.
+Gmail functionality is working in Adam's regular use.
 
 First make your own OAuth client in the Google Cloud console. You do this
 once:
@@ -214,19 +213,14 @@ client ID but no refresh token yet.
 
 ### Validation status (2026-10-25)
 
-Adam confirms successful use of all iris functionality with agents on both
-Zoho and Gmail accounts. This supersedes the earlier notes that those
-providers or the newer commands still needed basic live validation.
+Adam considers validation complete for his use. Iris works successfully
+with agents on his Zoho and Gmail accounts; `read`, `unread`, and `draft`
+are explicitly confirmed. He believes an agent has also used attachment
+download.
 
-| Area | Status | Remaining validation |
-| ---- | ------ | -------------------- |
-| Zoho and Gmail | All functionality working in regular agent use, confirmed by Adam on 2026-10-25 | Targeted checks of documented limits and failure handling; record provider details when useful |
-| iCloud IMAP | Pre-login capabilities captured during library research | Authenticated commands, thread searching, writes, downloads, and post-login capabilities/mailbox names |
-| Quoted-history trimming | Working in regular use; real messages from several mail apps checked on 2026-10-25 | Specific reply shapes from Thunderbird, new Outlook, and Gmail with answers between quoted lines |
-
-The remaining validation tasks are in [the roadmap](plans/roadmap.md).
-They cover iCloud and specific protocol or message-format cases, rather
-than rechecking routine Zoho and Gmail operation.
+Direct iCloud testing is not planned and is outside the current validation
+scope. Known limits remain documented below and in
+[the roadmap](plans/roadmap.md), whose focus is now future features.
 
 The earlier Zoho check on 2026-10-24 used `imappro.zoho.com`. Its post-login
 CAPABILITY was:
