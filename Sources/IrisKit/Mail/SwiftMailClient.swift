@@ -54,6 +54,7 @@ struct SwiftMailClient: MailWriteClient {
         /// `mailbox` is the wire name, in modified UTF-7.
         case select(mailbox: String)
         case store
+        case expunge
         /// `mailbox` is the wire name, in modified UTF-7.
         case append(mailbox: String)
 
@@ -70,6 +71,7 @@ struct SwiftMailClient: MailWriteClient {
                 return "FETCH"
             case .select: return "SELECT"
             case .store: return "STORE"
+            case .expunge: return "UID EXPUNGE"
             case .append: return "APPEND"
             }
         }
@@ -369,6 +371,37 @@ struct SwiftMailClient: MailWriteClient {
         }
     }
 
+    func fetchFlags(uid: UInt32) async throws -> [String]? {
+        try await run(.fetchEnvelopes) {
+            let messages = try await server.fetchMessageInfosBulk(
+                using: UIDSet(UID(uid)), options: .uidFlagsOnly
+            )
+            return Self.flags(in: messages, uid: uid)
+        }
+    }
+
+    /// Ignore unsolicited FETCH answers for other messages.
+    static func flags(in messages: [MessageInfo], uid: UInt32) -> [String]? {
+        messages.last(where: { $0.uid?.value == uid })?.flags.map { flag in
+            if case .custom(let value) = flag { return value }
+            return "\\" + flag.description
+        }
+    }
+
+    func setDeleted(uid: UInt32) async throws {
+        try await run(.store) {
+            try await server.store(flags: [.deleted], on: UIDSet(UID(uid)), operation: .add)
+        }
+    }
+
+    func expunge(uid: UInt32) async throws {
+        try await run(.expunge) {
+            // This overload refuses without UIDPLUS; it never falls back to
+            // expunge(), which would remove unrelated deleted messages.
+            try await server.expunge(messages: UIDSet(UID(uid)))
+        }
+    }
+
     /// `+FLAGS` adds `\Seen` (read), and `-FLAGS` removes it (unread).
     static func storeOperation(seen: Bool) -> StoreData.StoreType {
         seen ? .add : .remove
@@ -543,27 +576,39 @@ struct SwiftMailClient: MailWriteClient {
 }
 
 extension Email {
-    /// `draft` as SwiftMail writes it. `constructContent` adds Date (now), a new
-    /// Message-ID, and multipart/alternative with the text and HTML parts.
-    /// With attachments, it puts that inside multipart/mixed, followed by one
-    /// base64 part per file with `Content-Disposition: attachment`.
+    /// `draft` as SwiftMail writes it. New replies get a Message-ID; updates
+    /// retain theirs. SwiftMail builds the body alternatives and the mixed or
+    /// related multipart containers needed for regular and inline attachments.
     init(draft: DraftMessage) {
         func emailAddress(_ address: MailAddress) -> EmailAddress {
             EmailAddress(name: address.name, address: address.address)
         }
         let attachments = draft.attachments.map { attachment in
-            Attachment(filename: attachment.filename, mimeType: attachment.mimeType, data: attachment.data, isInline: false)
+            Attachment(
+                filename: attachment.filename, mimeType: attachment.mimeType, data: attachment.data,
+                contentID: attachment.contentID, isInline: attachment.isInline
+            )
         }
         self.init(
             sender: emailAddress(draft.from),
             recipients: draft.to.map(emailAddress),
             ccRecipients: draft.cc.map(emailAddress),
+            bccRecipients: draft.bcc.map(emailAddress),
             subject: draft.subject,
             textBody: draft.markdown,
             htmlBody: draft.html,
             attachments: attachments.isEmpty ? nil : attachments
         )
-        let headers = draft.threadingHeaders
+        var headers = draft.threadingHeaders
+        // Email's SMTP-oriented writer deliberately omits Bcc. A saved draft
+        // needs it, so use SwiftMail's public RFC 5322 address descriptions.
+        if !draft.bcc.isEmpty {
+            headers["Bcc"] = draft.bcc.map { emailAddress($0).description }.joined(separator: ", ")
+        }
+        if !draft.replyTo.isEmpty {
+            headers["Reply-To"] = draft.replyTo.map { emailAddress($0).description }.joined(separator: ", ")
+        }
+        messageID = draft.messageID.flatMap { MessageID($0) }
         additionalHeaders = headers.isEmpty ? nil : headers
     }
 }

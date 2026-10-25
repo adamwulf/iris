@@ -21,6 +21,9 @@ actor FakeMailClient: MailWriteClient {
         case fetchBodyPart(AttachmentID, UInt32)
         case select(String)
         case setSeen(Bool, UInt32)
+        case fetchFlags(UInt32)
+        case setDeleted(UInt32)
+        case expunge(UInt32)
         case appendDraft(DraftMessage, String)
         case logout
     }
@@ -28,7 +31,8 @@ actor FakeMailClient: MailWriteClient {
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
         case login, capabilities, listMailboxes, examine, searchUIDs, searchSubject, searchMessageIDs, fetchEnvelopes,
-             fetchThreadHeaders, fetchOutline, fetchRawMessage, fetchPart, fetchBodyPart, select, setSeen, appendDraft
+             fetchThreadHeaders, fetchOutline, fetchRawMessage, fetchPart, fetchBodyPart, select, setSeen, appendDraft,
+             fetchFlags, setDeleted, expunge
     }
 
     /// How the fake answers a search in a mailbox of `mailboxMessages`.
@@ -117,6 +121,7 @@ actor FakeMailClient: MailWriteClient {
     private let bodyPartErrors: [UInt32: any Error]
     private let parts: [UInt32: [AttachmentID: Data]]
     private let appendedUID: UInt32?
+    private let flags: [UInt32: [String]]
     private let errors: [Method: any Error]
     /// The wire name of the mailbox that the last EXAMINE opened.
     private var openMailbox: String?
@@ -169,6 +174,7 @@ actor FakeMailClient: MailWriteClient {
         bodyPartErrors: [UInt32: any Error] = [:],
         parts: [UInt32: [AttachmentID: Data]] = [:],
         appendedUID: UInt32? = nil,
+        flags: [UInt32: [String]] = [:],
         errors: [Method: any Error] = [:]
     ) {
         self.accountName = accountName
@@ -186,6 +192,7 @@ actor FakeMailClient: MailWriteClient {
         self.bodyPartErrors = bodyPartErrors
         self.parts = parts
         self.appendedUID = appendedUID
+        self.flags = flags
         self.errors = errors
     }
 
@@ -396,6 +403,19 @@ actor FakeMailClient: MailWriteClient {
     func appendDraft(_ draft: DraftMessage, to mailbox: String) async throws -> UInt32? {
         try record(.appendDraft(draft, mailbox), .appendDraft)
         return appendedUID
+    }
+
+    func fetchFlags(uid: UInt32) async throws -> [String]? {
+        try record(.fetchFlags(uid), .fetchFlags)
+        return flags[uid]
+    }
+
+    func setDeleted(uid: UInt32) async throws {
+        try record(.setDeleted(uid), .setDeleted)
+    }
+
+    func expunge(uid: UInt32) async throws {
+        try record(.expunge(uid), .expunge)
     }
 
     func logout() async {

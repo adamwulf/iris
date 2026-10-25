@@ -23,12 +23,22 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case htmlNotConverted(reason: String, hasTextPart: Bool)
 
     // Drafts
+    /// Only a live message with the Draft flag can be updated.
+    case notADraft(IrisID)
+    /// Safe replacement needs targeted UID EXPUNGE, never mailbox-wide EXPUNGE.
+    case draftUpdateNeedsUIDPlus(account: String)
+    /// The source cannot be represented without losing its content.
+    case draftNotPreserved(reason: String)
+    /// APPEND did not finish; the original has not been touched.
+    case draftUpdateMayBeSaved(original: IrisID, reason: String)
+    /// APPEND succeeded, but its UID was missing or removing the original failed.
+    case draftUpdateIncomplete(original: IrisID, replacement: IrisID?, reason: String)
 
-    /// `iris draft` got its reply body both as an argument and with `--file`.
+    /// `iris draft` got its body both as an argument and with `--file`.
     case draftBodyGivenTwice
-    /// `iris draft` got no reply body, and stdin is a terminal.
+    /// `iris draft` got no body, and stdin is a terminal.
     case draftBodyMissing
-    /// The reply body is empty or only whitespace. `source` says where it came
+    /// The draft body is empty or only whitespace. `source` says where it came
     /// from, such as `the file "reply.md"`.
     case draftBodyEmpty(source: String)
     /// The reply body could not be read from a file or from stdin.
@@ -45,9 +55,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// have saved the draft. `mailbox` is the Drafts mailbox: the wire name
     /// from `SwiftMailClient`, and the decoded name after `MailWriter`.
     case draftMayBeSaved(account: String, mailbox: String, reason: String)
-    /// A file given with `iris draft --attach` is missing or cannot be read.
+    /// A file given with `iris draft reply --attach` is missing or cannot be read.
     case draftAttachmentNotRead(path: String, reason: String)
-    /// A path given with `iris draft --attach` is a folder, not a file.
+    /// A path given with `iris draft reply --attach` is a folder, not a file.
     case draftAttachmentIsAFolder(path: String)
     /// With `--attach`, the reply argument names a file or folder that exists:
     /// most likely a second path after one `--attach` (`--attach a.pdf b.pdf`,
@@ -167,22 +177,40 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 : problem + ", and the message has no text part. "
                     + "Run the command again with --format raw to see the message source."
         // Drafts
+        case .notADraft(let id):
+            return "\(id) is not an editable draft (it needs the \\Draft flag and must not be deleted). "
+                + "Use `iris draft reply \(MessagePage.shellQuoted(id.description)) 'Your reply'` to create a reply, "
+                + "or choose an existing draft in your mail app."
+        case .draftUpdateNeedsUIDPlus(let account):
+            return "The server for account \"\(account)\" does not support UIDPLUS. "
+                + "iris cannot safely remove only the old draft. Edit the draft in your mail app; nothing was changed."
+        case .draftNotPreserved(let reason):
+            return "iris cannot preserve this draft: \(reason). Nothing was changed. Edit it in your mail app."
+        case .draftUpdateMayBeSaved(let original, let reason):
+            return "Saving the replacement for \(original) did not finish: \(reason). "
+                + "The original was not removed, but a replacement may exist in \"\(original.mailbox)\". "
+                + "Inspect that mailbox in your mail app before retrying, to avoid duplicate drafts."
+        case .draftUpdateIncomplete(let original, let replacement, let reason):
+            let saved = replacement.map { " as \($0)" } ?? " in \"\(original.mailbox)\" (the server reported no usable replacement iris ID)"
+            return "The replacement draft was saved\(saved), but updating \(original) did not finish: \(reason). "
+                + "Inspect both drafts in your mail app before retrying. Keep the replacement and remove the old draft "
+                + "if it remains; the old draft may already be marked deleted."
         case .draftBodyGivenTwice:
-            return "The reply was given twice: as an argument and with -F. "
+            return "The draft body was given twice: as an argument and with -F. "
                 + "Give it one way: as an argument, with -F <path>, or on stdin."
         case .draftBodyMissing:
-            return "No reply was given. Give the reply in Markdown as an argument "
-                + "(iris draft '<iris-id>' 'Thanks!'), with -F <path> (-F - reads stdin), "
-                + "or on stdin (echo 'Thanks!' | iris draft '<iris-id>')."
+            return "No draft body was given. Give the body in Markdown as an argument "
+                + "(iris draft reply '<iris-id>' 'Thanks!' or iris draft update '<iris-id>' 'Updated text'), "
+                + "with -F <path> (-F - reads stdin), or on stdin."
         case .draftBodyEmpty(let source):
-            return "The reply from \(source) is empty. Write the reply in Markdown, "
+            return "The draft body from \(source) is empty. Write the body in Markdown, "
                 + "and give it as an argument, with -F <path>, or on stdin."
         case .draftBodyNotRead(let source, let reason):
             // In parentheses: Foundation's reasons end with a period.
-            return "Could not read the reply from \(source) (\(reason)). "
-                + "Check the path, or give the reply as an argument or on stdin."
+            return "Could not read the draft body from \(source) (\(reason)). "
+                + "Check the path, or give the body as an argument or on stdin."
         case .draftBodyNotUTF8(let source):
-            return "The reply from \(source) is not UTF-8 text. Save it as UTF-8, or give the reply as an argument."
+            return "The draft body from \(source) is not UTF-8 text. Save it as UTF-8, or give the body as an argument."
         case .draftFromAddressMissing(let account, let username):
             let key = AccountResolver.fromKey(account: account)
             return "iris needs your email address for the From line of the draft, and the username of "
@@ -195,8 +223,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "to see the mailboxes and their attributes."
         case .draftTooLarge(let account, let size, let limit):
             return "The draft is \(size) bytes, and the server takes at most \(limit) bytes "
-                + "(account \"\(account)\"). Attach fewer or smaller files, shorten the reply, "
-                + "or leave out the quoted message with --no-quote."
+                + "(account \"\(account)\"). Shorten the body or reduce attachments in your mail app; for draft reply, "
+                + "leave out the quoted message with --no-quote."
         case .draftMayBeSaved(let account, let mailbox, let reason):
             let list = MessagePage.listCommand(
                 account: account, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit, format: .listDefault
@@ -211,13 +239,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "\"\(path)\" is a folder, and --attach takes a file. "
                 + "Give --attach once for each file in the folder, or attach a .zip of it."
         case .draftBodyNamesAFile(let path):
-            return "The reply is \"\(path)\", which is the name of a file. Each --attach takes one path, "
+            return "The draft body is \"\(path)\", which is the name of a file. Each --attach takes one path, "
                 + "so a second path after it (or the second file that a pattern such as *.pdf matched) "
-                + "becomes the reply. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
-                + "and give a reply that is in a file with -F <path>."
+                + "becomes the body. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
+                + "and give a body that is in a file with -F <path>."
         case .draftRefused(let account, let mailbox, let reason):
             return "The server refused to save the draft in \"\(mailbox)\" (account \"\(account)\"): \(reason). "
-                + "The usual cause is the draft's size: attach fewer or smaller files, or leave out the quoted "
+                + "The usual cause is the draft's size: shorten the body or reduce attachments in your mail app. For draft reply, leave out the quoted "
                 + "message with --no-quote. A full mailbox is another: make room, then try again."
         // IMAP
         case .loginFailed(let account, let username, let host, let reason):

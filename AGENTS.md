@@ -43,7 +43,7 @@ Sources/IrisKit/
                the thread walk, one attachment, errors),
                MailModels (rows, pages, ThreadMessage, DownloadedMessage),
                MailWriter (the calls that change mail: read, unread, and
-               saving a draft; SavedDraft),
+               saving and updating a draft; SavedDraft),
                MessageFilter (the `list` filter options, sent as UID SEARCH),
                IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>),
                AttachmentID (a part's MIME section, such as 1.2, inside one message),
@@ -61,6 +61,7 @@ Sources/IrisKit/
                DraftAttachment (a file of --attach: name, MIME type, bytes),
                ReplyComposer (MessageDocument -> DraftMessage), DraftMessage
                (headers, parts, attachments, References folding),
+               DraftUpdater (preserves a saved draft while replacing its body),
                MarkdownHTML (the HTML part)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
                MailAddress (the one address type), DateText, ModifiedUTF7,
@@ -179,7 +180,7 @@ drafts, so other mail apps do not show the new draft as unread. Both
 sessions log in through `SwiftMailClient.login()`, so a Google account
 sends AUTHENTICATE XOAUTH2 to save a draft as it does to read.
 
-The files of `draft --attach` are read before either session: the CLI
+The files of `draft reply --attach` are read before either session: the CLI
 calls `DraftAttachment.read(path:)` for each path before it reads the
 reply, so a bad path (`draftAttachmentNotRead`, `draftAttachmentIsAFolder`)
 fails before login. Each `--attach` takes one value (`.singleValue`), so in
@@ -257,6 +258,31 @@ and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
 browser opener). One test opens a socket: `LoopbackServerTests` runs the
 real `LoopbackServer`, which binds 127.0.0.1 only, and sends it the
 favicon request and the redirect over loopback.
+
+`MailWriter.updateDraft(_:body:)` is one write session in the input mailbox:
+SELECT, UID FETCH FLAGS (the message must have `\Draft` and not `\Deleted`),
+CAPABILITY (UIDPLUS is required), and a whole raw download. `DraftUpdater`
+parses it with SwiftMail, replaces the body with Markdown plus rendered HTML,
+and preserves From, To/Cc/Bcc, Reply-To, subject, Message-ID, full threading
+header values, and attachments including inline bytes and Content-IDs. It adds
+no quote. APPEND saves in the same mailbox first; only a confirmed usable
+replacement UID allows STORE `+FLAGS \Deleted` and `expunge(messages: UIDSet)`
+of the original UID. Never call the mailbox-wide `expunge()` overload. Missing
+APPENDUID and cleanup failures are `draftUpdateIncomplete`, which names both
+IDs when known. An uncertain APPEND is `draftUpdateMayBeSaved`, with the
+original untouched. Do not retry either blindly.
+
+SwiftMail `Email.constructContent` omits Bcc, so `Email(draft:)` adds an
+explicit Bcc header using the public encoded address description. It also adds
+Reply-To and retains Message-ID. `DraftMessage.preservedThreadingHeaders`
+keeps the unfolded In-Reply-To and References values for updates; controls are
+refused because SwiftMail writes additional header values verbatim.
+`DraftAttachment` carries `isInline` and `contentID` as well as bytes, name,
+and MIME type. SwiftMail only emits Content-ID for inline attachments: an
+explicitly non-inline attachment with one is rejected before APPEND. The whole
+download is required for attachment bytes and filenames; unlike reply
+creation, update is subject to the whole-message 10 second deadline at every
+size.
 
 ### Accounts
 
@@ -469,8 +495,8 @@ enforces it:
   `sharedCommands`) whose children are typed `[any ReadOnlyCommand.Type]`
   (only `Auth.Status`). Both use the same leaf types, so `iris ro auth status`
   behaves like `iris auth status`, and `iris ro auth login` fails to parse.
-  `draft` is a write command, not a group; a future `drafts` group (`list`
-  and `new`) would work the same way as `auth`.
+  `draft` is a write-only group with `reply` and `update`; neither leaf nor
+  the group belongs under `ro`. A future mixed group would work like `auth`.
 - A **write command whose ro form drops the options that write** cannot
   be a `ReadOnlyCommand` either. `download` is one: `-o` writes a file
   whose content comes from the sender, and without `-o` it only

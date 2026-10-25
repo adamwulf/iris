@@ -2,12 +2,16 @@ import Foundation
 
 /// A draft ready to save: the headers iris chooses, the two body parts, and
 /// the attachments. SwiftMail adds the rest when it writes the message: Date
-/// (now), a new Message-ID, and the multipart/alternative structure, inside
+/// (now), a Message-ID for a new reply, and the multipart/alternative structure, inside
 /// multipart/mixed with the attachments when there are any.
 public struct DraftMessage: Sendable, Equatable {
     public let from: MailAddress
     public let to: [MailAddress]
     public let cc: [MailAddress]
+    public let bcc: [MailAddress]
+    public let replyTo: [MailAddress]
+    /// Updating a draft keeps its Message-ID; a new reply gets a new one.
+    public let messageID: String?
     public let subject: String
     /// The message ID that this draft replies to, with angle brackets. Nil when
     /// the original has no Message-ID.
@@ -19,9 +23,35 @@ public struct DraftMessage: Sendable, Equatable {
     /// The text/html part: the reply's Markdown rendered, then the quote
     /// (see `ReplyComposer.quotation(of:timeZone:)`).
     public let html: String
-    /// The files of `iris draft --attach`, in the order given. Each is a
-    /// regular attachment, not an inline one.
+    /// Files attached to a new reply, or the original draft's attachments,
+    /// including inline parts, when updating.
     public let attachments: [DraftAttachment]
+
+    /// Unfolded threading values from a draft being updated, including all
+    /// In-Reply-To IDs and any comments. New replies use `threadingHeaders`.
+    let preservedThreadingHeaders: [String: String]?
+
+    init(
+        from: MailAddress, to: [MailAddress], cc: [MailAddress],
+        bcc: [MailAddress] = [], replyTo: [MailAddress] = [], messageID: String? = nil,
+        subject: String, inReplyTo: String?, references: [String],
+        markdown: String, html: String, attachments: [DraftAttachment],
+        preservedThreadingHeaders: [String: String]? = nil
+    ) {
+        self.from = from
+        self.to = to
+        self.cc = cc
+        self.bcc = bcc
+        self.replyTo = replyTo
+        self.messageID = messageID
+        self.subject = subject
+        self.inReplyTo = inReplyTo
+        self.references = references
+        self.markdown = markdown
+        self.html = html
+        self.attachments = attachments
+        self.preservedThreadingHeaders = preservedThreadingHeaders
+    }
 
     /// The longest header line iris writes, as RFC 5322 (section 2.1.1) asks.
     static let maxLineLength = 78
@@ -29,6 +59,7 @@ public struct DraftMessage: Sendable, Equatable {
     /// `In-Reply-To` and `References`, for SwiftMail's `additionalHeaders`.
     /// Empty when there is nothing to reply to.
     var threadingHeaders: [String: String] {
+        if let preservedThreadingHeaders { return preservedThreadingHeaders }
         var headers: [String: String] = [:]
         if let inReplyTo {
             headers["In-Reply-To"] = inReplyTo

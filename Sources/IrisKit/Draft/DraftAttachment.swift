@@ -1,8 +1,8 @@
 import Foundation
 import SwiftMail
 
-/// A file that `iris draft --attach` attaches to the draft. iris reads every
-/// file before it connects, so a bad path fails before the login.
+/// A file attached with `iris draft reply --attach`, or an attachment kept
+/// when updating a draft. New files are read before iris connects.
 public struct DraftAttachment: Sendable, Equatable {
     /// The file's name in the draft: the last component of its path.
     public let filename: String
@@ -11,6 +11,17 @@ public struct DraftAttachment: Sendable, Equatable {
     public let mimeType: String
     /// The file's bytes. SwiftMail writes them in base64.
     public let data: Data
+    /// Preserved when updating a draft with inline attachments.
+    public let contentID: String?
+    public let isInline: Bool
+
+    init(filename: String, mimeType: String, data: Data, contentID: String? = nil, isInline: Bool = false) {
+        self.filename = filename
+        self.mimeType = mimeType
+        self.data = data
+        self.contentID = contentID
+        self.isInline = isInline
+    }
 
     /// The file at `path`, whole. A relative path starts in the current
     /// directory. An empty file is attached as it is.

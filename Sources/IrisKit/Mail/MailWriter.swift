@@ -90,6 +90,60 @@ public struct MailWriter: Sendable {
         return try await saveDraft(draft)
     }
 
+    /// Replaces a saved draft's body, without adding a quote. Recipients,
+    /// threading headers, and attachments come from the original message.
+    /// Saves in the same mailbox before removing the old UID. UIDPLUS is
+    /// required so no unrelated deleted message can be expunged. Callers must
+    /// use the returned iris ID for subsequent operations.
+    public func updateDraft(_ id: IrisID, body: String) async throws -> SavedDraft {
+        precondition(id.account == account.name, "\(id) is not in the account \(account.name)")
+        guard id.uid >= 1 else { throw IrisError.unknownMessage(id) }
+        let client = makeClient(account)
+        return try await client.session {
+            try await select(id.mailbox, with: client)
+            guard let flags = try await client.fetchFlags(uid: id.uid) else {
+                throw IrisError.unknownMessage(id)
+            }
+            guard flags.contains(where: { $0.lowercased() == #"\draft"# }),
+                  !flags.contains(where: { $0.lowercased() == #"\deleted"# }) else {
+                throw IrisError.notADraft(id)
+            }
+            guard try await client.capabilities().contains(where: { $0.uppercased() == "UIDPLUS" }) else {
+                throw IrisError.draftUpdateNeedsUIDPlus(account: account.name)
+            }
+            // Whole MIME is necessary here: the parts-only show path omits
+            // attachment bytes and BODYSTRUCTURE can lose attachment names.
+            let raw = try await client.fetchRawMessage(uid: id.uid)
+            guard !raw.isEmpty else { throw IrisError.unknownMessage(id) }
+            let draft = try DraftUpdater.replacingBody(in: raw, body: body)
+            let uid: UInt32?
+            do {
+                uid = try await client.appendDraft(draft, to: ModifiedUTF7.encode(id.mailbox))
+            } catch IrisError.draftMayBeSaved(_, _, let reason) {
+                throw IrisError.draftUpdateMayBeSaved(original: id, reason: reason)
+            } catch IrisError.draftRefused(let account, _, let reason) {
+                throw IrisError.draftRefused(account: account, mailbox: id.mailbox, reason: reason)
+            }
+            guard let uid, uid > 0, uid != id.uid else {
+                throw IrisError.draftUpdateIncomplete(
+                    original: id, replacement: nil,
+                    reason: "The server did not return a usable APPENDUID; the original was not removed"
+                )
+            }
+            let replacement = IrisID(account: account.name, mailbox: id.mailbox, uid: uid)
+            do {
+                try await client.setDeleted(uid: id.uid)
+                try await client.expunge(uid: id.uid)
+            } catch {
+                throw IrisError.draftUpdateIncomplete(
+                    original: id, replacement: replacement,
+                    reason: Redaction.redacting(account.secrets, in: error.localizedDescription)
+                )
+            }
+            return SavedDraft(mailbox: id.mailbox, irisID: replacement)
+        }
+    }
+
     /// Saves `draft` with the flags `\Seen \Draft` in the first mailbox that
     /// LIST marks `\Drafts`. A `draftMayBeSaved` or `draftRefused` error holds
     /// the decoded name.
