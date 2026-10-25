@@ -90,6 +90,24 @@ public enum AccountResolver {
         )
     }
 
+    /// Saves the refresh token from `iris auth login` as
+    /// `IRIS_<NAME>_GOOGLE_REFRESH_TOKEN` in the `.env` file that sets the
+    /// account's `IRIS_<NAME>_GOOGLE_CLIENT_ID` (the nearest one, from
+    /// `directory` up), and returns that file. Nil, with nothing written, when
+    /// no `.env` sets the client ID because it comes from the environment:
+    /// then the caller shows the line, so the user can save it.
+    public static func saveGoogleRefreshToken(
+        _ refreshToken: String,
+        account name: String,
+        startingIn directory: URL? = nil
+    ) throws -> URL? {
+        guard let fileURL = DotEnv.fileURL(settingKey: key(.googleClientID, account: name), startingIn: directory) else {
+            return nil
+        }
+        try DotEnv.setValue(refreshToken, forKey: key(.googleRefreshToken, account: name), in: fileURL)
+        return fileURL
+    }
+
     /// The lowercased name of the account a command uses: `name` if given,
     /// else the default account. It throws when that account is not configured.
     static func chosenAccountName(_ name: String?, in settings: [String: String]) throws -> String {

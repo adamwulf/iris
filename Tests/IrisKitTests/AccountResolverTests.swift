@@ -336,6 +336,43 @@ final class AccountResolverTests: XCTestCase {
         }
     }
 
+    func testSaveGoogleRefreshTokenWritesTheFileThatSetsTheClientID() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AccountResolverTests-\(UUID().uuidString)", isDirectory: true)
+        let child = dir.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let parentFile = dir.appendingPathComponent(".env")
+        let childFile = child.appendingPathComponent(".env")
+        try "IRIS_PERSONAL_GOOGLE_CLIENT_ID=id\nIRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=old\n".write(
+            to: parentFile, atomically: true, encoding: .utf8)
+        try "IRIS_WORK_IMAP_HOST=imap.example.com\n".write(to: childFile, atomically: true, encoding: .utf8)
+
+        let saved = try AccountResolver.saveGoogleRefreshToken("1//new", account: "personal", startingIn: child)
+
+        XCTAssertEqual(saved?.path, parentFile.path)
+        XCTAssertEqual(
+            try String(contentsOf: parentFile, encoding: .utf8),
+            "IRIS_PERSONAL_GOOGLE_CLIENT_ID=id\nIRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=1//new\n"
+        )
+        XCTAssertEqual(try String(contentsOf: childFile, encoding: .utf8), "IRIS_WORK_IMAP_HOST=imap.example.com\n")
+        XCTAssertEqual(
+            AccountResolver.settings(environment: [:], startingIn: child)["IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN"], "1//new"
+        )
+    }
+
+    func testSaveGoogleRefreshTokenWritesNothingWhenNoEnvFileSetsTheClientID() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AccountResolverTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent(".env")
+        try "IRIS_WORK_IMAP_HOST=imap.example.com\n".write(to: file, atomically: true, encoding: .utf8)
+
+        XCTAssertNil(try AccountResolver.saveGoogleRefreshToken("1//new", account: "personal", startingIn: dir))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "IRIS_WORK_IMAP_HOST=imap.example.com\n")
+    }
+
     func testSecretsListThePasswordOrTheClientSecretAndRefreshToken() throws {
         XCTAssertEqual(try AccountResolver.resolve(name: nil, settings: settings("WORK")).secrets, ["secret-WORK"])
         let google = try AccountResolver.resolve(name: nil, settings: googleSettings("PERSONAL", refreshToken: "1//refresh"))
