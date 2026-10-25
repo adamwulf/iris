@@ -407,7 +407,12 @@ Limits:
   So does the plain-text part of a Zoho reply (`--body text`), which does
   not quote the message under its header either. Zoho's HTML part, shown
   by default, keeps them. But a classic Outlook or Samsung Email reply to
-  such a Zoho reply (answers under Zoho's header) is shown whole.
+  such a Zoho reply (answers under Zoho's header) keeps that history (the
+  Outlook header and the Zoho reply).
+- A footer that a mailing list or a mail server adds under the quote
+  without a `-- ` line (Mailman's, a company disclaimer) reads as new text
+  after the quote, so the quote is kept. A `-- ` footer (Google Groups) is
+  cut with the quote.
 - Outlook writes the same header for a forward. A forward is known only by
   `Fwd:` or `Fw:`, so a forward from an Outlook in another language
   (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.

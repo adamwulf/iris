@@ -590,13 +590,13 @@ final class QuotedHistoryTests: XCTestCase {
         let signed = try await MessageDecoder.htmlDocument(fromHTML: """
         <div>FYI</div><div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>From: Jane</div><div>Lunch on Tuesday?</div><div class="gmail_signature">Jane</div></div>
         """)
-        XCTAssertEqual(QuotedHistory.removeHistory(fromHTMLParts: [signed]), QuotedHistory.Removal())
+        XCTAssertEqual(QuotedHistory.removeHistory(fromHTMLParts: [signed]), QuotedHistory.Removal(keptForward: true))
 
         let outlook = try await MessageDecoder.htmlDocument(fromHTML: """
         <div>FYI</div><div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>From: Jane</div><div>Sounds good.</div><hr><div id="divRplyFwdMsg"><b>From:</b> Bob<br><b>Sent:</b> Thursday<br><b>Subject:</b> Lunch</div><div>Who is in?</div></div>
         """)
         XCTAssertEqual(
-            QuotedHistory.removeHistory(fromHTMLParts: [outlook]), QuotedHistory.Removal(),
+            QuotedHistory.removeHistory(fromHTMLParts: [outlook]), QuotedHistory.Removal(keptForward: true),
             "an Outlook header inside the forward is part of it"
         )
     }
@@ -660,6 +660,47 @@ final class QuotedHistoryTests: XCTestCase {
 
         Yes, Tuesday works.
         """), .noMarker, "plain text too")
+    }
+
+    func testASignatureAboveTheHistoryStillCutsWhenNoAnswerFollows() async throws {
+        let footer = "-- \nYou received this message because you are subscribed to the Google Groups \"Lunch\" group."
+        // Plain text: a list footer under the quote, a quote in another
+        // language, and a quote with no attribution.
+        for history in [
+            "On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:\n\n> Lunch on Tuesday?\n\n" + footer,
+            "Am Fr., 24. Okt. 2026 um 09:41 Uhr schrieb Jane Doe <jane@example.com>:\n\n> Mittagessen am Dienstag?",
+            "> Lunch on Tuesday?",
+        ] {
+            XCTAssertEqual(QuotedHistory.trim("Sounds good.\n\n-- \nAdam\n\n" + history), .trimmed("Sounds good."), history)
+        }
+
+        // HTML: a Gmail reply with a signature, to a Google Group.
+        let gmail = try await trimmed("""
+        <div dir="ltr">Sounds good.<br clear="all"><div><br></div><span class="gmail_signature_prefix">-- </span><br><div dir="ltr" class="gmail_signature">Adam</div></div><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">On Fri, Jane wrote:<br></div><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote></div><p></p>-- <br />You received this message because you are subscribed to the Google Groups "Lunch" group.<br />
+        """)
+        XCTAssertEqual(gmail.text, "Sounds good.")
+        XCTAssertTrue(gmail.trimmed)
+
+        // A Zoho reply to a Google Group: the walk stops at the footer, so
+        // Zoho's header is cut by the Outlook rule.
+        let zoho = try await trimmed("""
+        <div>Sounds good.</div><div class="zmail_extra"><div><br></div><div id="Zm-_Id_-Sgn1">From: Jane Doe &lt;jane@example.com&gt;<br>Date: Fri, 23 Oct 2026 10:28:18 -0500<br>Subject: Lunch<br></div><div><br></div><blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div><p></p>-- <br />You received this message because you are subscribed to the Google Groups "Lunch" group.<br />
+        """)
+        XCTAssertEqual(zoho.text, "Sounds good.")
+
+        // A Gmail reply without "Re:" that quotes a forward: the walk keeps
+        // the forward, which is no answer, so the signature still cuts.
+        let forward = try await trimmed("""
+        <div dir="ltr">Thanks<br><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature">Adam</div></div><div class="gmail_quote"><div class="gmail_attr">On Fri, Oct 24, 2026 at 9:41 AM Jane Doe &lt;jane@example.com&gt; wrote:<br></div><blockquote class="gmail_quote">---------- Forwarded message ---------<br>From: Bob<br><br>Lunch on Tuesday?</blockquote></div>
+        """)
+        XCTAssertEqual(forward.text, "Thanks")
+
+        // A quote with no mark in Zoho's container: the text pass finds it,
+        // and it is no answer, so the signature above it cuts too.
+        let unmarked = try await trimmed("""
+        <div>Sounds good.</div><div>-- <br>Adam</div><div class="zmail_extra"><div>---- On Fri, 24 Oct 2026 09:41:00 -0500 Jane Doe &lt;jane@example.com&gt; wrote ----<br></div><blockquote style="margin: 0px;"><div>Lunch on Tuesday?</div></blockquote></div>
+        """)
+        XCTAssertEqual(unmarked.text, "Sounds good.")
     }
 
     func testGmailAnswersBetweenTheQuotedLinesAreKept() async throws {
