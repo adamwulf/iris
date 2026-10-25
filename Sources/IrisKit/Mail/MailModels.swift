@@ -204,6 +204,24 @@ public struct MessagePage: Sendable, Equatable {
     }
 }
 
+/// A message as iris downloaded it to decode it (see `MailReader.message(_:)`).
+public enum DownloadedMessage: Sendable, Equatable {
+    /// The whole message: its raw RFC 822 bytes, as `BODY[]` gives them.
+    case whole(Data)
+    /// A message larger than `MailReader.wholeDownloadLimit`, downloaded in parts.
+    case parts(MessageParts)
+}
+
+/// A large message as iris downloads it: the outline from one FETCH (its
+/// size, its header fields, and its parts from BODYSTRUCTURE), and the bytes
+/// of its body parts only (`MessageDecoder.bodyParts(of:)`), still in their
+/// Content-Transfer-Encoding. The attachments stay on the server.
+public struct MessageParts: Sendable, Equatable {
+    let outline: MessageOutline
+    /// The bytes of each body part, by its attachment ID.
+    let bodies: [AttachmentID: Data]
+}
+
 /// One message of `iris thread`: its iris ID and its raw RFC 822 bytes, or
 /// why iris could not download them, so that one bad message does not cost
 /// the rest of the thread.

@@ -239,7 +239,8 @@ public enum MessageFormatter {
         if !document.attachments.isEmpty {
             lines += ["", "---", "", "**Attachments:**"]
             lines += document.attachments.map { attachment in
-                var details = [attachment.contentType, sizeText(attachment.size)]
+                let size = sizeText(attachment.size)
+                var details = [attachment.contentType, attachment.sizeIsEstimate ? "about \(size)" : size]
                 if attachment.inline {
                     details.append("inline")
                 }

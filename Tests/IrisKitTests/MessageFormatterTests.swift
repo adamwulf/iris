@@ -446,6 +446,47 @@ final class MessageFormatterTests: XCTestCase {
         ])
     }
 
+    func testAnEstimatedSizeIsAboutInMarkdownAndMarkedInJSON() throws {
+        let estimated = MessageDocument(
+            messageID: nil, subject: "Scans", from: [], to: [], cc: [], replyTo: [], date: nil,
+            inReplyTo: nil, references: [], body: "", bodySource: nil, attachments: [
+                MessageAttachment(
+                    attachmentID: AttachmentID(components: [2]), filename: "scan.pdf", contentType: "application/pdf",
+                    size: 19_730_769, sizeIsEstimate: true, inline: false
+                ),
+                MessageAttachment(
+                    attachmentID: AttachmentID(components: [3]), filename: nil, contentType: "message/rfc822",
+                    size: 2400, inline: false
+                ),
+            ]
+        )
+
+        XCTAssertTrue(MessageFormatter.markdown(estimated).hasSuffix("""
+        **Attachments:**
+        - `2` scan.pdf (application/pdf, about 19.7 MB)
+        - `3` (no filename) (message/rfc822, 2 KB)
+        """), MessageFormatter.markdown(estimated))
+        let json = try MessageFormatter.json(estimated)
+        XCTAssertTrue(json.contains("""
+              "attachments" : [
+                {
+                  "attachmentID" : "2",
+                  "contentType" : "application/pdf",
+                  "filename" : "scan.pdf",
+                  "inline" : false,
+                  "size" : 19730769,
+                  "sizeIsEstimate" : true
+                },
+                {
+                  "attachmentID" : "3",
+                  "contentType" : "message/rfc822",
+                  "inline" : false,
+                  "size" : 2400
+                }
+              ],
+            """), json)
+    }
+
     func testJSONIsDeterministicAndHasNoAttachmentBytes() throws {
         XCTAssertEqual(try MessageFormatter.json(document), """
         {
