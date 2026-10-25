@@ -361,6 +361,11 @@ final class SwiftMailClientTests: XCTestCase {
 
     // MARK: - Drafts
 
+    /// `createDraft` adds `\Draft` itself; iris adds `\Seen`, as Apple Mail saves its own drafts.
+    func testADraftIsSavedAsSeen() {
+        XCTAssertEqual(SwiftMailClient.additionalDraftFlags, [.seen])
+    }
+
     private let reply = DraftMessage(
         from: MailAddress(name: "Me", address: "me@example.com"),
         to: [MailAddress(name: "Jane Doe", address: "jane@example.com")],

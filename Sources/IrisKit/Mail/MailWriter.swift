@@ -83,8 +83,8 @@ public struct MailWriter: Sendable {
         return try await saveDraft(draft)
     }
 
-    /// Saves `draft` with the `\Draft` flag in the first mailbox that LIST
-    /// marks `\Drafts`. A `draftMayBeSaved` error holds the decoded name.
+    /// Saves `draft` with the flags `\Seen \Draft` in the first mailbox that
+    /// LIST marks `\Drafts`. A `draftMayBeSaved` error holds the decoded name.
     func saveDraft(_ draft: DraftMessage) async throws -> SavedDraft {
         let client = makeClient(account)
         return try await client.session {

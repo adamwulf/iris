@@ -301,11 +301,18 @@ struct SwiftMailClient: MailWriteClient {
         seen ? .add : .remove
     }
 
+    /// The flags a draft gets next to `\Draft`, which `createDraft` adds itself.
+    /// `\Seen`, as Apple Mail saves its own drafts: without it, some mail apps
+    /// show the new draft as unread in Drafts.
+    static let additionalDraftFlags: [Flag] = [.seen]
+
     func appendDraft(_ draft: DraftMessage, to mailbox: String) async throws -> UInt32? {
         // createDraft adds the \Draft flag and X-Uniform-Type-Identifier:
         // com.apple.mail-draft, which makes Apple Mail treat it as its own draft.
         let result = try await run(.append(mailbox: mailbox)) {
-            try await server.createDraft(from: Email(draft: draft), in: mailbox)
+            try await server.createDraft(
+                from: Email(draft: draft), in: mailbox, additionalFlags: Self.additionalDraftFlags
+            )
         }
         return result.firstUID?.value
     }

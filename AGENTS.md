@@ -92,7 +92,7 @@ the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
 `MailWriteClient` refines `MailClient` with the calls that change mail:
 `select(mailbox:)` (SELECT, read-write), `setSeen(_:uid:)` (UID STORE
 +FLAGS or -FLAGS `\Seen`), and `appendDraft(_:to:)` (APPEND with the
-`\Draft` flag). Only `MailWriter` holds one; `MailReader` holds a
+flags `\Seen \Draft`). Only `MailWriter` holds one; `MailReader` holds a
 plain `MailClient`, so it cannot reach them. `SwiftMailClient` and
 `FakeMailClient` conform to both. `MailWriter` SELECTs the mailbox (encoded
 like EXAMINE), fetches the envelope by UID to check that the message exists
@@ -104,8 +104,11 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 built (pure; it needs no fake). `saveDraft` finds the `\Drafts` mailbox in
 the merged LIST, APPENDs to its wire name, and makes the iris ID from the
 decoded name (it also puts that name back into a `draftMayBeSaved` error).
-`appendDraft` calls SwiftMail's `createDraft(from:in:)`, which adds the
-`\Draft` flag and `X-Uniform-Type-Identifier: com.apple.mail-draft`. Both
+`appendDraft` calls SwiftMail's `createDraft(from:in:additionalFlags:)`,
+which adds the `\Draft` flag and `X-Uniform-Type-Identifier:
+com.apple.mail-draft`; iris adds `\Seen`
+(`SwiftMailClient.additionalDraftFlags`), as Apple Mail saves its own
+drafts, so other mail apps do not show the new draft as unread. Both
 sessions log in through `SwiftMailClient.login()`, so a Google account
 sends AUTHENTICATE XOAUTH2 to save a draft as it does to read.
 

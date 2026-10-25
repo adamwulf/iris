@@ -421,7 +421,8 @@ The draft is built from the original message:
   is shown as text, never run as HTML. Quoted images that pointed at a part
   of the original (`cid:`, such as a signature logo) are left out.
 
-iris saves the draft with the `\Draft` flag in the mailbox that the server
+iris saves the draft with the flags `\Seen \Draft` (as Apple Mail saves its
+own drafts, so it does not show as unread) in the mailbox that the server
 marks `\Drafts` (`iris mailboxes` shows it; Gmail's is `[Gmail]/Drafts`), and
 prints the draft's iris ID, for example `work/Drafts/77`. A server without
 UIDPLUS does not report the new message's UID; then iris prints nothing on
