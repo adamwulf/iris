@@ -338,6 +338,52 @@ final class MailReaderThreadTests: XCTestCase {
         ], "the All Mail copies are read only by their headers")
     }
 
+    func testEachMessageIsDownloadedFromItsOwnMailboxWhichIsOpenedOnce() async throws {
+        // The UIDs repeat in every mailbox, so a download from the wrong mailbox
+        // gives another message, or none. The walk ends in Archive, the last
+        // mailbox it searches: the downloads start there without opening it
+        // again, or open INBOX first when Archive has no message of the thread.
+        let a = message("a", subject: "Budget", day: 1)
+        let b = message("b", day: 2, replyTo: "a", references: ["a"])
+        let c = message("c", day: 3, replyTo: "b", references: ["a", "b"])
+        let d = message("d", day: 4, replyTo: "c", references: ["a", "b", "c"])
+        func other(_ name: String) -> Message {
+            message(name, subject: "Lunch", day: 5)
+        }
+        let withArchive = server([
+            "INBOX": [1: a, 2: other("x2"), 3: d],
+            "Sent": [1: other("y1"), 2: b, 3: other("y3")],
+            "Archive": [1: other("z1"), 2: other("z2"), 3: c],
+        ])
+        let withoutArchive = server([
+            "INBOX": [1: a, 2: other("x2"), 3: c],
+            "Sent": [1: other("y1"), 2: b, 3: other("y3")],
+            "Archive": [1: other("z1"), 2: other("z2"), 3: other("z3")],
+        ])
+        let cases: [(fake: FakeMailClient, thread: [(id: String, message: Message)], afterArchive: [FakeMailClient.Call])] = [
+            (withArchive, [("work/INBOX/1", a), ("work/Sent/2", b), ("work/Archive/3", c), ("work/INBOX/3", d)], [
+                .searchSubject(["budget"]), .fetchThreadHeaders([3]),
+                .fetchRawMessage(3), .examine("INBOX"), .fetchRawMessage(1), .fetchRawMessage(3),
+                .examine("Sent"), .fetchRawMessage(2), .logout,
+            ]),
+            (withoutArchive, [("work/INBOX/1", a), ("work/Sent/2", b), ("work/INBOX/3", c)], [
+                .searchSubject(["budget"]),
+                .examine("INBOX"), .fetchRawMessage(1), .fetchRawMessage(3),
+                .examine("Sent"), .fetchRawMessage(2), .logout,
+            ]),
+        ]
+
+        for (index, test) in cases.enumerated() {
+            let messages = try await reader(test.fake).thread(IrisID(account: "work", mailbox: "INBOX", uid: 1))
+
+            XCTAssertEqual(messages.map(\.irisID.description), test.thread.map(\.id), "case \(index)")
+            XCTAssertEqual(messages.map(\.rawMessage), test.thread.map { .success($0.message.raw) }, "case \(index)")
+            let calls = await test.fake.calls
+            let lastArchive = try XCTUnwrap(calls.lastIndex(of: .examine("Archive")), "case \(index)")
+            XCTAssertEqual(Array(calls[(lastArchive + 1)...]), test.afterArchive, "case \(index)")
+        }
+    }
+
     func testTwoCopiesInOneMailboxShowTheLowestUID() async throws {
         // Zoho's Sent held two copies of one sent message.
         let expected = ["work/INBOX/69072", "work/Sent/58409", "work/INBOX/69073"]
