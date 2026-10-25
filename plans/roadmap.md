@@ -53,22 +53,33 @@ describes the walk. Why it works the way it does:
   `Message-ID` matches the whole ID, with or without `< >`; HEADER
   `In-Reply-To` and `References` never match, in any form, even when the
   header holds the ID; TEXT with an ID matches nothing; SUBJECT matches
-  whole words ("Champ" does not find "Champion"); SEARCH text that is not
-  ASCII is refused; and an OR tree that mixed in the dead keys gave wrong
-  answers (the same matching key found the message with 3, 6, and 12 keys,
-  but not with 9 or 15 to 18). So replies are found through the subject,
-  which every member must share, and HEADER `Message-ID` searches (at most
-  10 IDs each) find what the subject search missed.
+  whole words ("Champ" does not find "Champion"), and an AND of SUBJECT
+  word keys gave exactly the right messages; and an OR tree that mixed in
+  the dead keys gave wrong answers (the same matching key found the message
+  with 3, 6, and 12 keys, but not with 9 or 15 to 18). So replies are found
+  through the subject, which every member must share. HEADER `Message-ID`
+  searches (at most 10 IDs each) run only where no SUBJECT search ran.
+- A server may refuse a subject that is not ASCII (Zoho did not, for a
+  curly apostrophe, emoji, em dash, arrows, or "café"), so iris then
+  searches for the subject's ASCII words. More probes for those words: a
+  word ends at punctuation, `-`, `.`, `@`, `_`, and the curly apostrophe,
+  but not at an ASCII apostrophe ("don" does not find "don't"), and "ai"
+  (two letters) finds nothing. So words with an ASCII apostrophe and words
+  shorter than 3 are left out, and at most the 5 longest are sent.
 - Apple Mail on iPhone puts only the parent in `References`, so the walk
   links messages round after round (seen live on Zoho).
-- A subject change (ignoring `Re:`/`Fwd:`/`Fw:`) starts a new thread, as in
-  Gmail. Outlook users reply to an old email and change the subject, so
-  `References` links the new conversation to the old one (seen live on
-  Zoho).
+- A subject change starts a new thread, as in Gmail: subjects are compared
+  without leading `Re:`/`Fwd:`/`Fw:` and `[tags]` (Mailman 3 writes
+  "[list] Re: x", gateways add "[EXTERNAL]"). Outlook users reply to an old
+  email and change the subject, so `References` links the new conversation
+  to the old one (seen live on Zoho).
 - Each `Message-ID` is shown once, from a fixed mailbox order, so every
-  message of a thread gives the same thread with the same iris IDs. Zoho's
-  Sent held two copies of one sent message, and on Gmail one message is in
-  many mailboxes.
+  message of a thread gives the same thread with the same iris IDs (when
+  the SUBJECT search runs and the thread is in the searched mailboxes).
+  Zoho's Sent held two copies of one sent message, and on Gmail one message
+  is in many mailboxes.
+- One message that does not download or cannot be read is left out with a
+  line on stderr; the rest of the thread is still shown.
 
 Next:
 
@@ -141,13 +152,18 @@ Next:
 - Table columns are padded by `Character`, so emoji and CJK text are never
   cut, but a value with 2-column-wide characters (for example an emoji in a
   subject or a CJK sender name) pushes the columns after it out of line.
-- `iris thread` finds replies only through the SUBJECT search. When the
-  server refuses it (Zoho, for a subject that is not ASCII), only the
-  messages that the named message links to are found, round after round, so
-  the newest message gives the whole thread and the oldest gives only
-  itself. A generic subject ("Hi") makes many candidates; each costs a few
-  hundred header bytes, but a large `\All` mailbox could take a while.
-  A reply filed only in a folder that is not searched is not found.
+- `iris thread` finds replies only through the SUBJECT search. When none
+  runs (an empty subject, a subject with no ASCII word of 3 or more letters
+  on a server that refuses non-ASCII text, or a server that refuses both
+  searches or misses the named message), only the messages that the named
+  message leads back to are found, round after round, through the
+  `Message-ID`s they name: never a reply to them. On a thread that never
+  branched the newest message gives the whole thread; on one that branched
+  (A has replies B and C), naming C gives A and C, not B, and the oldest
+  message gives only itself. A generic subject ("Hi") makes many
+  candidates; each costs a few hundred header bytes, but a large `\All`
+  mailbox could take a while. A reply filed only in a folder that is not
+  searched is not found.
 - A server that sends a mailbox name that is not valid modified UTF-7 (raw
   `R&D` instead of `R&-D`) shows it unchanged, but typing it sends `R&-D`,
   so that mailbox cannot be opened. RFC 3501 servers do not do this.

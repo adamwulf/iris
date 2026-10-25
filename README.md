@@ -248,24 +248,41 @@ messages) or `--format json` (an array of the objects that
 
 iris looks in INBOX, the Sent, Drafts, Archive, and All Mail mailboxes,
 and the message's own mailbox. A message is in the thread when it has the
-same subject (ignoring `Re:`, `Fwd:`, and `Fw:`, and case) and its
-`Message-ID`, `In-Reply-To`, or `References` header links it to another
-message of the thread. So a subject change starts a new thread, as in Gmail,
-even when the reply's `References` names the old conversation. A message in
-several mailboxes (on Gmail, INBOX and All Mail; on Zoho, two copies in
+same subject and its `Message-ID`, `In-Reply-To`, or `References` header
+links it to another message of the thread. Subjects are compared without
+leading `Re:`, `Fwd:`, and `Fw:` and bracketed tags such as `[list]`
+(mailing lists) or `[EXTERNAL]` (company mail gateways), in any order,
+and without case. So a subject change starts a new thread, as in Gmail,
+even when the reply's `References` names the old conversation. A message
+in several mailboxes (on Gmail, INBOX and All Mail; on Zoho, two copies in
 Sent) is shown once, from INBOX, else Sent, Drafts, Archive, All Mail, then
-the message's own mailbox, so every message of a thread gives the same
-thread and the same iris IDs.
+the message's own mailbox. So when iris can search by the subject (below),
+every message of a thread in those mailboxes gives the same thread and the
+same iris IDs; naming a message in another folder adds that folder.
+
+iris finds the replies by searching each mailbox for the subject, because
+servers such as Zoho cannot search the `In-Reply-To` and `References`
+headers. When a server refuses a subject (some refuse text that is not
+ASCII, such as "Adam’s plan" with a curly apostrophe), iris searches for
+its ASCII words instead ("adam", "plan"). When there is nothing it can
+search for (an empty subject, or one with no ASCII word of three or more
+letters, such as "Café"), it says so on stderr and follows only the
+`Message-ID`s that the messages name: then it finds only the messages that
+the named message leads back to, not the replies to them. The newest
+message of a thread that never branched gives the whole thread; on a
+thread that branched (A has replies B and C), naming C gives A and C, not
+B.
+
+When one message cannot be shown (it did not download in time, or it
+cannot be read), iris leaves it out, shows the others, and writes a line
+to stderr with its iris ID and the `iris show '<iris-id>' --format raw`
+command to see its source.
 
 Limits:
 
 - A reply filed only in another folder (not INBOX, Sent, Drafts, Archive,
   or All Mail, and not the folder of the message you named) is not found.
   Zoho has no All Mail.
-- iris finds replies by searching for the subject. Zoho refuses a search
-  for text that is not ASCII, so for a subject such as "Café", iris finds
-  only the messages that the named message links to, and says so on
-  stderr. Name the newest message to get the whole thread.
 - Each message is shown in full, with the quoted history of the messages
   before it.
 

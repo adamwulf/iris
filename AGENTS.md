@@ -95,28 +95,37 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 until it knows the thread: `fetchThreadHeaders` (UID FETCH of
 `BODY.PEEK[HEADER.FIELDS (Message-ID In-Reply-To References Subject Date)]`
 and INTERNALDATE). It searches INBOX, each `\Sent`, `\Drafts`, `\Archive`,
-and `\All` mailbox, and the input mailbox, in that order (each kind in LIST
-order). The candidates come from one SUBJECT search per mailbox (the
-existing `searchUIDs(matching:)` with `MessageFilter(subject:)`), with the
-input subject without `Re:`/`Fwd:`/`Fw:`; HEADER Message-ID searches
-(`searchUIDs(messageIDs:)`, at most
-`messageIDSearchChunkSize` IDs each) find what that missed. Candidates with
-the input's subject (`ThreadSubject`) that name a known ID join, round after
-round, until none joins. Each Message-ID is shown once, from the first
-mailbox in the order above (lowest UID), so every message of a thread gives
-the same iris IDs. Only those copies are downloaded with `fetchRawMessage`.
-A refused SUBJECT search (`searchFailed`) is logged and skipped; every other
-error fails the command.
+and `\All` mailbox, and the input mailbox (`threadMailboxes`), the input
+mailbox first because it is open already. Each gets one SUBJECT search
+(`searchUIDs(subjectContainingAll:)`, one SUBJECT key per text, ANDed) for
+the subject that `ThreadSubject.normalized` gives (no `Re:`/`Fwd:`/`Fw:` or
+`[tags]`). `subjectSearches(for:)` lists what to try: the whole subject,
+then its ASCII words (`ThreadSubject.asciiWords`). A search that is refused
+(`searchFailed`), or that misses the input message in its own mailbox, is
+dropped for the rest of the walk; when none is left, one `IrisLog` line
+says so. Only the mailboxes with no SUBJECT search get HEADER Message-ID
+searches (`searchUIDs(messageIDs:)`, at most `messageIDSearchChunkSize` IDs
+each), round after round. Messages with the subject that name a known ID
+join until none joins. Each Message-ID is shown once, from the first
+mailbox in `threadMailboxes` order (lowest UID). Only those copies are
+downloaded with `fetchRawMessage`. A download that times out or finds the
+message gone is kept as a failure in `ThreadMessage.rawMessage`, and the
+mailbox is examined again before the next download (SwiftMail reconnects
+after a timeout, with no mailbox open). `MessageFormatter.render(thread:)`
+leaves out a message that failed, or that cannot be decoded, and logs one
+line for it (`leftOutLine`); every other error fails the command.
 
 Tests never touch the network: no test reaches another host. They use
 `FakeMailClient`, which returns scripted results and records the calls. For
 `thread` it holds whole mailboxes (`mailboxMessages`) and searches them the
 way Zoho did in the 2026-10-24 probes (`SearchRules.zoho`), or by RFC 3501
-(`.rfc3501`). The Google code has its own seams: `HTTPTransport` (tests use
-`StubTransport`) and `RedirectReceiver` (tests use `FakeRedirectReceiver`,
-whose `open` is the browser opener). One test opens a socket:
-`LoopbackServerTests` runs the real `LoopbackServer`, which binds 127.0.0.1
-only, and sends it the favicon request and the redirect over loopback.
+(`.rfc3501`); `refusesNonASCII` models a server that refuses non-ASCII
+SEARCH text, and `rawMessageErrors` a message that does not download. The
+Google code has its own seams: `HTTPTransport` (tests use `StubTransport`)
+and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
+browser opener). One test opens a socket: `LoopbackServerTests` runs the
+real `LoopbackServer`, which binds 127.0.0.1 only, and sends it the
+favicon request and the redirect over loopback.
 
 ### Accounts
 
@@ -306,8 +315,14 @@ account (`--account <name>`).
   In-Reply-To and HEADER References never match, in any form, even when the
   header holds the ID, so a header walk finds only the ancestors that a
   known message names, never the replies; `thread` finds replies through
-  SUBJECT. SUBJECT matches whole words ("Champ" does not find "Champion").
-  SEARCH text that is not ASCII is refused (`searchFailed`). An OR tree of
+  SUBJECT. SUBJECT matches whole words ("Champ" does not find "Champion");
+  several SUBJECT keys AND correctly. A word ends at punctuation, `-`, `.`,
+  `@`, `_`, and the curly apostrophe ("bill" finds "bill’s"), but not at an
+  ASCII apostrophe ("don" does not find "don't"; "vanguard" does find
+  "Vanguard's"). A key of only a word shorter than 3 ("ai") finds nothing.
+  Zoho accepted non-ASCII SUBJECT text (curly apostrophe, emoji, em dash,
+  "café"), which SwiftMail sends with CHARSET UTF-8; other servers may
+  refuse it (`searchFailed`), hence the ASCII-words retry. An OR tree of
   HEADER keys that mixed in In-Reply-To/References keys gave wrong answers
   (the same matching key found the message with 3, 6, and 12 keys but not
   with 9 or 15 to 18), so `thread` sends only Message-ID keys, at most 10
