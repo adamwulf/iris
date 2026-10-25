@@ -36,9 +36,10 @@ final class MailAddressTests: XCTestCase {
         XCTAssertNil(name(nil))
     }
 
-    func testAnEmptyQuotedNameShowsTheAddress() {
+    /// `list --format json` then leaves out the name, as `show` does.
+    func testAnEmptyQuotedNameIsNilAndShowsTheAddress() {
         let address = MailAddress(name: "\"\"", address: "jane@example.com")
-        XCTAssertEqual(address.name, "")
+        XCTAssertNil(address.name)
         XCTAssertEqual(address.displayName, "jane@example.com")
     }
 }
