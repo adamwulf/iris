@@ -260,6 +260,20 @@ final class MailWriterTests: XCTestCase {
         XCTAssertEqual(calls.last, .logout)
     }
 
+    func testDraftRefusedGetsTheDecodedMailboxNameAndLogsOut() async {
+        let fake = FakeMailClient(
+            mailboxes: [MailboxInfo(name: "[Gmail]/Entw&APw-rfe", attributes: [#"\Drafts"#])],
+            errors: [.appendDraft: IrisError.draftRefused(account: "work", mailbox: "[Gmail]/Entw&APw-rfe", reason: "NO")]
+        )
+
+        await assertThrows(.draftRefused(account: "work", mailbox: "[Gmail]/Entwürfe", reason: "NO")) {
+            _ = try await self.writer(fake).saveDraft(self.draft)
+        }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls.last, .logout)
+    }
+
     private let original = """
         From: Jane Doe <jane@example.com>
         To: Me <me@example.com>, Bob <bob@example.com>

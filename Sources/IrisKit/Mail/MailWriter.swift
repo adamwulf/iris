@@ -89,7 +89,8 @@ public struct MailWriter: Sendable {
     }
 
     /// Saves `draft` with the flags `\Seen \Draft` in the first mailbox that
-    /// LIST marks `\Drafts`. A `draftMayBeSaved` error holds the decoded name.
+    /// LIST marks `\Drafts`. A `draftMayBeSaved` or `draftRefused` error holds
+    /// the decoded name.
     func saveDraft(_ draft: DraftMessage) async throws -> SavedDraft {
         let client = makeClient(account)
         return try await client.session {
@@ -103,6 +104,8 @@ public struct MailWriter: Sendable {
                 uid = try await client.appendDraft(draft, to: drafts.name)
             } catch IrisError.draftMayBeSaved(let account, _, let reason) {
                 throw IrisError.draftMayBeSaved(account: account, mailbox: mailbox, reason: reason)
+            } catch IrisError.draftRefused(let account, _, let reason) {
+                throw IrisError.draftRefused(account: account, mailbox: mailbox, reason: reason)
             }
             return SavedDraft(
                 mailbox: mailbox,

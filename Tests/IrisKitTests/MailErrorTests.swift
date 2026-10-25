@@ -205,6 +205,19 @@ final class MailErrorTests: XCTestCase {
         )
     }
 
+    /// A refused draft is about its size or the mailbox, not the account settings that `iris check` tests.
+    func testDraftRefusedNamesTheMailboxTheReasonAndTheUsualCauses() {
+        XCTAssertEqual(
+            IrisError.draftRefused(
+                account: "work", mailbox: "Drafts", reason: "Command failed: NO [TOOBIG] Message too large"
+            ).errorDescription,
+            "The server refused to save the draft in \"Drafts\" (account \"work\"): "
+                + "Command failed: NO [TOOBIG] Message too large. The usual cause is the draft's size: "
+                + "attach fewer or smaller files, or leave out the quoted message with --no-quote. "
+                + "A full mailbox is another: make room, then try again."
+        )
+    }
+
     func testAReplyThatNamesAFileSaysToRepeatAttachOrUseF() {
         XCTAssertEqual(
             IrisError.draftBodyNamesAFile(path: "b.pdf").errorDescription,

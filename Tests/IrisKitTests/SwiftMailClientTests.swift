@@ -337,11 +337,31 @@ final class SwiftMailClientTests: XCTestCase {
         )
     }
 
-    func testRefusedAppendBecomesAServerErrorNamingAPPEND() {
+    /// A tagged NO, such as a draft too large for a server that announces no
+    /// APPENDLIMIT, or a full mailbox: not a server problem that `iris check` would find.
+    func testRefusedAppendBecomesDraftRefusedWithTheWireNameWithoutThePassword() {
         XCTAssertEqual(
-            irisError(IMAPError.commandFailed("NO [OVERQUOTA] secret"), .append(mailbox: "Drafts")),
-            .serverError(account: "work", command: "APPEND", reason: "Command failed: NO [OVERQUOTA] <redacted>")
+            irisError(IMAPError.commandFailed("NO [OVERQUOTA] secret"), .append(mailbox: "[Gmail]/Entw&APw-rfe")),
+            .draftRefused(
+                account: "work", mailbox: "[Gmail]/Entw&APw-rfe", reason: "Command failed: NO [OVERQUOTA] <redacted>"
+            ),
+            "the error holds the wire name; MailWriter puts back the decoded name"
         )
+        XCTAssertEqual(
+            irisError(IMAPError.commandFailed("BAD [TOOBIG] Message too large"), .append(mailbox: "Drafts")),
+            .draftRefused(account: "work", mailbox: "Drafts", reason: "Command failed: BAD [TOOBIG] Message too large")
+        )
+    }
+
+    /// Only the other IMAP errors of APPEND are a refusal: these three keep their own errors.
+    func testAppendLimitTimeoutAndBrokenConnectionAreNotARefusal() {
+        for error in [
+            IMAPError.appendLimitExceeded(2, 1), IMAPError.timeout, IMAPError.connectionFailed("closed"),
+        ] {
+            if case .draftRefused = irisError(error, .append(mailbox: "Drafts")) {
+                XCTFail("\(error) is not a refusal")
+            }
+        }
     }
 
     func testAppendErrorsOfAGoogleAccountNeverShowTheRefreshTokenOrClientSecret() {

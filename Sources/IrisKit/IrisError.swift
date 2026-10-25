@@ -53,6 +53,11 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// most likely a second path after one `--attach` (`--attach a.pdf b.pdf`,
     /// or a glob that matched more than one file).
     case draftBodyNamesAFile(path: String)
+    /// The server answered APPEND with NO or BAD: for example a draft too large
+    /// for a server that announces no APPENDLIMIT, or a full mailbox. `mailbox`
+    /// is the Drafts mailbox: the wire name from `SwiftMailClient`, and the
+    /// decoded name after `MailWriter`.
+    case draftRefused(account: String, mailbox: String, reason: String)
 
     // IMAP
 
@@ -183,6 +188,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "so a second path after it (or the second file that a pattern such as *.pdf matched) "
                 + "becomes the reply. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
                 + "and give a reply that is in a file with -F <path>."
+        case .draftRefused(let account, let mailbox, let reason):
+            return "The server refused to save the draft in \"\(mailbox)\" (account \"\(account)\"): \(reason). "
+                + "The usual cause is the draft's size: attach fewer or smaller files, or leave out the quoted "
+                + "message with --no-quote. A full mailbox is another: make room, then try again."
         // IMAP
         case .loginFailed(let account, let username, let host, let reason):
             return "The server \(host) refused the login for \(username) (account \"\(account)\"): \(reason). "

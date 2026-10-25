@@ -400,6 +400,10 @@ struct SwiftMailClient: MailWriteClient {
             return connectionFailed(reason: reason(of: error), account: account, secrets: secrets)
         case (.append(let mailbox), IMAPError.connectionFailed):
             return draftMayBeSaved(reason: reason(of: error), mailbox: mailbox, account: account, secrets: secrets)
+        case (.append(let mailbox), let error as IMAPError):
+            // A tagged NO or BAD (commandFailed). The usual causes are a draft too
+            // large for a server that announces no APPENDLIMIT (Zoho), and a full mailbox.
+            return .draftRefused(account: account.name, mailbox: mailbox, reason: redacted(error.description))
         case (_, IMAPError.connectionFailed):
             // The login worked, so the host and port are right. SwiftMail
             // reports a closed connection and a BYE this way.
