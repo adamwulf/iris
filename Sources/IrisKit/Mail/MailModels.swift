@@ -237,19 +237,6 @@ public struct ThreadMessage: Sendable, Equatable {
     }
 }
 
-/// One part of a message as `iris download` downloaded it: its bytes without
-/// the transfer encoding.
-public struct DownloadedAttachment: Sendable, Equatable {
-    public let attachmentID: AttachmentID
-    /// The part's bytes, decoded from its Content-Transfer-Encoding.
-    public let data: Data
-
-    init(attachmentID: AttachmentID, data: Data) {
-        self.attachmentID = attachmentID
-        self.data = data
-    }
-}
-
 /// What `iris check` reports. It never holds the password.
 public struct AccountCheck: Sendable, Equatable {
     public let account: String

@@ -16,9 +16,8 @@ final class AttachmentOutputTests: XCTestCase {
         try FileManager.default.removeItem(at: directory)
     }
 
-    private let pdf = DownloadedAttachment(
-        attachmentID: AttachmentID(components: [2]), data: Data([0x25, 0x50, 0x44, 0x46, 0x00, 0xFF])
-    )
+    /// The bytes of an attachment, not UTF-8 text.
+    private let pdf = Data([0x25, 0x50, 0x44, 0x46, 0x00, 0xFF])
 
     private func path(_ name: String) -> String {
         directory.appendingPathComponent(name).path
@@ -42,7 +41,7 @@ final class AttachmentOutputTests: XCTestCase {
         let output = try AttachmentOutput(path: nil, stdoutIsTerminal: false)
 
         XCTAssertEqual(output, .stdout)
-        XCTAssertEqual(try output.write(pdf), pdf.data, "the bytes and nothing else, as show --format raw")
+        XCTAssertEqual(try output.write(pdf), pdf, "the bytes and nothing else, as show --format raw")
     }
 
     func testWithoutAPathATerminalOnStdoutFails() {
@@ -96,7 +95,7 @@ final class AttachmentOutputTests: XCTestCase {
         let stdout = try AttachmentOutput.file(path: target).write(pdf)
 
         XCTAssertEqual(stdout, Data(), "as read and unread, nothing on success")
-        XCTAssertEqual(try contents(target), pdf.data)
+        XCTAssertEqual(try contents(target), pdf)
     }
 
     func testAnExistingFileIsNeverOverwritten() throws {

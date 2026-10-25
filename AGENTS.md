@@ -38,7 +38,7 @@ Sources/IrisKit/
                status`: the keys set and one refresh per account)
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
                MailReader (sessions, paging, the thread walk, one attachment, errors),
-               MailModels (rows, pages, ThreadMessage, DownloadedAttachment),
+               MailModels (rows, pages, ThreadMessage),
                MailWriter (the calls that change mail: read, unread, and
                saving a draft; SavedDraft),
                MessageFilter (the `list` filter options, sent as UID SEARCH),

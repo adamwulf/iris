@@ -31,22 +31,23 @@ public enum AttachmentOutput: Sendable, Equatable {
         }
     }
 
-    /// The bytes that `iris download` writes to stdout for `attachment`: the
-    /// attachment itself for `.stdout`. For `.file`, it saves the file and
-    /// gives nothing, as `iris read` prints nothing: the caller knows the path.
+    /// The bytes that `iris download` writes to stdout for `attachment`, the
+    /// decoded bytes of the part: `attachment` itself for `.stdout`. For
+    /// `.file`, it saves the file and gives nothing, as `iris read` prints
+    /// nothing: the caller knows the path.
     ///
     /// An existing file (or folder, or symbolic link) at the path is never
     /// overwritten: it throws `attachmentFileExists`, and every other failure
     /// `attachmentNotSaved`.
-    public func write(_ attachment: DownloadedAttachment) throws -> Data {
+    public func write(_ attachment: Data) throws -> Data {
         switch self {
         case .stdout:
-            return attachment.data
+            return attachment
         case .file(let path):
             do {
                 // Without overwriting, the file is created new (O_EXCL), so
                 // whatever is already at `path` stays as it is.
-                try attachment.data.write(to: URL(fileURLWithPath: path), options: .withoutOverwriting)
+                try attachment.write(to: URL(fileURLWithPath: path), options: .withoutOverwriting)
             } catch CocoaError.fileWriteFileExists {
                 throw IrisError.attachmentFileExists(path: path)
             } catch {

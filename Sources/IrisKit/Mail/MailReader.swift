@@ -112,7 +112,7 @@ public struct MailReader: Sendable {
         }
     }
 
-    /// The part `attachmentID` of the message `id`, without its
+    /// The bytes of the part `attachmentID` of the message `id`, without its
     /// Content-Transfer-Encoding. Only that part is
     /// downloaded (`BODY.PEEK[<section>]`, with SwiftMail's 60-second limit),
     /// never the whole message, whose download stops after 10 seconds.
@@ -123,7 +123,7 @@ public struct MailReader: Sendable {
     /// Any part in the message's BODYSTRUCTURE can be downloaded: each ID that
     /// `iris show` lists, and also a part inside a forwarded message (`2.1`).
     /// A forwarded message's own ID (`2`) gives the whole message, an `.eml` file.
-    public func attachment(_ attachmentID: AttachmentID, of id: IrisID) async throws -> DownloadedAttachment {
+    public func attachment(_ attachmentID: AttachmentID, of id: IrisID) async throws -> Data {
         precondition(id.account == account.name, "\(id) is not in the account \(account.name)")
         // UIDs start at 1; the server would answer UID 0 with BAD.
         guard id.uid >= 1 else {
@@ -144,9 +144,7 @@ public struct MailReader: Sendable {
                 throw IrisError.unknownAttachment(id, attachmentID)
             }
             let data = try await client.fetchPart(attachmentID, uid: id.uid)
-            return DownloadedAttachment(
-                attachmentID: attachmentID, data: TransferEncoding.decoded(data, encoding: part.encoding)
-            )
+            return TransferEncoding.decoded(data, encoding: part.encoding)
         }
     }
 

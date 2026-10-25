@@ -66,7 +66,7 @@ final class MailReaderAttachmentTests: XCTestCase {
 
         let attachment = try await reader(fake).attachment(part(2), of: id(150))
 
-        XCTAssertEqual(attachment, DownloadedAttachment(attachmentID: part(2), data: Data("Hello World".utf8)))
+        XCTAssertEqual(attachment, Data("Hello World".utf8))
         let calls = await fake.calls
         XCTAssertEqual(calls, [
             .login, .examine("INBOX"), .fetchStructure(150), .fetchPart(part(2), 150), .logout,
@@ -79,7 +79,7 @@ final class MailReaderAttachmentTests: XCTestCase {
 
         let attachment = try await reader(fake).attachment(part(2), of: id(150))
 
-        XCTAssertEqual(attachment.data, Data("café au lait\r\n".utf8))
+        XCTAssertEqual(attachment, Data("café au lait\r\n".utf8))
     }
 
     func testAttachmentWithoutATransferEncodingKeepsItsBytes() async throws {
@@ -90,7 +90,7 @@ final class MailReaderAttachmentTests: XCTestCase {
 
             let attachment = try await reader(fake).attachment(part(1), of: id(150))
 
-            XCTAssertEqual(attachment.data, bytes, "\(encoding ?? "no encoding")")
+            XCTAssertEqual(attachment, bytes, "\(encoding ?? "no encoding")")
         }
     }
 
@@ -108,10 +108,10 @@ final class MailReaderAttachmentTests: XCTestCase {
         let fake = server(structure: structure, parts: [part(2): forwarded, part(2, 2): Data("SGVsbG8=".utf8)])
 
         let message = try await reader(fake).attachment(part(2), of: id(150))
-        XCTAssertEqual(message, DownloadedAttachment(attachmentID: part(2), data: forwarded))
+        XCTAssertEqual(message, forwarded)
 
         let inner = try await reader(fake).attachment(part(2, 2), of: id(150))
-        XCTAssertEqual(inner.data, Data("Hello".utf8), "a part inside the forwarded message downloads too")
+        XCTAssertEqual(inner, Data("Hello".utf8), "a part inside the forwarded message downloads too")
     }
 
     func testAnAttachmentIDThatTheMessageDoesNotHaveThrowsUnknownAttachmentAndLogsOut() async {
@@ -179,7 +179,7 @@ final class MailReaderAttachmentTests: XCTestCase {
         )
 
         let attachment = try await reader(fake).attachment(part(2), of: id(150, in: "[Gmail]/Entwürfe"))
-        XCTAssertEqual(attachment.data, Data("Hello".utf8))
+        XCTAssertEqual(attachment, Data("Hello".utf8))
         await assertThrows(.unknownAttachment(id(150, in: "[Gmail]/Entwürfe"), part(9))) {
             try await self.reader(fake).attachment(self.part(9), of: self.id(150, in: "[Gmail]/Entwürfe"))
         }
