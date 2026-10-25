@@ -12,10 +12,18 @@ done; README.md describes it.
 
 ## Next: live check against real accounts
 
-- Run `iris check`, `iris mailboxes`, `iris list`, `iris show`, `iris read`,
-  and `iris unread` once per provider (Gmail, iCloud, Zoho), and once each
-  with a wrong password and a wrong host. Nothing has run against a real
-  server yet.
+- Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` once per
+  provider (Gmail, iCloud), and once each with a wrong password and a wrong
+  host.
+- Run `iris read` and `iris unread` once per provider (Gmail, iCloud,
+  Zoho). They have not run against a real server yet.
+- Zoho (`imappro.zoho.com`) was checked on 2026-10-24: `check`,
+  `mailboxes`, `list`, and `show` work. Post-login CAPABILITY: `IMAP4rev1
+  UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR
+  AUTH=XOAUTH2 UIDPLUS ESEARCH LIST-EXTENDED LIST-STATUS WITHIN LITERAL- ACL
+  CONDSTORE` (no SPECIAL-USE, no THREAD, no MULTISEARCH). Special-use
+  mailboxes: `Drafts`, two `\Sent` (`Sent` and `Sent Messages`), `Archive`,
+  `Junk` and `Spam`, `Trash` and `Deleted Messages`; no `\All`.
 - Gmail with Google OAuth, with Adam's Google Cloud app (External,
   Testing): run `iris auth login`, then `iris auth status` and
   `iris check`. Check the console steps in README.md ("Gmail with OAuth")
@@ -24,23 +32,37 @@ done; README.md describes it.
   at myaccount.google.com/permissions), `iris auth status` and `iris check`
   should both show the expired sign-in (`invalid_grant`). None of it has
   run against Google yet.
-- Record the post-login CAPABILITY and the Drafts/Sent names per provider
-  (open in `plans/research/imap-libraries.md`, section 5).
+- Record the post-login CAPABILITY and the Drafts/Sent names for Gmail and
+  iCloud (open in `plans/research/imap-libraries.md`, section 5).
 
 ## Milestone 2: threads
 
 - `iris thread <iris-id>`: every message in the thread, oldest first, as
   Markdown. Each message shows its own iris ID, so a reply in Sent shows a
   Sent iris ID.
-- How to find the thread depends on the server:
-  - Gmail: `X-GM-THRID` (search `[Gmail]/All Mail`, so sent replies appear).
-    Blocked at the current pin: SwiftMail can FETCH `X-GM-THRID`, but the
+- Find the thread the same way on every server: walk `Message-ID` /
+  `In-Reply-To` / `References` with header searches (SwiftMail's
+  `SearchCriteria.header`). The shortcuts are not available:
+  - Gmail `X-GM-THRID`: SwiftMail can FETCH it but not SEARCH by it. The
     swift-nio-imap revision it pins has no Gmail SEARCH keys (they came in
-    swift-nio-imap PR #853). Bump SwiftMail first, or use the References
-    walk below on Gmail too.
-  - Servers that advertise `THREAD=REFERENCES`: use it.
-  - Otherwise: walk `Message-ID` / `In-Reply-To` / `References` with header
-    searches in INBOX and the special-use `\Sent` mailbox.
+    swift-nio-imap PR #853), and 1.16.0 is SwiftMail's latest release.
+  - `THREAD=REFERENCES`: swift-nio-imap has no THREAD command, and Zoho
+    does not advertise it.
+  - One search over the whole account: MULTISEARCH (RFC 7377) is not
+    advertised by Zoho or Gmail, and SwiftMail has no API for it.
+- Search these mailboxes, each that the server has: INBOX, every `\Sent`,
+  `\Archive`, `\Drafts`, and `\All` mailbox, and the input message's
+  mailbox. Gmail's `\All` holds every message except Spam and Trash; Zoho
+  has no `\All`, so a reply filed only in another folder is not found.
+- Repeat the search with the new IDs until no new message appears. Apple
+  Mail on iPhone puts only the parent in `References`, so one search for
+  the first message's ID misses most of a thread (seen live on Zoho).
+- Show each `Message-ID` once. Zoho's Sent held two copies of one sent
+  message, and on Gmail one message is in many mailboxes.
+- Open: should a subject change (ignoring `Re:`/`Fwd:`) end the thread?
+  Outlook users reply to an old email and change the subject, so
+  `References` links the new conversation to the old one (seen live on
+  Zoho). Gmail starts a new thread when the subject changes.
 - Trim repeated history. Each reply usually quotes the whole chain under it,
   so the thread view shows only the new text of each message, with a
   `--full` flag to turn trimming off. This is a heuristic, but the common
