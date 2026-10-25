@@ -331,7 +331,7 @@ final class MailReaderThreadTests: XCTestCase {
 
         let messages = try await reader(fake).thread(IrisID(account: "work", mailbox: "[Gmail]/All Mail", uid: 51))
 
-        XCTAssertEqual(messages.map(\.rawMessage), [.success(a.raw), .success(b.raw)])
+        XCTAssertEqual(messages.map(\.download), [.success(.whole(a.raw)), .success(.whole(b.raw))])
         let calls = await fake.calls
         XCTAssertEqual(calls.filter { if case .fetchRawMessage = $0 { return true } else { return false } }, [
             .fetchRawMessage(5), .fetchRawMessage(7),
@@ -379,7 +379,7 @@ final class MailReaderThreadTests: XCTestCase {
             let messages = try await reader(test.fake).thread(IrisID(account: "work", mailbox: "INBOX", uid: 1))
 
             XCTAssertEqual(messages.map(\.irisID.description), test.thread.map(\.id), "case \(index)")
-            XCTAssertEqual(messages.map(\.rawMessage), test.thread.map { .success($0.message.raw) }, "case \(index)")
+            XCTAssertEqual(messages.map(\.download), test.thread.map { .success(.whole($0.message.raw)) }, "case \(index)")
             let calls = await test.fake.calls
             let lastArchive = try XCTUnwrap(calls.lastIndex(of: .examine("Archive")), "case \(index)")
             XCTAssertEqual(Array(calls[(lastArchive + 1)...]), test.afterArchive, "case \(index)")
@@ -807,7 +807,8 @@ final class MailReaderThreadTests: XCTestCase {
 
         XCTAssertEqual(messages.map(\.irisID.description), ["work/INBOX/1", "work/Sent/2", "work/INBOX/3", "work/INBOX/4"])
         XCTAssertEqual(
-            messages.map(\.rawMessage), [.failure(.timedOut(seconds: 10)), .failure(.gone), .success(c.raw), .success(d.raw)]
+            messages.map(\.download),
+            [.failure(.timedOut(seconds: 10)), .failure(.gone), .success(.whole(c.raw)), .success(.whole(d.raw))]
         )
         XCTAssertEqual(messages.map(\.isInput), [false, false, false, true])
         let calls = await fake.calls

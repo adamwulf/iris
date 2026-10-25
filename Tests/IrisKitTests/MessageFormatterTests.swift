@@ -208,8 +208,8 @@ final class MessageFormatterTests: XCTestCase {
     private func documents(_ messages: [ThreadMessage], body: BodyPreference = .auto) async throws -> [MessageDocument] {
         var documents: [MessageDocument] = []
         for message in messages {
-            let data = try message.rawMessage.get()
-            documents.append(try await MessageFormatter.document(rawMessage: data, irisID: message.irisID, body: body))
+            let downloaded = try message.download.get()
+            documents.append(try await MessageFormatter.document(message: downloaded, irisID: message.irisID, body: body))
         }
         return documents
     }
