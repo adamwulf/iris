@@ -256,8 +256,8 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertThrowsError(try Iris.parseAsRoot(["auth", "logout"]))
     }
 
-    func testDraftDefaults() throws {
-        let command = try Draft.parse(["work/INBOX/42"])
+    func testDraftReplyDefaults() throws {
+        let command = try Draft.Reply.parse(["work/INBOX/42"])
         XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
         XCTAssertNil(command.body)
         XCTAssertNil(command.file)
@@ -266,8 +266,8 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertEqual(command.attach, [], "no attachments by default")
     }
 
-    func testDraftTakesTheReplyAsAnArgument() throws {
-        let command = try Draft.parse(["personal/[Gmail]/All Mail/7", "Thanks, *Jane*!", "--all", "--no-quote"])
+    func testDraftReplyTakesTheReplyAsAnArgument() throws {
+        let command = try Draft.Reply.parse(["personal/[Gmail]/All Mail/7", "Thanks, *Jane*!", "--all", "--no-quote"])
         XCTAssertEqual(command.irisID, IrisID(account: "personal", mailbox: "[Gmail]/All Mail", uid: 7))
         XCTAssertEqual(command.body, "Thanks, *Jane*!")
         XCTAssertTrue(command.all)
@@ -275,64 +275,139 @@ final class ArgumentParsingTests: XCTestCase {
     }
 
     /// Without `--`, a reply that starts with `-` (a Markdown list) reads as an option.
-    func testDraftTakesAReplyThatStartsWithADashAfterDoubleDash() throws {
-        XCTAssertThrowsError(try Draft.parse(["work/INBOX/4821", "- yes"]))
+    func testDraftReplyTakesAReplyThatStartsWithADashAfterDoubleDash() throws {
+        XCTAssertThrowsError(try Draft.Reply.parse(["work/INBOX/4821", "- yes"]))
 
-        let command = try Draft.parse(["work/INBOX/4821", "--", "- yes\n- no"])
+        let command = try Draft.Reply.parse(["work/INBOX/4821", "--", "- yes\n- no"])
         XCTAssertEqual(command.body, "- yes\n- no")
 
-        let withOptions = try Draft.parse(["work/INBOX/4821", "--all", "--no-quote", "--", "-- signed"])
+        let withOptions = try Draft.Reply.parse(["work/INBOX/4821", "--all", "--no-quote", "--", "-- signed"])
         XCTAssertEqual(withOptions.body, "-- signed")
         XCTAssertTrue(withOptions.all)
         XCTAssertTrue(withOptions.noQuote)
     }
 
-    func testDraftTakesAFileWithShortAndLongNames() throws {
-        XCTAssertEqual(try Draft.parse(["work/INBOX/42", "-F", "reply.md"]).file, "reply.md")
-        XCTAssertEqual(try Draft.parse(["work/INBOX/42", "--file", "reply.md"]).file, "reply.md")
-        XCTAssertEqual(try Draft.parse(["work/INBOX/42", "-F", "-"]).file, "-", "-F - reads stdin")
+    func testDraftReplyTakesAFileWithShortAndLongNames() throws {
+        XCTAssertEqual(try Draft.Reply.parse(["work/INBOX/42", "-F", "reply.md"]).file, "reply.md")
+        XCTAssertEqual(try Draft.Reply.parse(["work/INBOX/42", "--file", "reply.md"]).file, "reply.md")
+        XCTAssertEqual(try Draft.Reply.parse(["work/INBOX/42", "-F", "-"]).file, "-", "-F - reads stdin")
     }
 
     /// The parser accepts both, so that DraftBody can say what to do instead.
-    func testDraftParsesAnArgumentAndAFileTogether() throws {
-        let command = try Draft.parse(["work/INBOX/42", "Thanks!", "-F", "reply.md"])
+    func testDraftReplyParsesAnArgumentAndAFileTogether() throws {
+        let command = try Draft.Reply.parse(["work/INBOX/42", "Thanks!", "-F", "reply.md"])
         XCTAssertEqual(command.body, "Thanks!")
         XCTAssertEqual(command.file, "reply.md")
     }
 
-    func testDraftTakesRepeatedAttachInOrder() throws {
-        let command = try Draft.parse([
+    func testDraftReplyTakesRepeatedAttachInOrder() throws {
+        let command = try Draft.Reply.parse([
             "work/INBOX/42", "--attach", "q4.pdf", "Thanks!", "--attach=notes/My Notes.txt", "--all", "--attach", "q4.pdf",
         ])
         XCTAssertEqual(command.attach, ["q4.pdf", "notes/My Notes.txt", "q4.pdf"], "in order, repeats kept")
         XCTAssertEqual(command.body, "Thanks!")
         XCTAssertTrue(command.all)
 
-        let withFile = try Draft.parse(["work/INBOX/42", "-F", "reply.md", "--attach", "q4.pdf"])
+        let withFile = try Draft.Reply.parse(["work/INBOX/42", "-F", "reply.md", "--attach", "q4.pdf"])
         XCTAssertEqual(withFile.file, "reply.md")
         XCTAssertEqual(withFile.attach, ["q4.pdf"])
     }
 
     /// Each --attach takes one path, so a second path is the reply, not another file.
     /// `DraftBody.read` then rejects a reply that names a file (`draftBodyNamesAFile`).
-    func testDraftAttachTakesOnePathEach() throws {
-        let command = try Draft.parse(["work/INBOX/42", "--attach", "q4.pdf", "budget.xlsx"])
+    func testDraftReplyAttachTakesOnePathEach() throws {
+        let command = try Draft.Reply.parse(["work/INBOX/42", "--attach", "q4.pdf", "budget.xlsx"])
         XCTAssertEqual(command.attach, ["q4.pdf"])
         XCTAssertEqual(command.body, "budget.xlsx")
 
-        XCTAssertThrowsError(try Draft.parse(["work/INBOX/42", "--attach"]), "--attach needs a path")
+        XCTAssertThrowsError(try Draft.Reply.parse(["work/INBOX/42", "--attach"]), "--attach needs a path")
     }
 
-    func testDraftNeedsAFullIrisIDAndHasNoAccountOption() {
-        XCTAssertThrowsError(try Draft.parse([]))
-        XCTAssertThrowsError(try Draft.parse(["42", "Thanks!"]))
-        XCTAssertThrowsError(try Draft.parse(["work/INBOX/42", "--account", "work"]), "the iris ID names the account")
-        XCTAssertThrowsError(try Draft.parse(["work/INBOX/42", "--quote"]), "only --no-quote exists")
+    func testDraftReplyNeedsAFullIrisIDAndHasNoAccountOption() {
+        XCTAssertThrowsError(try Draft.Reply.parse([]))
+        XCTAssertThrowsError(try Draft.Reply.parse(["42", "Thanks!"]))
+        XCTAssertThrowsError(try Draft.Reply.parse(["work/INBOX/42", "--account", "work"]), "the iris ID names the account")
+        XCTAssertThrowsError(try Draft.Reply.parse(["work/INBOX/42", "--quote"]), "only --no-quote exists")
     }
 
-    func testDraftExplainsABadIrisID() {
-        XCTAssertThrowsError(try Draft.parse(["INBOX/42"])) { error in
-            let message = Draft.message(for: error)
+    func testDraftReplyExplainsABadIrisID() {
+        XCTAssertThrowsError(try Draft.Reply.parse(["INBOX/42"])) { error in
+            let message = Draft.Reply.message(for: error)
+            XCTAssertTrue(message.contains("\"INBOX/42\" is not an iris ID"), message)
+        }
+    }
+
+    func testDraftSubcommandsParseFromTheRoot() throws {
+        let reply = try XCTUnwrap(try Iris.parseAsRoot([
+            "draft", "reply", "work/INBOX/42", "Thanks!", "--all", "--no-quote", "--attach", "report.pdf",
+        ]) as? Draft.Reply)
+        XCTAssertEqual(reply.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+        XCTAssertEqual(reply.body, "Thanks!")
+        XCTAssertTrue(reply.all)
+        XCTAssertTrue(reply.noQuote)
+        XCTAssertEqual(reply.attach, ["report.pdf"])
+
+        let update = try XCTUnwrap(try Iris.parseAsRoot([
+            "draft", "update", "personal/[Gmail]/Drafts/7", "Replacement *body*.",
+        ]) as? Draft.Update)
+        XCTAssertEqual(update.irisID, IrisID(account: "personal", mailbox: "[Gmail]/Drafts", uid: 7))
+        XCTAssertEqual(update.body, "Replacement *body*.")
+        XCTAssertNil(update.file)
+    }
+
+    func testDraftRejectsTheOldBareSyntax() {
+        for arguments in [
+            ["draft", "work/INBOX/42"],
+            ["draft", "work/INBOX/42", "Thanks!"],
+            ["draft", "work/INBOX/42", "-F", "-"],
+            ["draft", "work/INBOX/42", "Thanks!", "--all"],
+        ] {
+            XCTAssertThrowsError(try Iris.parseAsRoot(arguments), "\(arguments)")
+        }
+    }
+
+    func testDraftUpdateDefaultsToReadingStdin() throws {
+        let command = try Draft.Update.parse(["work/Drafts/42"])
+        XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "Drafts", uid: 42))
+        XCTAssertNil(command.body)
+        XCTAssertNil(command.file)
+    }
+
+    func testDraftUpdateTakesAFileWithShortAndLongNames() throws {
+        for option in ["-F", "--file"] {
+            let command = try Draft.Update.parse(["work/Drafts/42", option, "body.md"])
+            XCTAssertNil(command.body)
+            XCTAssertEqual(command.file, "body.md")
+        }
+        XCTAssertEqual(try Draft.Update.parse(["work/Drafts/42", "-F", "-"]).file, "-")
+    }
+
+    func testDraftUpdateTakesABodyThatStartsWithADashAfterDoubleDash() throws {
+        XCTAssertThrowsError(try Draft.Update.parse(["work/Drafts/42", "- yes"]))
+        XCTAssertEqual(try Draft.Update.parse(["work/Drafts/42", "--", "- yes\n- no"]).body, "- yes\n- no")
+    }
+
+    /// DraftBody reports the conflicting sources with a useful next step.
+    func testDraftUpdateParsesAnArgumentAndAFileTogether() throws {
+        let command = try Draft.Update.parse(["work/Drafts/42", "Replacement", "-F", "body.md"])
+        XCTAssertEqual(command.body, "Replacement")
+        XCTAssertEqual(command.file, "body.md")
+    }
+
+    func testDraftUpdateRejectsReplyOptions() {
+        for options in [["--all"], ["--no-quote"], ["--attach", "report.pdf"]] {
+            XCTAssertThrowsError(try Iris.parseAsRoot(["draft", "update", "work/Drafts/42", "Replacement"] + options))
+        }
+    }
+
+    func testDraftUpdateNeedsAFullIrisIDAndHasNoAccountOrMailboxOption() {
+        XCTAssertThrowsError(try Draft.Update.parse([]))
+        XCTAssertThrowsError(try Draft.Update.parse(["42", "Replacement"]))
+        XCTAssertThrowsError(try Draft.Update.parse(["work/Drafts/42", "--account", "work"]))
+        XCTAssertThrowsError(try Draft.Update.parse(["work/Drafts/42", "--mailbox", "Drafts"]))
+        XCTAssertThrowsError(try Draft.Update.parse(["work/Drafts/42", "Replacement", "extra"]))
+        XCTAssertThrowsError(try Draft.Update.parse(["INBOX/42"])) { error in
+            let message = Draft.Update.message(for: error)
             XCTAssertTrue(message.contains("\"INBOX/42\" is not an iris ID"), message)
         }
     }
