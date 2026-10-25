@@ -70,7 +70,10 @@ public struct MailWriter: Sendable {
         timeZone: TimeZone = .current
     ) async throws -> SavedDraft {
         let reader = MailReader(account: account, makeClient: { makeClient($0) })
-        let original = try await MessageDecoder.decode(try await reader.rawMessage(id))
+        // Decoded as `show` and `thread` decode a message.
+        let original = try await MessageFormatter.document(
+            rawMessage: try await reader.rawMessage(id), irisID: id, body: .auto
+        )
         let draft = ReplyComposer.reply(
             to: original,
             body: body,

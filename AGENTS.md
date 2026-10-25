@@ -100,7 +100,8 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 `\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
 
 `MailWriter.saveReply` takes two sessions: a `MailReader` reads the original
-(`rawMessage(_:)`), and `saveDraft(_:)` saves the reply that `ReplyComposer`
+(`rawMessage(_:)`, decoded with `MessageFormatter.document`, as `show` and
+`thread` decode a message), and `saveDraft(_:)` saves the reply that `ReplyComposer`
 built (pure; it needs no fake). `saveDraft` finds the `\Drafts` mailbox in
 the merged LIST, APPENDs to its wire name, and makes the iris ID from the
 decoded name (it also puts that name back into a `draftMayBeSaved` error).
