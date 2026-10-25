@@ -41,7 +41,7 @@ public enum ThreadOutputFormat: String, CaseIterable, Sendable {
     /// downloads no message for it.
     case id
 
-    /// The format in which `MessageFormatter.render(thread:format:body:timeZone:)`
+    /// The format in which `MessageFormatter.render(thread:format:body:full:timeZone:)`
     /// prints the downloaded messages, or nil for `id`, which needs no
     /// download: `MailReader.threadIDs(_:)` gives the iris IDs, and
     /// `MessageFormatter.render(threadIDs:)` prints them.
@@ -88,7 +88,7 @@ public enum MessageFormatter {
         }
     }
 
-    /// The line logged for a message that `render(thread:format:body:timeZone:)`
+    /// The line logged for a message that `render(thread:format:body:full:timeZone:)`
     /// leaves out: its iris ID, why, and what to do next.
     static func leftOutLine(_ id: IrisID, because reason: String, then nextStep: String) -> String {
         "Left \(id) out of the thread: \(reason). \(nextStep)"

@@ -50,10 +50,12 @@ Sources/IrisKit/
                ThreadSubject (the subject rule of `thread`)
   Message/     MessageDecoder (raw RFC 822, or a large message's outline and
                body parts -> MessageDocument), FlowedText,
-               BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON of a
-               DownloadedMessage, and a thread; `--format raw` is the bytes
-               of `MailReader.rawMessage` unchanged), AppleMailURL (the
-               message: URL from the Message-ID header),
+               BodyCleanup, QuotedHistory (cuts the quoted history and the
+               signature at the end of a body), HeaderDate, MessageFormatter
+               (Markdown/JSON of a DownloadedMessage, and a thread;
+               `--format raw` is the bytes of `MailReader.rawMessage`
+               unchanged), AppleMailURL (the message: URL from the
+               Message-ID header),
                TransferEncoding (base64 and quoted-printable of one downloaded part)
   Draft/       DraftBody (the reply's one source: argument, -F, stdin),
                DraftAttachment (a file of --attach: name, MIME type, bytes),
@@ -337,7 +339,7 @@ for the user to save.
   the message in Apple Mail. `MessageDocument` makes it from `messageID` with
   `AppleMailURL`, so it is nil when there is no `Message-ID` header.
   Markdown and JSON download a large message in parts
-  (`MessageFormatter.render(message:irisID:format:body:timeZone:)` takes the
+  (`MessageFormatter.render(message:irisID:format:body:full:timeZone:)` takes the
   `DownloadedMessage`); `raw` is always the whole message, so a large one can
   still time out.
 - Every attachment that `show` and `thread` list (`MessageAttachment`) has
@@ -372,9 +374,22 @@ for the user to save.
   `.withoutOverwriting` (O_EXCL, which also refuses a symbolic link) is the
   real guard when the file is created. Both give `attachmentFileExists`,
   which says to pass another `-o`.
+- `show` and `thread` hide the quoted history and the signature at the end
+  of each body; `--full` (the `full` parameter of `MessageDecoder.decode`
+  and both `MessageFormatter.render`s) keeps them. `QuotedHistory` holds the
+  rules: first the HTML elements that mail apps mark (in the DOM, before the
+  Markdown conversion, so `MessageDecoder`'s test seam is the HTML parser,
+  `parsingHTMLWith`), then the text markers in the text or Markdown. It cuts
+  only the end of a body, never a forward (`QuotedHistory.isForward`), and
+  keeps a body that would be left empty. `MessageDocument.bodyTrimmed` says
+  whether it cut (JSON `bodyTrimmed`), and Markdown then prints
+  `MessageFormatter.trimmedNote` under the body. The trimming is in the
+  decoder's shared document step, so a message downloaded in parts is
+  trimmed too. `draft` decodes the original with `full: true`: a reply
+  quotes the original with its history, as mail apps do.
 - `thread` takes `--format markdown|json|jsonl|id` (`ThreadOutputFormat`),
   default `markdown`. Its `messagesFormat` is the `ThreadMessagesFormat`
-  of `MessageFormatter.render(thread:format:body:timeZone:)`, which prints
+  of `MessageFormatter.render(thread:format:body:full:timeZone:)`, which prints
   the downloaded messages: each message as `show` prints it, oldest first,
   with a `* * *` line between messages, a JSON array of the
   `show --format json` objects, or those objects one per line (compact,
@@ -669,6 +684,14 @@ account (`--account <name>`).
   escaped line by line (`MarkdownHTML.html(fromPlainText:)`), because as
   Markdown a `-- ` signature line makes the line above it a heading. The
   text part quotes both kinds with `> `.
+- **SwiftText's DOM:** `DOMElement.children` is a public `var`, so
+  `QuotedHistory` removes nodes in place before `HTMLDocument.markdown()`;
+  `DOMText` is internal, so a text node is read with `DOMNode.text()`.
+  `markdown()` converts only the `<html>` element when there is one (it
+  drops a footer after `</html>`), and `QuotedHistory.contentRoot(of:)`
+  walks the same element. Only the parse throws, which is why it is the
+  test seam. The test target does not import SwiftText: tests pass
+  `MessageDecoder.htmlDocument(fromHTML:)` or a generic failing function.
 - **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the

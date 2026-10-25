@@ -1,7 +1,7 @@
 # iris
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
-at a time, shows a full message, or a whole thread, as Markdown, downloads an
+at a time, shows a message, or a whole thread, as Markdown, downloads an
 attachment, and saves a reply as a draft. Reading changes nothing: iris
 opens mailboxes read-only and never marks a message as read. The only
 commands that change mail are `iris read` and `iris unread`, which mark one
@@ -188,18 +188,19 @@ client ID but no refresh token yet.
   (iris ID, date, sender, unread, subject). Filters: `--unread`,
   `--flagged`, `--from`, `--to`, `--subject`, `--search` (headers and
   body), `--since`, `--before`.
-- `iris show`: one full message, by its iris ID, as Markdown. HTML mail is converted to
+- `iris show`: one message, by its iris ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
-  and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
-  source. Markdown and JSON include a `message:` URL that opens the message
-  in Apple Mail, and list the attachments, each with its attachment ID. A
-  message over 1 MiB is shown from its text and HTML parts alone (see
-  "Large messages"), so its attachments stay on the server.
+  and `format=flowed` text are decoded. The quoted history and the signature
+  at the end of the body are hidden; `--full` shows them. Also as JSON, or
+  as the raw `.eml` source. Markdown and JSON include a `message:` URL that
+  opens the message in Apple Mail, and list the attachments, each with its
+  attachment ID. A message over 1 MiB is shown from its text and HTML parts
+  alone (see "Large messages"), so its attachments stay on the server.
 - `iris thread`: every message in the thread of one message, oldest first,
-  by the iris ID of any message in it. Each message is shown in full, as
-  `iris show` shows it, with its own iris ID (a reply you sent shows its
-  Sent iris ID). Also as JSON or JSON Lines, or only the iris IDs, which
-  downloads no message.
+  by the iris ID of any message in it. Each message is shown as `iris show`
+  shows it, with only its own text and its own iris ID (a reply you sent
+  shows its Sent iris ID). Also as JSON or JSON Lines, or only the iris IDs,
+  which downloads no message.
 - `iris download`: one attachment of a message, by its iris ID and the
   attachment ID that `iris show` lists. It downloads only that part, decodes
   it, and writes its bytes to stdout, or saves it in a new file with `-o`.
@@ -231,10 +232,12 @@ iris list --search invoice         # the text anywhere: From, To, Subject, the b
 
 iris show 'work/INBOX/4821'                # one message, as Markdown
 iris show 'work/INBOX/4821' --body text    # the plain-text part instead of the HTML
+iris show 'work/INBOX/4821' --full         # with the quoted history and the signature
 iris show 'work/INBOX/4821' --format raw > message.eml
 iris show 'personal/[Gmail]/Sent Mail/77'
 
 iris thread 'work/INBOX/4821'                 # the whole thread, oldest first
+iris thread 'work/INBOX/4821' --full          # each message with its quoted history
 iris thread 'work/INBOX/4821' --format json   # an array of `iris show --format json` objects
 iris thread 'work/INBOX/4821' --format jsonl  # the same objects, one per line
 iris thread 'work/INBOX/4821' --format id     # only the iris IDs, one per line
@@ -291,7 +294,9 @@ and ignores the time and the time zone. That day can be different from the
 `iris thread <iris-id>` shows every message of the thread that the message
 is in: the messages before it and the replies after it, oldest first (by
 the `Date:` header, else the date the server received the message). It
-takes `--body` like `iris show`, and `--format`:
+takes `--body` and `--full` like `iris show` (see "Quoted history and
+signatures" below: without `--full`, each message shows only its own text),
+and `--format`:
 
 - `markdown` (the default): each message as `iris show` prints it, with a
   `* * *` line between messages.
@@ -358,8 +363,43 @@ Limits:
 - A reply filed only in another folder (not INBOX, Sent, Drafts, Archive,
   or All Mail, and not the folder of the message you named) is not found.
   Zoho has no All Mail.
-- Each message is shown in full, with the quoted history of the messages
-  before it.
+
+### Quoted history and signatures
+
+A reply usually quotes the whole conversation under its own text. `iris show`
+and `iris thread` hide that quoted history, and the signature, at the end of
+each body, and print a line under the body that says so:
+`(Quoted text or signature hidden: --full shows it.)`. In JSON,
+`bodyTrimmed` is `true` for such a body. `--full` shows the whole body, and
+`--format raw` is always the whole message.
+
+iris cuts only at the marks that mail apps leave:
+
+- HTML: Gmail's quote and signature (`gmail_quote`, `gmail_signature`),
+  Apple Mail's and Thunderbird's `<blockquote type="cite">` (and
+  Thunderbird's attribution and signature), and Outlook's reply header
+  (`divRplyFwdMsg`), with everything under it.
+- Text (also the Markdown from HTML): an `On <date>, <name> wrote:` line
+  (or Zoho's `---- On <date> <name> wrote ----`) with only `>` lines under
+  it, Outlook's `From:` / `Sent:` / `To:` / `Subject:` header block, and a
+  signature after a `-- ` line.
+
+Only the end of a body is cut. A quote with your answers between or under
+the quoted lines is shown whole, and so is a body with no mark. A forward
+(a subject that starts with `Fwd:` or `Fw:`, or a "Forwarded message" or
+"Begin forwarded message:" line) is never cut, because the message it
+forwards is new to the reader. A body that is nothing but history is shown
+whole.
+
+Limits:
+
+- An Outlook reply with answers written inside the quoted message (under
+  its `From:` / `Sent:` header) loses those answers; `--full` shows them.
+- The text marks are in English: `Am ... schrieb ...:` and other languages
+  are not found in a plain-text body. HTML marks do not depend on the
+  language.
+- A signature without the `-- ` line (most signatures that people type) is
+  kept, and so is "Sent from my iPhone".
 
 ### Iris IDs
 
