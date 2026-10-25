@@ -62,8 +62,8 @@ converts SwiftMail types and errors. Its parts that need no server are static
 and tested in `SwiftMailClientTests`: the error mapping
 (`irisError(for:command:account:)`), the TLS choice
 (`transportSecurity(forPort:)`), the SEARCH keys
-(`searchCriteria(for:)`), `MailboxInfo(swiftMail:)`, and
-`MessageEnvelope(swiftMail:)`.
+(`searchCriteria(for:)`), the STORE operation (`storeOperation(seen:)`),
+`MailboxInfo(swiftMail:)`, and `MessageEnvelope(swiftMail:)`.
 
 `MailWriteClient` refines `MailClient` with the calls that change mail:
 `select(mailbox:)` (SELECT, read-write) and `setSeen(_:uid:)` (UID STORE
@@ -133,11 +133,11 @@ Never put a password in an error message, a log line, or JSON output.
 
 ### Add a command
 
-1. Put the logic in IrisKit (usually a `MailReader` method) with tests over
-   `FakeMailClient`.
-2. If it needs a new IMAP call, add it to `MailClient`, implement it in
-   `SwiftMailClient` (types and errors only), and script it in
-   `FakeMailClient`.
+1. Put the logic in IrisKit (a `MailReader` method, or a `MailWriter` method
+   for a write command) with tests over `FakeMailClient`.
+2. If it needs a new IMAP call, add it to `MailClient` (or to
+   `MailWriteClient` if it changes mail), implement it in `SwiftMailClient`
+   (types and errors only), and script it in `FakeMailClient`.
 3. Add `Sources/iris/Commands/<Name>Command.swift`: `@OptionGroup var
    accountOptions: AccountOptions` (but a command that takes an `IrisID`
    has no `--account`; see "Accounts"), options (a list command uses

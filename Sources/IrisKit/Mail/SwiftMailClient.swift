@@ -199,8 +199,13 @@ struct SwiftMailClient: MailWriteClient {
 
     func setSeen(_ seen: Bool, uid: UInt32) async throws {
         try await run(.store) {
-            try await server.store(flags: [.seen], on: UIDSet(UID(uid)), operation: seen ? .add : .remove)
+            try await server.store(flags: [.seen], on: UIDSet(UID(uid)), operation: Self.storeOperation(seen: seen))
         }
+    }
+
+    /// `+FLAGS` adds `\Seen` (read), and `-FLAGS` removes it (unread).
+    static func storeOperation(seen: Bool) -> StoreData.StoreType {
+        seen ? .add : .remove
     }
 
     // MARK: - Errors

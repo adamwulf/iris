@@ -30,7 +30,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case connectionFailed(account: String, host: String, port: Int, reason: String)
     /// After a good login, the connection broke: the server closed it, or the network dropped.
     case connectionLost(account: String, command: String, reason: String)
-    /// EXAMINE failed: the mailbox does not exist, or the server cannot open it.
+    /// EXAMINE or SELECT failed: the mailbox does not exist, or the server cannot open it.
     case unknownMailbox(account: String, name: String, reason: String)
     /// The mailbox has no message with this iris ID's UID.
     case unknownMessage(IrisID)

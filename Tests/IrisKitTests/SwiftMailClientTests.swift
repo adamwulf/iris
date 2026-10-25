@@ -223,6 +223,13 @@ final class SwiftMailClientTests: XCTestCase {
         assertCriteria(MessageFilter(since: since), [.since(since.start)])
     }
 
+    // MARK: - Store
+
+    func testReadAddsSeenAndUnreadRemovesIt() {
+        XCTAssertEqual(SwiftMailClient.storeOperation(seen: true), .add)
+        XCTAssertEqual(SwiftMailClient.storeOperation(seen: false), .remove)
+    }
+
     // MARK: - Mailboxes
 
     func testMailboxInfoKeepsOnlyTheSpecialUseAttributesInNameOrder() {
