@@ -508,6 +508,23 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertTrue(alone.text.hasSuffix("My note."), alone.text)
     }
 
+    func testAnswersInAnEnglishZohoReplyAreKept() async throws {
+        // In English, Zoho's header looks like Outlook's From/Date/Subject
+        // block, which the text pass would cut with everything under it.
+        let header = #"<div><br></div><div id="Zm-_Id_-Sgn1">From: Jane Doe &lt;jane@example.com&gt;<br>Date: Fri, 23 Oct 2026 10:28:18 -0500<br>Subject: Lunch<br></div><div><br></div>"#
+        let plain = try await trimmed(#"<div>Sounds good.</div><div class="zmail_extra">"# + header + #"<blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div>"#)
+        XCTAssertEqual(plain.text, "Sounds good.")
+        XCTAssertTrue(plain.trimmed)
+
+        let under = try await trimmed(#"<div>Hi Jane,</div><div class="zmail_extra">"# + header + #"<div>Tuesday works for me.</div><blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div>"#)
+        XCTAssertTrue(under.text.hasSuffix("Tuesday works for me."), under.text)
+        XCTAssertTrue(under.text.contains("Subject: Lunch"), under.text)
+
+        let inline = try await trimmed(#"<div>See inline.</div><div class="zmail_extra">"# + header + #"<blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote><div>Yes, Tuesday works.</div><blockquote id="blockquote_zmail"><div>See you!</div></blockquote></div>"#)
+        XCTAssertTrue(inline.text.contains("> Lunch on Tuesday?"), inline.text)
+        XCTAssertTrue(inline.text.hasSuffix("Yes, Tuesday works."), inline.text)
+    }
+
     func testAZohoForwardIsKept() async throws {
         let html = """
         <div><div>FYI<br></div><div><br></div><div class="zmail_extra_hr" style="border-top: 1px solid rgb(204, 204, 204); height: 0px; margin-top: 10px; margin-bottom: 10px; line-height: 0px;"><br></div><div class="zmail_extra" data-zbluepencil-ignore="true"><div><br></div><div id="1">============ Forwarded message ============<br>From: Jane Doe &lt;jane@example.com&gt;<br>Date: Fri, 16 Oct 2026 16:16:00 -0500<br>Subject: Lunch<br>============ Forwarded message ============<br></div><div><br></div><blockquote style="margin: 0px;" id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div></div>

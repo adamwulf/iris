@@ -343,9 +343,12 @@ public enum MessageDecoder {
         guard trimming else {
             return (markdown(of: documents), false)
         }
+        let zohoHeader = QuotedHistory.hasZohoHeader(in: documents)
         let removal = QuotedHistory.removeHistory(fromHTMLParts: documents, inReply: inReply)
         let converted = markdown(of: documents)
-        let trim = QuotedHistory.trim(converted, fromHTML: true, afterRemovedQuote: removal.quote)
+        let trim = QuotedHistory.trim(
+            converted, fromHTML: true, afterRemovedQuote: removal.quote, findingOutlookHeader: !zohoHeader
+        )
         if case .trimmed(let kept) = trim {
             return (kept, true)
         }

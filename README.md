@@ -403,6 +403,9 @@ Limits:
 
 - An Outlook reply with answers written inside the quoted message (under
   its `From:` / `Sent:` header) loses those answers; `--full` shows them.
+  So does the plain-text part of a Zoho reply (`--body text`), which does
+  not quote the message under its header either. Zoho's HTML part, shown
+  by default, keeps them.
 - Outlook writes the same header for a forward. A forward is known only by
   `Fwd:` or `Fw:`, so a forward from an Outlook in another language
   (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.

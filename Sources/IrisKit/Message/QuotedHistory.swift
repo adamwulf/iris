@@ -89,14 +89,24 @@ enum QuotedHistory {
     ///     Then an attribution line with nothing after it starts the cut too:
     ///     it was the removed quote's (older Apple Mail puts it above the
     ///     `blockquote`).
-    static func trim(_ text: String, fromHTML: Bool = false, afterRemovedQuote: Bool = false) -> TextTrim {
+    ///   - findingOutlookHeader: Whether Outlook's header block starts the
+    ///     cut. False when the HTML has Zoho's marked header
+    ///     (`hasZohoHeader(in:)`): its From/Date/Subject lines would look
+    ///     like Outlook's, and the HTML pass kept it only because the sender
+    ///     wrote under it.
+    static func trim(
+        _ text: String,
+        fromHTML: Bool = false,
+        afterRemovedQuote: Bool = false,
+        findingOutlookHeader: Bool = true
+    ) -> TextTrim {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
         let signature = lines.firstIndex { line in
             line == "-- " || (fromHTML && line.wholeMatch(of: /-- */) != nil)
         }
         let history = [
             trailingAttributionStart(in: lines, before: signature ?? lines.count, allowingNoQuote: afterRemovedQuote),
-            outlookHeaderStart(in: lines),
+            findingOutlookHeader ? outlookHeaderStart(in: lines) : nil,
         ].compactMap { $0 }.min()
 
         // A forward marker above the history is the start of a forward. One
@@ -286,6 +296,19 @@ enum QuotedHistory {
             }
         }
         return removal
+    }
+
+    /// Whether `documents` have Zoho's marked header (id `Zm-_Id_-Sgn1`) in
+    /// Zoho's quote container. Read it before `removeHistory`, which
+    /// removes the header when nothing follows it.
+    static func hasZohoHeader(in documents: [HTMLDocument]) -> Bool {
+        documents.contains { document in
+            path(in: contentRoot(of: document)) { element in
+                isQuoteContainer(element) && element.children.contains { node in
+                    (node as? DOMElement).flatMap { attribute("id", of: $0) }.map(containerAttributionIDs.contains) == true
+                }
+            } != nil
+        }
     }
 
     /// The element that `HTMLDocument.markdown()` converts: the `<html>`
