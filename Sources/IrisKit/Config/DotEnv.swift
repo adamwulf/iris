@@ -1,6 +1,7 @@
 import Foundation
 
-/// Reads `KEY=value` settings from `.env` files.
+/// Reads `KEY=value` settings from `.env` files, and writes one setting for
+/// `iris auth login`.
 ///
 /// The search starts in a directory (the current working directory by default)
 /// and walks each parent up to the filesystem root. When two files define the
@@ -47,18 +48,77 @@ public enum DotEnv {
         var values: [String: String] = [:]
         // `isNewline` also matches "\r\n", which Swift treats as one Character.
         for rawLine in contents.split(whereSeparator: \.isNewline) {
-            var line = rawLine.trimmingCharacters(in: .whitespaces)
-            if line.isEmpty || line.hasPrefix("#") { continue }
-            if line.hasPrefix("export ") || line.hasPrefix("export\t") {
-                line = String(line.dropFirst("export".count)).trimmingCharacters(in: .whitespaces)
-            }
-            guard let equals = line.firstIndex(of: "=") else { continue }
-            let key = String(line[..<equals])
-            guard !key.isEmpty, key.rangeOfCharacter(from: .whitespaces) == nil else { continue }
-            let value = parseValue(String(line[line.index(after: equals)...]))
-            values[key] = value.isEmpty ? nil : value
+            guard let line = assignment(in: rawLine) else { continue }
+            let value = parseValue(line.text)
+            values[line.key] = value.isEmpty ? nil : value
         }
         return values
+    }
+
+    /// The key of one line and the text after its `=`, by the rules of
+    /// `parse`. Nil for a blank line, a comment, or a line that is not `KEY=value`.
+    private static func assignment<S: StringProtocol>(in rawLine: S) -> (key: String, text: String)? {
+        var line = rawLine.trimmingCharacters(in: .whitespaces)
+        if line.isEmpty || line.hasPrefix("#") { return nil }
+        if line.hasPrefix("export ") || line.hasPrefix("export\t") {
+            line = String(line.dropFirst("export".count)).trimmingCharacters(in: .whitespaces)
+        }
+        guard let equals = line.firstIndex(of: "=") else { return nil }
+        let key = String(line[..<equals])
+        guard !key.isEmpty, key.rangeOfCharacter(from: .whitespaces) == nil else { return nil }
+        return (key, String(line[line.index(after: equals)...]))
+    }
+
+    /// The nearest `.env` file, from `directory` (the current working
+    /// directory by default) up to the root, that sets `key`: the file whose
+    /// value `loadAll` uses. A line with an empty value does not count, as in
+    /// `loadAll`. Nil when no file sets the key.
+    public static func fileURL(settingKey key: String, startingIn directory: URL? = nil) -> URL? {
+        candidateFileURLs(startingIn: directory).first { fileURL in
+            guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { return false }
+            return parse(contents)[key] != nil
+        }
+    }
+
+    /// Sets `key` to `value` in the existing `.env` file at `fileURL`. The
+    /// first line that sets `key` gets the new value, and later lines that set
+    /// it are removed, so the file sets it once. When no line sets it, the new
+    /// line goes at the end. Every other line, comments too, stays as it is,
+    /// and the file keeps its permissions. A symbolic link stays a link: the
+    /// file it points to is written. `value` is written without quotes, so it
+    /// must have no whitespace, `#`, or quotes (a refresh token has none).
+    public static func setValue(_ value: String, forKey key: String, in fileURL: URL) throws {
+        let target = fileURL.resolvingSymlinksInPath()
+        let contents = try String(contentsOf: target, encoding: .utf8)
+        let permissions = try FileManager.default.attributesOfItem(atPath: target.path)[.posixPermissions]
+
+        var lines = contents.components(separatedBy: "\n")
+        // A final newline leaves an empty last element; the output adds it back.
+        if lines.last == "" {
+            lines.removeLast()
+        }
+        let newLine = "\(key)=\(value)"
+        var replaced = false
+        var output: [String] = []
+        for line in lines {
+            guard assignment(in: line)?.key == key else {
+                output.append(line)
+                continue
+            }
+            if !replaced {
+                output.append(newLine)
+                replaced = true
+            }
+        }
+        if !replaced {
+            output.append(newLine)
+        }
+
+        // An atomic write replaces the file, which resets its permissions; set them back.
+        try (output.joined(separator: "\n") + "\n").write(to: target, atomically: true, encoding: .utf8)
+        if let permissions {
+            try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: target.path)
+        }
     }
 
     /// The value in `text`, everything after the `=`.

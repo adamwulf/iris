@@ -127,4 +127,87 @@ final class DotEnvTests: XCTestCase {
         let urls = DotEnv.candidateFileURLs(startingIn: URL(fileURLWithPath: "/a/b"))
         XCTAssertEqual(urls.map(\.path), ["/a/b/.env", "/a/.env", "/.env"])
     }
+
+    // MARK: - Writing
+
+    private func writeEnv(_ text: String, in directory: URL? = nil) throws -> URL {
+        let directory = directory ?? root!
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent(".env")
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
+    }
+
+    private func setValue(_ value: String, forKey key: String, in text: String) throws -> String {
+        let fileURL = try writeEnv(text)
+        try DotEnv.setValue(value, forKey: key, in: fileURL)
+        return try String(contentsOf: fileURL, encoding: .utf8)
+    }
+
+    func testFileURLSettingKeyFindsTheNearestFileThatSetsTheKey() throws {
+        let child = root.appendingPathComponent("child", isDirectory: true)
+        let parentFile = try writeEnv("K=parent\n")
+        let childFile = try writeEnv("OTHER=x\n", in: child)
+        XCTAssertEqual(DotEnv.fileURL(settingKey: "K", startingIn: child), parentFile, "the child does not set K")
+
+        try "K=\n".write(to: childFile, atomically: true, encoding: .utf8)
+        XCTAssertEqual(DotEnv.fileURL(settingKey: "K", startingIn: child), parentFile, "an empty value does not count")
+
+        try "export K=child\n".write(to: childFile, atomically: true, encoding: .utf8)
+        XCTAssertEqual(DotEnv.fileURL(settingKey: "K", startingIn: child), childFile)
+
+        XCTAssertNil(DotEnv.fileURL(settingKey: "IRIS_TEST_KEY_THAT_NO_FILE_SETS", startingIn: child))
+    }
+
+    func testSetValueReplacesTheFirstLineAndDropsLaterLinesOfTheKey() throws {
+        let text = try setValue("new", forKey: "K", in: """
+        A=1
+        K=old
+        # K=a comment stays
+        B=2
+        export K=older
+        K_EXTRA=other key
+        """)
+        XCTAssertEqual(text, "A=1\nK=new\n# K=a comment stays\nB=2\nK_EXTRA=other key\n")
+        XCTAssertEqual(DotEnv.parse(text)["K"], "new")
+    }
+
+    func testSetValueReplacesALineWithAnEmptyValue() throws {
+        XCTAssertEqual(try setValue("new", forKey: "K", in: "K=\nA=1\n"), "K=new\nA=1\n")
+    }
+
+    func testSetValueAppendsALineAfterAFinalNewline() throws {
+        XCTAssertEqual(try setValue("new", forKey: "K", in: "A=1\n\n# end\n"), "A=1\n\n# end\nK=new\n")
+    }
+
+    func testSetValueAppendsALineWithoutAFinalNewline() throws {
+        XCTAssertEqual(try setValue("new", forKey: "K", in: "A=1"), "A=1\nK=new\n")
+        XCTAssertEqual(try setValue("new", forKey: "K", in: ""), "K=new\n")
+    }
+
+    func testSetValueKeepsThePermissions() throws {
+        let fileURL = try writeEnv("A=1\n")
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+
+        try DotEnv.setValue("new", forKey: "K", in: fileURL)
+
+        let permissions = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.posixPermissions] as? Int
+        XCTAssertEqual(permissions, 0o600)
+    }
+
+    func testSetValueWritesTheFileThatALinkPointsTo() throws {
+        let real = root.appendingPathComponent("dotfiles", isDirectory: true)
+        let realFile = try writeEnv("A=1\n", in: real)
+        let link = root.appendingPathComponent(".env")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: realFile)
+
+        try DotEnv.setValue("new", forKey: "K", in: link)
+
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), realFile.path)
+        XCTAssertEqual(try String(contentsOf: realFile, encoding: .utf8), "A=1\nK=new\n")
+    }
+
+    func testSetValueThrowsForAFileThatDoesNotExist() {
+        XCTAssertThrowsError(try DotEnv.setValue("new", forKey: "K", in: root.appendingPathComponent(".env")))
+    }
 }

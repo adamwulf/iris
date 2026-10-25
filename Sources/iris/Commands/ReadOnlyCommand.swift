@@ -10,11 +10,16 @@ protocol ReadOnlyCommand: AsyncParsableCommand {}
 /// an agent can be allowed to run only `iris ro ...`: it can then read mail,
 /// but a write command such as a draft is not in this group, so it cannot run.
 struct ReadOnly: AsyncParsableCommand {
-    /// The read-only commands. The type makes the compiler reject a command
-    /// that does not conform to `ReadOnlyCommand`.
-    static let commands: [any ReadOnlyCommand.Type] = [
+    /// The read-only commands that are the same at the top level and under
+    /// `ro`. The type makes the compiler reject a command that does not
+    /// conform to `ReadOnlyCommand`.
+    static let sharedCommands: [any ReadOnlyCommand.Type] = [
         Accounts.self, Check.self, Mailboxes.self, List.self, Show.self,
     ]
+
+    /// Everything under `ro`: the shared commands, then the read-only form of
+    /// each group with both kinds (`auth` with only `status`).
+    static let commands: [any ReadOnlyCommand.Type] = sharedCommands + [ReadOnlyAuth.self]
 
     static let configuration = CommandConfiguration(
         commandName: "ro",

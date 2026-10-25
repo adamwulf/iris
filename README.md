@@ -61,17 +61,104 @@ Run `iris accounts` to see the accounts and any missing keys, and
 
 ### Provider settings
 
-All three need an **app-specific password**, not your normal password.
+All three need an **app-specific password**, not your normal password. A
+Gmail account that cannot make one signs in with Google instead (see
+[Gmail with OAuth](#gmail-with-oauth)).
 
 | Provider | Host | Username | Password |
 |---|---|---|---|
-| Gmail | `imap.gmail.com` | the full address | An [app password](https://support.google.com/accounts/answer/185833). It needs 2-Step Verification. |
+| Gmail | `imap.gmail.com` | the full address | An [app password](https://support.google.com/accounts/answer/185833). It needs 2-Step Verification. Or no password: [sign in with Google](#gmail-with-oauth). |
 | iCloud Mail | `imap.mail.me.com` | the name part of the address (`emily`, not `emily@icloud.com`); try the full address if that fails | An [app-specific password](https://support.apple.com/en-us/102654). It needs two-factor authentication. |
 | Zoho Mail | `imap.zoho.com` (personal, free organization) or `imappro.zoho.com` (paid organization). Other data centers: `imap.zoho.eu`, `imap.zoho.in`, `imap.zoho.com.au`, `imap.zoho.jp`, and so on. Zoho shows your host in Settings > Mail Accounts. | the full address | An app-specific password if two-factor authentication is on. First turn on IMAP in Settings > Mail Accounts. |
+
+### Gmail with OAuth
+
+Some Google accounts cannot make an app password: Google says "The setting
+you are looking for is not available for your account." Such an account
+signs in with Google instead (OAuth 2.0, and IMAP `AUTHENTICATE XOAUTH2`).
+This has not been tested against a live account yet.
+
+First make your own OAuth client in the Google Cloud console. You do this
+once:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), make
+   a new project for iris.
+2. Go to Menu > **Google Auth platform** > **Branding** and click **Get
+   Started**. Give an app name (such as `iris`) and your email, pick
+   **External** as the audience, give a contact email, accept the policy,
+   and click **Create**.
+3. In **Audience**, keep the publishing status **Testing**. Under **Test
+   users**, click **Add users** and add each Gmail address that iris will
+   read.
+4. In **Data Access**, click **Add or remove scopes**, paste
+   `https://mail.google.com/` under **Manually add scopes**, click **Add to
+   table**, then **Update**, then **Save**.
+5. In **Clients**, click **Create client**, pick the application type
+   **Desktop app**, give it a name, and click **Create**. Copy the client
+   ID and the client secret right away: Google shows the secret only when
+   it makes the client.
+
+Then give the account these keys, with no `_IMAP_PASSWORD`. The username is
+the full address you sign in as:
+
+```sh
+IRIS_PERSONAL_IMAP_HOST=imap.gmail.com
+IRIS_PERSONAL_IMAP_USERNAME=me@gmail.com
+IRIS_PERSONAL_GOOGLE_CLIENT_ID=1234-abcd.apps.googleusercontent.com
+IRIS_PERSONAL_GOOGLE_CLIENT_SECRET=GOCSPX-...
+```
+
+and sign in:
+
+```sh
+iris auth login --account personal
+```
+
+iris opens Google's sign-in page in your browser, and writes its URL to
+stderr in case the browser does not open. Sign in as the username of the
+account. Google warns that it has not verified the app; it is your own app,
+so continue, and allow the access to Gmail. The browser then shows "You can
+close this window", and iris writes `IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN`
+into the `.env` file that has the client ID. (When the client ID comes from
+the environment, iris writes no file: it prints the line for you to save.)
+Run `iris check --account personal` to test the account.
+
+From then on, each command gets a new access token from Google before it
+logs in. iris only reads mail, but Gmail's IMAP accepts only the
+`https://mail.google.com/` scope, which is full access to the mailbox.
+
+`iris auth status` checks the Google sign-in of every account that has a
+client ID (or one, with `--account`): which keys are set (never their
+values), and whether Google still gives an access token. It logs in to no
+mail server, and it exits with status 1 when an account is not signed in.
+
+```sh
+$ iris auth status
+NAME      USERNAME      CLIENT ID  CLIENT SECRET  REFRESH TOKEN  STATUS
+personal  me@gmail.com  set        set            set            ok
+```
+
+**Sign in again every 7 days.** Google ends the sign-in of an app in
+Testing mode after 7 days, and also when you change your Google password.
+Then commands say that the Google sign-in has expired: run
+`iris auth login --account personal` again. (Publishing the app would end
+the 7-day limit, but an app with the Gmail scope then needs Google's
+review.)
+
+If Google sends no refresh token, iris says so: remove your app's access at
+<https://myaccount.google.com/permissions> and sign in again.
+
+The keys have the account's name in them, so they never collide with the
+plain `GOOGLE_*` keys that other tools (such as graham) keep in the same
+`.env`. `iris accounts` shows "not signed in" for an account that has a
+client ID but no refresh token yet.
 
 ## What works today
 
 - Any number of named accounts in `.env`, picked with `--account`.
+- Gmail without an app password: `iris auth login` signs in with Google
+  (OAuth), and every command then logs in with XOAUTH2. `iris auth status`
+  shows which Google accounts are still signed in.
 - `iris check`: log in and show the server's capabilities and the INBOX count.
 - `iris mailboxes`: the mailbox names with their special-use attributes
   (`\Drafts`, `\Sent`, `\All`, ...).
@@ -92,6 +179,8 @@ All three need an **app-specific password**, not your normal password.
 ```sh
 iris accounts
 iris check --account work
+iris auth login --account personal  # Gmail with OAuth: sign in, about once a week
+iris auth status                    # which Google accounts are still signed in
 
 iris list                          # newest 25 messages in INBOX
 iris list --page 2 --limit 50
@@ -108,7 +197,8 @@ iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
 ```
 
-List commands take `--format table|json|jsonl|id`. Hints and errors go to
+List commands (`accounts`, `mailboxes`, `list`, `auth status`) take
+`--format table|json|jsonl|id`. Hints and errors go to
 stderr, so stdout is safe to pipe.
 
 `iris list` shows `●` in the `UNREAD` column, just left of the subject (and
@@ -194,8 +284,9 @@ Gmail labels), Mail opens one of the copies.
 
 `iris ro <command>` runs the same command as `iris <command>`, but only the
 read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
-`list`, and `show`. Commands that change mail (`read`, `unread`, and drafts,
-when they come) are not there, so `iris ro read ...` fails.
+`list`, `show`, and `auth status`. Commands that change mail (`read`,
+`unread`, and drafts, when they come) are not there, so `iris ro read ...`
+fails. Neither is `iris auth login`, which opens a browser and writes `.env`.
 
 To let an agent read your mail but never change it, allow only that prefix.
 For Claude Code, in `.claude/settings.json`:

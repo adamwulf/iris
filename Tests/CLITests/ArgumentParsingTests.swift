@@ -177,6 +177,28 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertThrowsError(try Unread.parse(["work/INBOX/42", "--mailbox", "INBOX"]))
     }
 
+    func testAuthLoginParsesWithAndWithoutAnAccount() throws {
+        let plain = try XCTUnwrap(try Iris.parseAsRoot(["auth", "login"]) as? Auth.Login)
+        XCTAssertNil(plain.accountOptions.account)
+        let named = try XCTUnwrap(try Iris.parseAsRoot(["auth", "login", "--account", "personal"]) as? Auth.Login)
+        XCTAssertEqual(named.accountOptions.account, "personal")
+        XCTAssertEqual(try Auth.Login.parse(["-a", "personal"]).accountOptions.account, "personal")
+    }
+
+    func testAuthStatusDefaultsToEveryAccountAndTableFormat() throws {
+        let command = try Auth.Status.parse([])
+        XCTAssertNil(command.account, "no --account checks every Google account")
+        XCTAssertEqual(command.format, .table)
+        XCTAssertEqual(try Auth.Status.parse(["-a", "personal"]).account, "personal")
+        XCTAssertEqual(try Auth.Status.parse(["--format", "jsonl"]).format, .jsonl)
+        XCTAssertThrowsError(try Auth.Status.parse(["--format", "csv"]))
+    }
+
+    func testAuthLoginTakesNoOtherArguments() {
+        XCTAssertThrowsError(try Iris.parseAsRoot(["auth", "login", "personal"]))
+        XCTAssertThrowsError(try Iris.parseAsRoot(["auth", "logout"]))
+    }
+
     /// ArgumentParser lists an option's values itself, so our help strings no longer list them too.
     func testHelpNoLongerHasTheOldValueLists() {
         let oldPhrases = ["table, json, jsonl, or id", "markdown, json, or raw", "auto (HTML", "text, or html"]

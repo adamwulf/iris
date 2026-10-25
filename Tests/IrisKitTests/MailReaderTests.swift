@@ -4,7 +4,8 @@ import XCTest
 
 final class MailReaderTests: XCTestCase {
     private let account = Account(
-        name: "work", host: "imap.example.com", port: 993, username: "me@example.com", password: "secret"
+        name: "work", host: "imap.example.com", port: 993, username: "me@example.com",
+        authentication: .password("secret")
     )
 
     private func reader(_ fake: FakeMailClient) -> MailReader {

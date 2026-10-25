@@ -61,7 +61,7 @@ final class AccountResolverTests: XCTestCase {
         let account = try AccountResolver.resolve(name: nil, settings: settings("WORK", port: "1993"))
         XCTAssertEqual(account, Account(
             name: "work", host: "imap.example.com", port: 1993,
-            username: "work@example.com", password: "secret-WORK"
+            username: "work@example.com", authentication: .password("secret-WORK")
         ))
     }
 
@@ -182,6 +182,263 @@ final class AccountResolverTests: XCTestCase {
             XCTAssertEqual(error as? IrisError, AccountResolver.defaultAccountError(in: values),
                            "commands without --account throw the same error")
         }
+    }
+
+    // MARK: - Google accounts
+
+    private func googleSettings(_ name: String, refreshToken: String? = "1//refresh-\(UUID().uuidString)") -> [String: String] {
+        var values = [
+            "IRIS_\(name)_IMAP_HOST": "imap.gmail.com",
+            "IRIS_\(name)_IMAP_USERNAME": "\(name.lowercased())@gmail.com",
+            "IRIS_\(name)_GOOGLE_CLIENT_ID": "id-\(name).apps.googleusercontent.com",
+            "IRIS_\(name)_GOOGLE_CLIENT_SECRET": "client-secret-\(name)",
+        ]
+        values["IRIS_\(name)_GOOGLE_REFRESH_TOKEN"] = refreshToken
+        return values
+    }
+
+    func testAGoogleAccountResolvesWithItsClientAndRefreshToken() throws {
+        let values = googleSettings("PERSONAL", refreshToken: "1//refresh")
+        XCTAssertEqual(try AccountResolver.resolve(name: nil, settings: values), Account(
+            name: "personal", host: "imap.gmail.com", port: 993, username: "personal@gmail.com",
+            authentication: .google(
+                GoogleClient(clientID: "id-PERSONAL.apps.googleusercontent.com", clientSecret: "client-secret-PERSONAL"),
+                refreshToken: "1//refresh"
+            )
+        ))
+    }
+
+    func testAGoogleAccountWithAPasswordTooIsAnError() {
+        var values = googleSettings("PERSONAL")
+        values["IRIS_PERSONAL_IMAP_PASSWORD"] = "app-password"
+        for resolve in [
+            { _ = try AccountResolver.resolve(name: nil, settings: values) },
+            { _ = try AccountResolver.resolveGoogleSignIn(name: nil, settings: values) },
+        ] {
+            XCTAssertThrowsError(try resolve()) { error in
+                guard case .invalidSetting(let key, let reason) = error as? IrisError else {
+                    return XCTFail("unexpected error \(error)")
+                }
+                XCTAssertEqual(key, "IRIS_PERSONAL_IMAP_PASSWORD")
+                XCTAssertTrue(reason.contains("IRIS_PERSONAL_GOOGLE_CLIENT_ID"), reason)
+                XCTAssertTrue(reason.contains("Use one or the other"), reason)
+                XCTAssertFalse(reason.contains("app-password"), "the error never shows the password")
+            }
+        }
+    }
+
+    func testAGoogleAccountWithoutARefreshTokenSaysToSignIn() {
+        let values = googleSettings("PERSONAL", refreshToken: nil)
+        XCTAssertThrowsError(try AccountResolver.resolve(name: nil, settings: values)) { error in
+            XCTAssertEqual(error as? IrisError, .googleNotSignedIn(account: "personal"))
+        }
+    }
+
+    func testAGoogleAccountWithoutAClientSecretIsMissingASetting() {
+        var values = googleSettings("PERSONAL")
+        values["IRIS_PERSONAL_GOOGLE_CLIENT_SECRET"] = nil
+        XCTAssertThrowsError(try AccountResolver.resolve(name: nil, settings: values)) { error in
+            XCTAssertEqual(error as? IrisError, .missingSetting(key: "IRIS_PERSONAL_GOOGLE_CLIENT_SECRET"))
+        }
+    }
+
+    func testAGoogleAccountNeedsNoPassword() throws {
+        let account = try AccountResolver.resolve(name: nil, settings: googleSettings("PERSONAL"))
+        guard case .google = account.authentication else {
+            return XCTFail("expected a Google account, got \(account.authentication)")
+        }
+    }
+
+    func testAnAccountWithOnlyGoogleKeysIsFound() {
+        let values = [
+            "IRIS_ONLY_GOOGLE_GOOGLE_CLIENT_ID": "id",
+            "IRIS_SECRET_ONLY_GOOGLE_CLIENT_SECRET": "secret",
+            "IRIS_TOKEN_ONLY_GOOGLE_REFRESH_TOKEN": "token",
+        ]
+        XCTAssertEqual(AccountResolver.accountNames(in: values), ["only_google", "secret_only", "token_only"])
+        XCTAssertEqual(AccountResolver.accountName(fromKey: "IRIS_MY_GMAIL_GOOGLE_CLIENT_ID"), "my_gmail")
+    }
+
+    func testGoogleKeysWithoutAClientIDLeaveAPasswordAccount() throws {
+        var values = settings("WORK")
+        values["IRIS_WORK_GOOGLE_CLIENT_SECRET"] = "client-secret"
+        values["IRIS_WORK_GOOGLE_REFRESH_TOKEN"] = "1//refresh"
+        XCTAssertEqual(try AccountResolver.resolve(name: nil, settings: values).authentication, .password("secret-WORK"))
+    }
+
+    func testSummariesReportTheProblemsOfGoogleAccounts() throws {
+        var values = googleSettings("READY")
+        values.merge(googleSettings("NEW", refreshToken: nil)) { $1 }
+        values.merge(googleSettings("BOTH")) { $1 }
+        values["IRIS_BOTH_IMAP_PASSWORD"] = "app-password"
+        values["IRIS_HALF_GOOGLE_CLIENT_ID"] = "id"
+
+        let summaries = try AccountResolver.summaries(in: values)
+
+        XCTAssertEqual(summaries.map(\.name), ["both", "half", "new", "ready"])
+        XCTAssertEqual(summaries.map(\.problems), [
+            ["set IRIS_BOTH_IMAP_PASSWORD or IRIS_BOTH_GOOGLE_CLIENT_ID, not both"],
+            [
+                "missing IRIS_HALF_IMAP_HOST",
+                "missing IRIS_HALF_IMAP_USERNAME",
+                "missing IRIS_HALF_GOOGLE_CLIENT_SECRET",
+                "not signed in: run `iris auth login --account half`",
+            ],
+            ["not signed in: run `iris auth login --account new`"],
+            [],
+        ])
+        let json = try OutputFormatter.render(summaries, format: .json)
+        for secret in ["client-secret", "1//refresh", "app-password"] {
+            XCTAssertFalse(json.contains(secret), "\(secret) in \(json)")
+        }
+    }
+
+    func testResolveGoogleSignInNeedsNoHostAndNoRefreshToken() throws {
+        var values = googleSettings("PERSONAL", refreshToken: nil)
+        values["IRIS_PERSONAL_IMAP_HOST"] = nil
+        XCTAssertEqual(
+            try AccountResolver.resolveGoogleSignIn(name: "Personal", settings: values),
+            GoogleSignInAccount(
+                name: "personal",
+                username: "personal@gmail.com",
+                client: GoogleClient(
+                    clientID: "id-PERSONAL.apps.googleusercontent.com", clientSecret: "client-secret-PERSONAL"
+                )
+            )
+        )
+    }
+
+    func testResolveGoogleSignInPicksTheDefaultAccount() throws {
+        var values = googleSettings("PERSONAL").merging(settings("WORK")) { $1 }
+        XCTAssertThrowsError(try AccountResolver.resolveGoogleSignIn(name: nil, settings: values)) { error in
+            XCTAssertEqual(error as? IrisError, .accountNotChosen(available: ["personal", "work"]))
+        }
+        values[AccountResolver.defaultAccountKey] = "personal"
+        XCTAssertEqual(try AccountResolver.resolveGoogleSignIn(name: nil, settings: values).name, "personal")
+        XCTAssertThrowsError(try AccountResolver.resolveGoogleSignIn(name: "nope", settings: values)) { error in
+            XCTAssertEqual(error as? IrisError, .unknownAccount(name: "nope", available: ["personal", "work"]))
+        }
+    }
+
+    func testResolveGoogleSignInOfAPasswordAccountNeedsTheClientID() {
+        XCTAssertThrowsError(try AccountResolver.resolveGoogleSignIn(name: "work", settings: settings("WORK"))) { error in
+            XCTAssertEqual(error as? IrisError, .missingSetting(key: "IRIS_WORK_GOOGLE_CLIENT_ID"))
+        }
+    }
+
+    func testResolveGoogleSignInNeedsTheUsernameAndTheClientSecret() {
+        for missing in ["IRIS_PERSONAL_IMAP_USERNAME", "IRIS_PERSONAL_GOOGLE_CLIENT_SECRET"] {
+            var values = googleSettings("PERSONAL")
+            values[missing] = nil
+            XCTAssertThrowsError(try AccountResolver.resolveGoogleSignIn(name: nil, settings: values)) { error in
+                XCTAssertEqual(error as? IrisError, .missingSetting(key: missing))
+            }
+        }
+    }
+
+    /// A new empty directory, removed after the test.
+    private func temporaryDirectory() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AccountResolverTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        addTeardownBlock {
+            // A test may make the directory read-only; allow the removal again.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        return dir
+    }
+
+    func testSaveGoogleRefreshTokenWritesTheFileThatSetsTheClientID() throws {
+        let dir = try temporaryDirectory()
+        let child = dir.appendingPathComponent("my project", isDirectory: true)
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        let parentFile = dir.appendingPathComponent(".env")
+        let childFile = child.appendingPathComponent(".env")
+        try "IRIS_MY_GMAIL_GOOGLE_CLIENT_ID=id\nIRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN=old\n".write(
+            to: parentFile, atomically: true, encoding: .utf8)
+        try "IRIS_WORK_IMAP_HOST=imap.example.com\n".write(to: childFile, atomically: true, encoding: .utf8)
+
+        let save = AccountResolver.saveGoogleRefreshToken("1//new", account: "my_gmail", startingIn: child)
+
+        guard case .saved(let file) = save.outcome else {
+            return XCTFail("expected .saved, got \(save.outcome)")
+        }
+        XCTAssertEqual(file.path, parentFile.path)
+        XCTAssertNil(save.stdoutLine, "a saved token is never shown")
+        XCTAssertEqual(
+            save.message,
+            "Signed in. Saved IRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN in \(parentFile.path).\n"
+                + "Run `iris check --account my_gmail` to test the account."
+        )
+        XCTAssertFalse(save.message.contains("1//new"))
+        XCTAssertEqual(
+            try String(contentsOf: parentFile, encoding: .utf8),
+            "IRIS_MY_GMAIL_GOOGLE_CLIENT_ID=id\nIRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN=1//new\n"
+        )
+        XCTAssertEqual(try String(contentsOf: childFile, encoding: .utf8), "IRIS_WORK_IMAP_HOST=imap.example.com\n")
+        XCTAssertEqual(
+            AccountResolver.settings(environment: [:], startingIn: child)["IRIS_MY_GMAIL_GOOGLE_REFRESH_TOKEN"], "1//new"
+        )
+    }
+
+    func testSaveGoogleRefreshTokenPrintsTheLineWhenTheClientIDComesFromTheEnvironment() throws {
+        let dir = try temporaryDirectory()
+        let file = dir.appendingPathComponent(".env")
+        try "IRIS_WORK_IMAP_HOST=imap.example.com\n".write(to: file, atomically: true, encoding: .utf8)
+
+        let save = AccountResolver.saveGoogleRefreshToken("1//new", account: "personal", startingIn: dir)
+
+        XCTAssertEqual(save.outcome, .clientIDInEnvironment)
+        XCTAssertEqual(save.stdoutLine, "IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=1//new")
+        XCTAssertEqual(
+            save.message,
+            "Signed in. IRIS_PERSONAL_GOOGLE_CLIENT_ID is not in a .env file (it comes from the environment), "
+                + "so iris wrote no file. Save the line IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=... that iris printed "
+                + "where you keep the other keys of the account. "
+                + "Run `iris check --account personal` to test the account."
+        )
+        XCTAssertFalse(save.message.contains("1//new"), "stderr never shows the token")
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "IRIS_WORK_IMAP_HOST=imap.example.com\n")
+    }
+
+    func testSaveGoogleRefreshTokenPrintsTheLineWhenTheWriteFails() throws {
+        let dir = try temporaryDirectory()
+        let file = dir.appendingPathComponent(".env")
+        try "IRIS_PERSONAL_GOOGLE_CLIENT_ID=id\n".write(to: file, atomically: true, encoding: .utf8)
+        // The write replaces the file through a new file in the same directory.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+
+        let save = AccountResolver.saveGoogleRefreshToken("1//new", account: "personal", startingIn: dir)
+
+        guard case .writeFailed(let failed, let reason) = save.outcome else {
+            return XCTFail("expected .writeFailed, got \(save.outcome)")
+        }
+        XCTAssertEqual(failed.path, file.path)
+        XCTAssertFalse(reason.isEmpty)
+        XCTAssertEqual(save.stdoutLine, "IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=1//new")
+        XCTAssertTrue(save.message.hasPrefix(
+            "Signed in, but iris could not write IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN to \(file.path): \(reason). "
+        ), save.message)
+        XCTAssertTrue(save.message.hasSuffix(
+            "Save the line IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN=... that iris printed where you keep the other keys "
+                + "of the account. Run `iris check --account personal` to test the account."
+        ), save.message)
+        XCTAssertFalse(save.message.contains("1//new"), "stderr never shows the token")
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "IRIS_PERSONAL_GOOGLE_CLIENT_ID=id\n")
+    }
+
+    func testRefreshTokenSaveShellQuotesTheAccountInTheCommand() {
+        // Account names are letters, digits, and underscores, so quoting never shows today; the
+        // message still goes through MessagePage.shellQuoted, as the other messages do.
+        let save = RefreshTokenSave(account: "a b", refreshToken: "t", outcome: .clientIDInEnvironment)
+        XCTAssertTrue(save.message.contains("`iris check --account 'a b'`"), save.message)
+    }
+
+    func testSecretsListThePasswordOrTheClientSecretAndRefreshToken() throws {
+        XCTAssertEqual(try AccountResolver.resolve(name: nil, settings: settings("WORK")).secrets, ["secret-WORK"])
+        let google = try AccountResolver.resolve(name: nil, settings: googleSettings("PERSONAL", refreshToken: "1//refresh"))
+        XCTAssertEqual(google.secrets, ["client-secret-PERSONAL", "1//refresh"])
     }
 
     func testDefaultAccountErrorIsNilWhenTheDefaultIsFine() {

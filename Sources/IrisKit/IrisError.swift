@@ -51,6 +51,28 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// The server answered a command with NO or BAD.
     case serverError(account: String, command: String, reason: String)
 
+    // Google sign-in
+
+    /// `iris auth status` found no account with `IRIS_<NAME>_GOOGLE_CLIENT_ID`.
+    case noGoogleAccounts
+    /// The account signs in with Google (it has `IRIS_<NAME>_GOOGLE_CLIENT_ID`)
+    /// but has no refresh token yet.
+    case googleNotSignedIn(account: String)
+    /// Google refused the refresh token (`invalid_grant`): the sign-in expired or was revoked.
+    case googleSignInExpired(account: String)
+    /// Google refused the OAuth client (`invalid_client`, `unauthorized_client`, or `deleted_client`).
+    case googleClientRejected(account: String, reason: String)
+    /// Getting a token from Google failed for another reason: another answer,
+    /// an answer iris cannot read, or a network error.
+    case googleTokenFailed(account: String, reason: String)
+    /// The browser part of `iris auth login` did not finish: access was denied,
+    /// the answer did not match the request, or the time ran out.
+    case googleSignInFailed(account: String, reason: String)
+    /// Google finished the sign-in but sent no refresh token.
+    case googleNoRefreshToken(account: String)
+    /// The IMAP server refused AUTHENTICATE XOAUTH2 with a fresh access token.
+    case googleLoginRefused(account: String, username: String, host: String, reason: String)
+
     public var errorDescription: String? {
         switch self {
         case .noAccountsConfigured:
@@ -128,7 +150,48 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .serverError(let account, let command, let reason):
             return "The server answered \(command) with an error (account \"\(account)\"): \(reason). "
                 + "Run `iris check --account \(MessagePage.shellQuoted(account))` to test the account settings."
+        // Google sign-in
+        case .noGoogleAccounts:
+            return "No account signs in with Google. To sign in with Google, add the lines "
+                + "\"\(AccountResolver.key(.googleClientID, account: "NAME"))=...\" and "
+                + "\"\(AccountResolver.key(.googleClientSecret, account: "NAME"))=...\" to a .env file, "
+                + "then run `iris auth login --account <name>`. See \"Gmail with OAuth\" in README.md."
+        case .googleNotSignedIn(let account):
+            return "The account \"\(account)\" signs in with Google "
+                + "(it has \(AccountResolver.key(.googleClientID, account: account))), but it is not signed in yet: "
+                + "\(AccountResolver.key(.googleRefreshToken, account: account)) is not set. "
+                + "Run `\(Self.authLoginCommand(account))` to sign in."
+        case .googleSignInExpired(let account):
+            return "The Google sign-in of the account \"\(account)\" has expired or was revoked "
+                + "(Google answered invalid_grant). A Google Cloud app in Testing mode signs you out every 7 days. "
+                + "Run `\(Self.authLoginCommand(account))` to sign in again."
+        case .googleClientRejected(let account, let reason):
+            return "Google refused the OAuth client of the account \"\(account)\": \(reason). "
+                + "Check \(AccountResolver.key(.googleClientID, account: account)) and "
+                + "\(AccountResolver.key(.googleClientSecret, account: account)): they must be the client ID and "
+                + "the client secret of an OAuth client of type \"Desktop app\" in the Google Cloud console."
+        case .googleTokenFailed(let account, let reason):
+            return "Could not get a token from Google for the account \"\(account)\": \(reason). "
+                + "Check your network connection and try again. "
+                + "If it keeps failing, run `\(Self.authLoginCommand(account))` to sign in again."
+        case .googleSignInFailed(let account, let reason):
+            return "The Google sign-in of the account \"\(account)\" did not finish: \(reason). "
+                + "Run `\(Self.authLoginCommand(account))` to try again."
+        case .googleNoRefreshToken(let account):
+            return "Google signed in the account \"\(account)\" but sent no refresh token, so iris cannot stay "
+                + "signed in. At https://myaccount.google.com/permissions, remove the access of your Google Cloud "
+                + "app (the app name you chose in the Google Cloud console), then run "
+                + "`\(Self.authLoginCommand(account))` again."
+        case .googleLoginRefused(let account, let username, let host, let reason):
+            return "The server \(host) refused the Google sign-in for \(username) (account \"\(account)\"): \(reason). "
+                + "Check that \(AccountResolver.key(.username, account: account)) is the address you chose "
+                + "when you signed in to Google, then run `\(Self.authLoginCommand(account))` again."
         }
+    }
+
+    /// The command that signs `account` in to Google.
+    private static func authLoginCommand(_ account: String) -> String {
+        "iris auth login --account \(MessagePage.shellQuoted(account))"
     }
 
     private static func availableSentence(_ names: [String]) -> String {

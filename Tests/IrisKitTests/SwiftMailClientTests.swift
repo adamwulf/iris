@@ -7,11 +7,26 @@ import XCTest
 /// error mapping, and the mailbox and envelope conversions.
 final class SwiftMailClientTests: XCTestCase {
     private let account = Account(
-        name: "work", host: "imap.example.com", port: 993, username: "me@example.com", password: "secret"
+        name: "work", host: "imap.example.com", port: 993, username: "me@example.com",
+        authentication: .password("secret")
+    )
+
+    private let googleAccount = Account(
+        name: "personal", host: "imap.gmail.com", port: 993, username: "me@gmail.com",
+        authentication: .google(
+            GoogleClient(clientID: "id.apps.googleusercontent.com", clientSecret: "client-secret"),
+            refreshToken: "1//refresh-token"
+        )
     )
 
     private func irisError(_ error: any Error, _ command: SwiftMailClient.Command) -> IrisError {
         SwiftMailClient.irisError(for: error, command: command, account: account)
+    }
+
+    /// The mapping for the Google account during AUTHENTICATE, which sent the access token `ya29.access`.
+    /// Only AUTHENTICATE passes the access token, as in `SwiftMailClient.login()`.
+    private func googleError(_ error: any Error) -> IrisError {
+        SwiftMailClient.irisError(for: error, command: .authenticate, account: googleAccount, accessToken: "ya29.access")
     }
 
     // MARK: - Transport security
@@ -35,7 +50,7 @@ final class SwiftMailClientTests: XCTestCase {
 
     func testLoginAndAuthFailuresBecomeLoginFailedWithoutThePassword() {
         let expected = IrisError.loginFailed(
-            account: "work", username: "me@example.com", host: "imap.example.com", reason: "NO bad <password>"
+            account: "work", username: "me@example.com", host: "imap.example.com", reason: "NO bad <redacted>"
         )
         XCTAssertEqual(irisError(IMAPError.loginFailed("NO bad secret"), .login), expected)
         XCTAssertEqual(irisError(IMAPError.authFailed("NO bad secret"), .login), expected)
@@ -49,7 +64,7 @@ final class SwiftMailClientTests: XCTestCase {
         for open in opens {
             XCTAssertEqual(
                 irisError(IMAPError.selectFailed("NO [NONEXISTENT] secret"), open("Nope")),
-                .unknownMailbox(account: "work", name: "Nope", reason: "NO [NONEXISTENT] <password>")
+                .unknownMailbox(account: "work", name: "Nope", reason: "NO [NONEXISTENT] <redacted>")
             )
             XCTAssertEqual(
                 irisError(IMAPError.selectFailed("NO"), open("[Gmail]/Entw&APw-rfe")),
@@ -97,7 +112,7 @@ final class SwiftMailClientTests: XCTestCase {
         for (error, command) in cases {
             XCTAssertEqual(
                 irisError(error, command),
-                .connectionFailed(account: "work", host: "imap.example.com", port: 993, reason: "reset <password>"),
+                .connectionFailed(account: "work", host: "imap.example.com", port: 993, reason: "reset <redacted>"),
                 "\(error) on \(command)"
             )
         }
@@ -112,7 +127,7 @@ final class SwiftMailClientTests: XCTestCase {
             XCTAssertEqual(
                 irisError(IMAPError.connectionFailed("Server terminated connection: secret"), command),
                 .connectionLost(
-                    account: "work", command: command.name, reason: "Server terminated connection: <password>"
+                    account: "work", command: command.name, reason: "Server terminated connection: <redacted>"
                 ),
                 "\(command)"
             )
@@ -122,7 +137,7 @@ final class SwiftMailClientTests: XCTestCase {
     func testOtherIMAPErrorsBecomeServerErrorsNamingTheCommand() {
         XCTAssertEqual(
             irisError(IMAPError.commandFailed("NO [UNAVAILABLE] secret"), .list),
-            .serverError(account: "work", command: "LIST", reason: "Command failed: NO [UNAVAILABLE] <password>")
+            .serverError(account: "work", command: "LIST", reason: "Command failed: NO [UNAVAILABLE] <redacted>")
         )
         XCTAssertEqual(
             irisError(IMAPError.selectFailed("NO"), .fetchEnvelopes),
@@ -131,14 +146,14 @@ final class SwiftMailClientTests: XCTestCase {
         )
         XCTAssertEqual(
             irisError(IMAPError.storeFailed("NO [READ-ONLY] secret"), .store),
-            .serverError(account: "work", command: "STORE", reason: "Store failed: NO [READ-ONLY] <password>")
+            .serverError(account: "work", command: "STORE", reason: "Store failed: NO [READ-ONLY] <redacted>")
         )
     }
 
     func testRefusedSearchBecomesSearchFailedWithoutThePassword() {
         XCTAssertEqual(
             irisError(IMAPError.commandFailed("BAD Could not parse command secret"), .search),
-            .searchFailed(account: "work", reason: "Command failed: BAD Could not parse command <password>")
+            .searchFailed(account: "work", reason: "Command failed: BAD Could not parse command <redacted>")
         )
         let badCharset = IMAPError.searchCharsetNotSupported(supportedCharsets: ["US-ASCII"], reason: "NO [BADCHARSET]")
         XCTAssertEqual(
@@ -154,7 +169,7 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(
             irisError(TLSFailure(), .login),
             .connectionFailed(
-                account: "work", host: "imap.example.com", port: 993, reason: "handshake failed for <password>"
+                account: "work", host: "imap.example.com", port: 993, reason: "handshake failed for <redacted>"
             )
         )
     }
@@ -173,15 +188,108 @@ final class SwiftMailClientTests: XCTestCase {
                 .connectionLost(
                     account: "work",
                     command: command.name,
-                    reason: "read(descriptor:pointer:size:): Connection reset by peer (<password>)"
+                    reason: "read(descriptor:pointer:size:): Connection reset by peer (<redacted>)"
                 ),
                 "\(command)"
             )
         }
     }
 
+    // MARK: - Google sign-in errors
+
+    func testRefusedXOAUTH2BecomesGoogleLoginRefusedNotLoginFailed() {
+        // SwiftMail's XOAUTH2 handler reports the tagged NO, with the server's JSON challenge after it.
+        let refusal = IMAPError.authFailed(
+            #"no(NO [AUTHENTICATIONFAILED] Invalid credentials (Failure)) ({"status":"400","schemes":"Bearer"})"#
+        )
+        XCTAssertEqual(
+            googleError(refusal),
+            .googleLoginRefused(
+                account: "personal",
+                username: "me@gmail.com",
+                host: "imap.gmail.com",
+                reason: #"no(NO [AUTHENTICATIONFAILED] Invalid credentials (Failure)) ({"status":"400","schemes":"Bearer"})"#
+            )
+        )
+        XCTAssertEqual(
+            googleError(IMAPError.loginFailed("NO")),
+            .googleLoginRefused(account: "personal", username: "me@gmail.com", host: "imap.gmail.com", reason: "NO")
+        )
+    }
+
+    func testAuthenticateErrorsNeverShowTheAccessTokenRefreshTokenOrClientSecret() {
+        let echo = "user=me@gmail.com auth=Bearer ya29.access client-secret 1//refresh-token"
+        let errors = [
+            googleError(IMAPError.authFailed(echo)),
+            googleError(IMAPError.connectionFailed(echo)),
+            googleError(IMAPError.commandFailed(echo)),
+        ]
+        for error in errors {
+            let message = error.errorDescription ?? ""
+            XCTAssertTrue(message.contains("auth=Bearer <redacted> <redacted> <redacted>"), message)
+            for secret in ["ya29.access", "client-secret", "1//refresh-token"] {
+                XCTAssertFalse(message.contains(secret), "\(secret) in \(message)")
+            }
+        }
+    }
+
+    func testErrorsAfterAuthenticateNeverShowTheRefreshTokenOrClientSecret() {
+        // After AUTHENTICATE, iris passes no access token, as in production.
+        let echo = "client-secret 1//refresh-token"
+        let cases: [(any Error, SwiftMailClient.Command)] = [
+            (IMAPError.connectionFailed(echo), .list),
+            (IMAPError.commandFailed(echo), .search),
+            (IMAPError.selectFailed(echo), .examine(mailbox: "INBOX")),
+            (IMAPError.commandFailed(echo), .fetchEnvelopes),
+        ]
+        for (error, command) in cases {
+            let message = SwiftMailClient.irisError(for: error, command: command, account: googleAccount)
+                .errorDescription ?? ""
+            XCTAssertTrue(message.contains("<redacted> <redacted>"), message)
+            for secret in ["client-secret", "1//refresh-token"] {
+                XCTAssertFalse(message.contains(secret), "\(secret) in \(message)")
+            }
+        }
+    }
+
+    func testAServerWithoutXOAUTH2PointsAtTheHost() {
+        guard case .invalidSetting(let key, let reason) = googleError(
+            IMAPError.unsupportedAuthMechanism("XOAUTH2 not advertised by server")
+        ) else {
+            return XCTFail("expected invalidSetting")
+        }
+        XCTAssertEqual(key, "IRIS_PERSONAL_IMAP_HOST")
+        XCTAssertTrue(reason.contains("imap.gmail.com"), reason)
+    }
+
+    func testTimeoutAndNetworkFailuresOnAuthenticateAreConnectionFailures() {
+        XCTAssertEqual(
+            googleError(IMAPError.timeout),
+            .connectionFailed(
+                account: "personal", host: "imap.gmail.com", port: 993,
+                reason: "the server did not answer AUTHENTICATE in time"
+            )
+        )
+        XCTAssertEqual(
+            googleError(IMAPError.connectionFailed("reset")),
+            .connectionFailed(account: "personal", host: "imap.gmail.com", port: 993, reason: "reset")
+        )
+        struct TLSFailure: Error, CustomStringConvertible {
+            var description: String { "handshake failed" }
+        }
+        XCTAssertEqual(
+            googleError(TLSFailure()),
+            .connectionFailed(account: "personal", host: "imap.gmail.com", port: 993, reason: "handshake failed")
+        )
+    }
+
+    func testTokenEndpointErrorsPassThroughAuthenticate() {
+        XCTAssertEqual(googleError(IrisError.googleSignInExpired(account: "personal")), .googleSignInExpired(account: "personal"))
+    }
+
     func testCommandNames() {
         XCTAssertEqual(SwiftMailClient.Command.login.name, "LOGIN")
+        XCTAssertEqual(SwiftMailClient.Command.authenticate.name, "AUTHENTICATE")
         XCTAssertEqual(SwiftMailClient.Command.capability.name, "CAPABILITY")
         XCTAssertEqual(SwiftMailClient.Command.list.name, "LIST")
         XCTAssertEqual(SwiftMailClient.Command.examine(mailbox: "INBOX").name, "EXAMINE")

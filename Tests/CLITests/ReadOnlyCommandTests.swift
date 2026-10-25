@@ -10,8 +10,8 @@ final class ReadOnlyCommandTests: XCTestCase {
 
     func testRoHasOnlyTheReadOnlyCommands() {
         let roCommands = ReadOnly.configuration.subcommands
-        XCTAssertEqual(names(roCommands), ["accounts", "check", "mailboxes", "list", "show"])
-        for command in roCommands {
+        XCTAssertEqual(names(roCommands), ["accounts", "check", "mailboxes", "list", "show", "auth"])
+        for command in roCommands + ReadOnlyAuth.configuration.subcommands {
             XCTAssertTrue(command is any ReadOnlyCommand.Type, "\(command) is under `iris ro` but is not a ReadOnlyCommand")
         }
     }
@@ -19,8 +19,11 @@ final class ReadOnlyCommandTests: XCTestCase {
     func testEveryReadOnlyCommandIsAlsoUnderRo() {
         // `iris X` and `iris ro X` must offer the same read-only commands.
         let topLevelReadOnly = Iris.configuration.subcommands.filter { $0 is any ReadOnlyCommand.Type }
-        XCTAssertEqual(names(topLevelReadOnly), names(ReadOnly.configuration.subcommands))
+        XCTAssertEqual(names(topLevelReadOnly), names(ReadOnly.sharedCommands.map { $0 as any ParsableCommand.Type }))
         XCTAssertTrue(names(Iris.configuration.subcommands).contains("ro"))
+        // `auth` has both kinds: its read-only children are under `iris ro auth` too.
+        let readOnlyAuthChildren = Auth.configuration.subcommands.filter { $0 is any ReadOnlyCommand.Type }
+        XCTAssertEqual(names(readOnlyAuthChildren), names(ReadOnlyAuth.configuration.subcommands))
     }
 
     func testRoListParsesTheSameAsList() throws {
@@ -64,5 +67,27 @@ final class ReadOnlyCommandTests: XCTestCase {
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "unread", "work/INBOX/42"]))
         // There is no `draft` yet; when it exists, it must still fail here.
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "draft"]))
+    }
+
+    func testAuthLoginIsOnlyAtTheTopLevelAndAuthStatusIsInBoth() throws {
+        // `auth login` opens a browser and writes .env; `auth status` only reads.
+        XCTAssertFalse(Auth.self is any ReadOnlyCommand.Type)
+        XCTAssertFalse(Auth.Login.self is any ReadOnlyCommand.Type)
+        XCTAssertEqual(names(Auth.configuration.subcommands), ["login", "status"])
+        XCTAssertEqual(names(ReadOnlyAuth.configuration.subcommands), ["status"])
+        XCTAssertTrue(try Iris.parseAsRoot(["auth", "login"]) is Auth.Login)
+        XCTAssertTrue(try Iris.parseAsRoot(["auth", "status"]) is Auth.Status)
+        XCTAssertTrue(try Iris.parseAsRoot(["ro", "auth", "status"]) is Auth.Status, "the same leaf type")
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "auth", "login"]))
+    }
+
+    func testRoAuthStatusParsesTheSameAsAuthStatus() throws {
+        let arguments = ["auth", "status", "--account", "personal", "--format", "json"]
+        let plain = try XCTUnwrap(try Iris.parseAsRoot(arguments) as? Auth.Status)
+        let readOnly = try XCTUnwrap(try Iris.parseAsRoot(["ro"] + arguments) as? Auth.Status)
+        for command in [plain, readOnly] {
+            XCTAssertEqual(command.account, "personal")
+            XCTAssertEqual(command.format, .json)
+        }
     }
 }

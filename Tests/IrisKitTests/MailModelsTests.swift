@@ -304,7 +304,10 @@ final class MailModelsTests: XCTestCase {
     // MARK: - AccountCheck
 
     func testCheckReportHasOneFactPerLineAndNoPassword() {
-        let account = Account(name: "work", host: "imap.zoho.com", port: 993, username: "me@example.com", password: "hunter2")
+        let account = Account(
+            name: "work", host: "imap.zoho.com", port: 993, username: "me@example.com",
+            authentication: .password("hunter2")
+        )
         let check = AccountCheck(account: account, capabilities: ["IMAP4rev1", "IDLE", "AUTH=PLAIN"], inboxMessageCount: 1)
         XCTAssertEqual(check.report, """
         Account:      work

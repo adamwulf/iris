@@ -3,7 +3,8 @@ import SwiftMail
 
 /// The real `MailClient` and `MailWriteClient`, over SwiftMail's `IMAPServer`.
 /// It only converts types and errors. The logic is in `MailReader` and
-/// `MailWriter`, where the tests cover it.
+/// `MailWriter`, where the tests cover it. For an account that signs in with
+/// Google, `login()` first gets an access token from `GoogleTokenEndpoint`.
 struct SwiftMailClient: MailWriteClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
@@ -15,7 +16,10 @@ struct SwiftMailClient: MailWriteClient {
 
     /// The IMAP commands iris sends. The command decides how its errors read.
     enum Command: Equatable {
+        /// LOGIN with a password.
         case login
+        /// AUTHENTICATE XOAUTH2 with a Google access token.
+        case authenticate
         case capability
         case list
         /// `mailbox` is the wire name, in modified UTF-7.
@@ -31,6 +35,7 @@ struct SwiftMailClient: MailWriteClient {
         var name: String {
             switch self {
             case .login: return "LOGIN"
+            case .authenticate: return "AUTHENTICATE"
             case .capability: return "CAPABILITY"
             case .list: return "LIST"
             case .examine: return "EXAMINE"
@@ -44,14 +49,17 @@ struct SwiftMailClient: MailWriteClient {
 
     private let account: Account
     private let server: IMAPServer
+    private let tokenEndpoint: GoogleTokenEndpoint
 
-    init(account: Account) {
+    /// `transport` reaches Google's token endpoint, for an account that signs in with Google.
+    init(account: Account, transport: any HTTPTransport = URLSessionTransport()) {
         self.account = account
         self.server = IMAPServer(
             host: account.host,
             port: account.port,
             transportSecurity: Self.transportSecurity(forPort: account.port)
         )
+        self.tokenEndpoint = GoogleTokenEndpoint(transport: transport)
     }
 
     /// Never send the password in clear text: port 143 must upgrade with
@@ -63,13 +71,29 @@ struct SwiftMailClient: MailWriteClient {
     }
 
     func login() async throws {
+        switch account.authentication {
+        case .password(let password):
+            try await connect()
+            try await run(.login) {
+                try await server.login(username: account.username, password: password)
+            }
+        case .google(let client, let refreshToken):
+            // Before connecting, so an expired sign-in opens no IMAP connection.
+            let accessToken = try await tokenEndpoint.accessToken(
+                client: client, refreshToken: refreshToken, account: account.name
+            )
+            try await connect()
+            try await run(.authenticate, alsoRedacting: accessToken) {
+                try await server.authenticateXOAUTH2(email: account.username, accessToken: accessToken)
+            }
+        }
+    }
+
+    private func connect() async throws {
         do {
             try await server.connect()
         } catch {
-            throw Self.connectionFailed(reason: Self.reason(of: error), account: account)
-        }
-        try await run(.login) {
-            try await server.login(username: account.username, password: account.password)
+            throw Self.connectionFailed(reason: Self.reason(of: error), account: account, secrets: account.secrets)
         }
     }
 
@@ -183,7 +207,7 @@ struct SwiftMailClient: MailWriteClient {
         do {
             try await server.logout()
         } catch {
-            let reason = Self.redacting(account.password, in: Self.reason(of: error))
+            let reason = Redaction.redacting(account.secrets, in: Self.reason(of: error))
             IrisLog.log("Logging out of \(account.host) failed (\(reason)). Closing the connection.")
             try? await server.disconnect()
         }
@@ -211,76 +235,112 @@ struct SwiftMailClient: MailWriteClient {
     // MARK: - Errors
 
     /// Runs one IMAP command and turns its errors into `IrisError`s.
-    private func run<T>(_ command: Command, _ operation: () async throws -> T) async throws -> T {
+    /// `accessToken` is the Google access token that AUTHENTICATE sends.
+    private func run<T>(
+        _ command: Command,
+        alsoRedacting accessToken: String? = nil,
+        _ operation: () async throws -> T
+    ) async throws -> T {
         do {
             return try await operation()
         } catch {
-            throw Self.irisError(for: error, command: command, account: account)
+            throw Self.irisError(for: error, command: command, account: account, accessToken: accessToken)
         }
     }
 
     /// The `IrisError` for an error that SwiftMail threw while iris sent `command`.
-    /// Server text never keeps the account's password.
-    static func irisError(for error: any Error, command: Command, account: Account) -> IrisError {
-        let password = account.password
+    /// Server text never keeps a secret of the account, nor `accessToken`.
+    static func irisError(
+        for error: any Error,
+        command: Command,
+        account: Account,
+        accessToken: String? = nil
+    ) -> IrisError {
+        let secrets = account.secrets + [accessToken].compactMap { $0 }
+        func redacted(_ text: String) -> String {
+            Redaction.redacting(secrets, in: text)
+        }
         switch (command, error) {
         case (_, let error as IrisError):
             return error
+        case (.authenticate, IMAPError.loginFailed(let reason)), (.authenticate, IMAPError.authFailed(let reason)):
+            // The access token is fresh, so the server refused the address or
+            // the scope that the user allowed at sign-in.
+            return .googleLoginRefused(
+                account: account.name,
+                username: account.username,
+                host: account.host,
+                reason: redacted(reason)
+            )
+        case (.authenticate, IMAPError.unsupportedAuthMechanism):
+            return .invalidSetting(
+                key: AccountResolver.key(.host, account: account.name),
+                reason: "the server \(account.host) does not offer Google sign-in (AUTH=XOAUTH2). "
+                    + "Sign-in with Google works with Gmail, imap.gmail.com."
+            )
         case (_, IMAPError.loginFailed(let reason)), (_, IMAPError.authFailed(let reason)):
             return .loginFailed(
                 account: account.name,
                 username: account.username,
                 host: account.host,
-                reason: redacting(password, in: reason)
+                reason: redacted(reason)
             )
         case (.examine(let mailbox), IMAPError.selectFailed(let reason)),
              (.select(let mailbox), IMAPError.selectFailed(let reason)):
-            return .unknownMailbox(account: account.name, name: mailbox, reason: redacting(password, in: reason))
+            return .unknownMailbox(account: account.name, name: mailbox, reason: redacted(reason))
         case (.fetchRawMessage, IMAPError.timeout):
             return .messageDownloadTimedOut(seconds: rawMessageTimeoutSeconds)
-        case (.login, IMAPError.timeout):
-            return connectionFailed(reason: "the server did not answer \(command.name) in time", account: account)
+        case (.login, IMAPError.timeout), (.authenticate, IMAPError.timeout):
+            return connectionFailed(
+                reason: "the server did not answer \(command.name) in time", account: account, secrets: secrets
+            )
         case (_, IMAPError.timeout):
             // The login worked, so the host and port are right.
             return .serverTimedOut(account: account.name, command: command.name)
-        case (.login, IMAPError.connectionFailed), (_, IMAPError.greetingFailed):
-            return connectionFailed(reason: reason(of: error), account: account)
+        case (.login, IMAPError.connectionFailed), (.authenticate, IMAPError.connectionFailed),
+             (_, IMAPError.greetingFailed):
+            return connectionFailed(reason: reason(of: error), account: account, secrets: secrets)
         case (_, IMAPError.connectionFailed):
             // The login worked, so the host and port are right. SwiftMail
             // reports a closed connection and a BYE this way.
-            return connectionLost(reason: reason(of: error), command: command, account: account)
+            return connectionLost(reason: reason(of: error), command: command, account: account, secrets: secrets)
         case (.search, let error as IMAPError):
             // The login and EXAMINE worked, so the account is fine, and the cause is
             // usually the filter: NO or BAD (commandFailed), or NO [BADCHARSET] for
             // text that is not ASCII (searchCharsetNotSupported). A busy server can
             // also answer NO; the reason in the message shows that.
-            return .searchFailed(account: account.name, reason: redacting(password, in: error.description))
+            return .searchFailed(account: account.name, reason: redacted(error.description))
         case (_, let error as IMAPError):
-            return .serverError(
-                account: account.name,
-                command: command.name,
-                reason: redacting(password, in: error.description)
-            )
-        case (.login, _):
+            return .serverError(account: account.name, command: command.name, reason: redacted(error.description))
+        case (.login, _), (.authenticate, _):
             // SwiftNIO errors: TCP and TLS failures.
-            return connectionFailed(reason: reason(of: error), account: account)
+            return connectionFailed(reason: reason(of: error), account: account, secrets: secrets)
         default:
             // SwiftNIO errors after login, such as a connection reset by the server.
-            return connectionLost(reason: reason(of: error), command: command, account: account)
+            return connectionLost(reason: reason(of: error), command: command, account: account, secrets: secrets)
         }
     }
 
-    private static func connectionFailed(reason: String, account: Account) -> IrisError {
+    private static func connectionFailed(reason: String, account: Account, secrets: [String]) -> IrisError {
         .connectionFailed(
             account: account.name,
             host: account.host,
             port: account.port,
-            reason: redacting(account.password, in: reason)
+            reason: Redaction.redacting(secrets, in: reason)
         )
     }
 
-    private static func connectionLost(reason: String, command: Command, account: Account) -> IrisError {
-        .connectionLost(account: account.name, command: command.name, reason: redacting(account.password, in: reason))
+    private static func connectionLost(
+        reason: String,
+        command: Command,
+        account: Account,
+        secrets: [String]
+    ) -> IrisError {
+        .connectionLost(
+            account: account.name,
+            command: command.name,
+            reason: Redaction.redacting(secrets, in: reason)
+        )
     }
 
     private static func reason(of error: any Error) -> String {
@@ -292,11 +352,6 @@ struct SwiftMailClient: MailWriteClient {
         default:
             return String(describing: error)
         }
-    }
-
-    /// `text` with every copy of `secret` replaced, in case a server repeats the password.
-    static func redacting(_ secret: String, in text: String) -> String {
-        secret.isEmpty ? text : text.replacingOccurrences(of: secret, with: "<password>")
     }
 }
 
