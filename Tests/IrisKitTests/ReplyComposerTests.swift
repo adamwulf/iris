@@ -223,7 +223,11 @@ final class ReplyComposerTests: XCTestCase {
     }
 
     func testAnOriginalWithoutABodyIsNotQuoted() {
-        XCTAssertEqual(reply(to: original(body: "")).markdown, "Looks good.")
+        for bodySource in [BodySource.text, .html] {
+            let draft = reply(to: original(body: "", bodySource: bodySource))
+            XCTAssertEqual(draft.markdown, "Looks good.")
+            XCTAssertEqual(draft.html, "<p>Looks good.</p>\n", "no attribution and no <blockquote>")
+        }
     }
 
     func testTheReplyLosesItsTrailingWhiteSpaceAndCRLFLineEnds() {
