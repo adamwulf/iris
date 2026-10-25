@@ -650,7 +650,9 @@ account (`--account <name>`).
   "Vanguard's"). A key of only a word shorter than 3 ("ai") finds nothing.
   Zoho accepted non-ASCII SUBJECT text (curly apostrophe, emoji, em dash,
   "café"), which SwiftMail sends with CHARSET UTF-8; other servers may
-  refuse it (`searchFailed`), hence the ASCII-words retry. An OR tree of
+  refuse it (`searchFailed`), hence the ASCII-words retry: at most the five
+  longest ASCII words, leaving out words shorter than three characters
+  and words with an ASCII apostrophe. An OR tree of
   HEADER keys that mixed in In-Reply-To/References keys gave wrong answers
   (the same matching key found the message with 3, 6, and 12 keys but not
   with 9 or 15 to 18), so `thread` sends only Message-ID keys, at most 10
@@ -658,6 +660,16 @@ account (`--account <name>`).
   TEXT and TO (`list --to`) were not probed with words. Gmail's SEARCH is
   also index-based; check it before relying on RFC 3501 substring matching
   anywhere.
+- **Why one thread walk** (2026-10-24 checks): Apple Mail on iPhone put
+  only the parent in `References`, so the walk links messages round after
+  round. Outlook replies to an old email with a new subject linked a new
+  conversation to the old one, so a subject change starts a new thread.
+  Both shapes were seen live on Zoho. The server shortcuts were unavailable:
+  SwiftMail 1.16.0 can FETCH Gmail's `X-GM-THRID`, but its pinned
+  swift-nio-imap lacks the SEARCH keys added in PR #853; swift-nio-imap
+  has no THREAD command, and Zoho did not advertise THREAD. The provider
+  checks recorded no MULTISEARCH on Zoho or Gmail, and SwiftMail has no
+  API for it, so the walk searches one mailbox at a time.
 - **Special-use:** a plain LIST may leave out the attributes, so
   `SwiftMailClient.listMailboxes` merges LIST with LIST RETURN (SPECIAL-USE).
   Servers without SPECIAL-USE get SwiftMail's guess from mailbox names.
