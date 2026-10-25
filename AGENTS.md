@@ -311,9 +311,12 @@ for the user to save.
   `attachmentOutputIsFolder`, which says to add a file name. iris never
   makes a file name from the sender's text: SwiftMail's BODYSTRUCTURE
   filename skips RFC 2231 `filename*=`, so it would lose names such as
-  `Résumé.pdf`. A file is never overwritten (`.withoutOverwriting`, which
-  also refuses a symbolic link at the path): `attachmentFileExists` says to
-  pass another `-o`.
+  `Résumé.pdf`. A file is never overwritten: `AttachmentOutput.init` finds
+  anything at the path before the download (`attributesOfItem`, which does
+  not follow a link, so a link that leads nowhere counts), and
+  `.withoutOverwriting` (O_EXCL, which also refuses a symbolic link) is the
+  real guard when the file is created. Both give `attachmentFileExists`,
+  which says to pass another `-o`.
 - `thread` takes `--format markdown|json|jsonl|id` (`ThreadOutputFormat`),
   default `markdown`. Its `messagesFormat` is the `ThreadMessagesFormat`
   of `MessageFormatter.render(thread:format:body:timeZone:)`, which prints

@@ -61,7 +61,7 @@ struct DownloadArguments: ParsableArguments {
     /// Downloads the attachment, then writes its bytes to stdout, or, with
     /// `outputPath` (`-o`), saves it there and writes nothing.
     func run(outputPath: String?) async throws {
-        // Before the download, so a terminal on stdout, or a folder for -o, fails before iris connects.
+        // Before the download, so a terminal on stdout, or a folder or a file at -o, fails before iris connects.
         let output = try AttachmentOutput(path: outputPath, stdoutIsTerminal: isatty(STDOUT_FILENO) == 1)
         let account = try AccountResolver.resolve(name: irisID.account, settings: AccountResolver.settings())
         let attachment = try await MailReader(account: account).attachment(attachmentID, of: irisID)

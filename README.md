@@ -432,8 +432,9 @@ quoted-printable, and does not mark the message as read:
   path, file name included (for example the name that `iris show` lists),
   and prints nothing, as `iris read` prints nothing. A folder is not a
   path to write: iris stops and says to add a file name. It never
-  overwrites a file: when the file exists, it stops and says to pass `-o`
-  with another path.
+  overwrites a file: when something is already at the path (a file, or a
+  symbolic link, even one that leads nowhere), it stops before it downloads
+  and says to pass `-o` with another path.
 
 iris never makes a file name from the sender's text: you choose the name,
 with `-o` or with your shell's `>`. A forwarded message (`message/rfc822`)

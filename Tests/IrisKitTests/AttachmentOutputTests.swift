@@ -66,6 +66,22 @@ final class AttachmentOutputTests: XCTestCase {
         }
     }
 
+    /// Before the download, so iris does not download for nothing.
+    func testAnythingAtThePathIsFoundBeforeTheDownload() throws {
+        let file = path("Q4.pdf")
+        try Data("mine".utf8).write(to: URL(fileURLWithPath: file))
+        let linkToFile = path("link.pdf")
+        try FileManager.default.createSymbolicLink(atPath: linkToFile, withDestinationPath: file)
+        let dangling = path("dangling.pdf")
+        try FileManager.default.createSymbolicLink(atPath: dangling, withDestinationPath: path("nowhere.pdf"))
+
+        for taken in [file, linkToFile, dangling] {
+            assertThrows(.attachmentFileExists(path: taken)) {
+                try AttachmentOutput(path: taken, stdoutIsTerminal: false)
+            }
+        }
+    }
+
     func testTheTerminalErrorSaysToRedirectOrPassAPath() throws {
         let message = try XCTUnwrap(IrisError.attachmentStdoutIsTerminal.errorDescription)
         XCTAssertTrue(message.contains("stdout is a terminal"), message)

@@ -13,15 +13,22 @@ public enum AttachmentOutput: Sendable, Equatable {
 
     /// `.file` for `-o <path>`, else `.stdout`. A path that is an existing
     /// folder throws `attachmentOutputIsFolder`: `-o` takes the file's path.
-    /// Without a path, a terminal on stdout throws `attachmentStdoutIsTerminal`:
-    /// the bytes would garble it.
+    /// Anything else at the path, also a symbolic link that leads nowhere,
+    /// throws `attachmentFileExists`, so iris does not download for nothing;
+    /// `write(_:)` checks again when it creates the file. Without a path, a
+    /// terminal on stdout throws `attachmentStdoutIsTerminal`: the bytes would garble it.
     ///
     /// - Parameter stdoutIsTerminal: Whether stdout is a terminal. The CLI checks it.
     public init(path: String?, stdoutIsTerminal: Bool) throws {
         if let path {
+            let fileManager = FileManager.default
             var isDirectory: ObjCBool = false
-            guard !(FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue) else {
+            guard !(fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue) else {
                 throw IrisError.attachmentOutputIsFolder(path: path)
+            }
+            // attributesOfItem does not follow a symbolic link (lstat), so a link that leads nowhere counts.
+            if (try? fileManager.attributesOfItem(atPath: path)) != nil {
+                throw IrisError.attachmentFileExists(path: path)
             }
             self = .file(path: path)
         } else if stdoutIsTerminal {
