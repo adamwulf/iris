@@ -58,6 +58,20 @@ final class ReadOnlyCommandTests: XCTestCase {
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "download", "work/INBOX/42", "2", "--output", "x"]))
     }
 
+    /// The whole surface of each form, not only -o by name: an option added
+    /// later to the shared DownloadArguments changes these lines, and so forces
+    /// a decision on whether `ro` may have it.
+    func testTheUsageOfEachDownloadFormIsPinned() {
+        func usage(_ command: any ParsableCommand.Type) -> String? {
+            Iris.helpMessage(for: command, columns: 1000)
+                .split(separator: "\n")
+                .first { $0.hasPrefix("USAGE: ") }
+                .map(String.init)
+        }
+        XCTAssertEqual(usage(ReadOnlyDownload.self), "USAGE: iris ro download <iris-id> <attachment-id>")
+        XCTAssertEqual(usage(Download.self), "USAGE: iris download <iris-id> <attachment-id> [--output <path>]")
+    }
+
     func testRoListParsesTheSameAsList() throws {
         let arguments = ["list", "--mailbox", "Sent", "--page", "2", "--limit", "10", "--format", "json", "-a", "work"]
         let plain = try XCTUnwrap(try Iris.parseAsRoot(arguments) as? List)
