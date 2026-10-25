@@ -2,18 +2,6 @@ import Foundation
 import XCTest
 @testable import IrisKit
 
-/// Collects the lines that IrisKit logs during one test.
-private final class LogRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recorded: [String] = []
-
-    var lines: [String] { lock.withLock { recorded } }
-
-    func record(_ line: String) {
-        lock.withLock { recorded.append(line) }
-    }
-}
-
 final class MessageDecoderTests: XCTestCase {
     /// Raw message bytes from text with `\n` line ends, sent as CRLF the way a server sends them.
     private func eml(_ text: String) -> Data {

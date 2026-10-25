@@ -112,8 +112,9 @@ public struct MailReader: Sendable {
         }
     }
 
-    /// The header fields that `thread` searches for the message IDs it knows.
-    static let threadHeaderFields = ["Message-ID", "In-Reply-To", "References"]
+    /// The most message IDs in one Message-ID SEARCH of `thread`. Zoho gave
+    /// wrong answers for large OR trees of HEADER keys, so each search stays small.
+    static let messageIDSearchChunkSize = 10
 
     /// The special-use attributes of the mailboxes that `thread` searches, next
     /// to INBOX and the input message's mailbox, in the order that picks the
@@ -123,14 +124,28 @@ public struct MailReader: Sendable {
     /// Every message in the thread of the message `id`, each once, oldest first.
     /// `id` must name this reader's account, as for `rawMessage(_:)`.
     ///
-    /// The thread is found with header searches. iris searches INBOX, each
-    /// `\Sent`, `\Archive`, `\Drafts`, and `\All` mailbox, and `id`'s mailbox
-    /// for the messages whose Message-ID, In-Reply-To, or References holds a
-    /// message ID that `id` names. Each message found adds the message IDs it
-    /// names, and the search repeats with the new IDs until a round finds none:
-    /// iPhone Mail puts only the parent in References, so one search is not
-    /// enough. A message whose subject is not `id`'s subject (see
-    /// `ThreadSubject`) is not in the thread, and its IDs are not followed.
+    /// A message is in the thread when it has `id`'s subject (see
+    /// `ThreadSubject`: a subject change starts a new thread) and names a
+    /// message ID of the thread in its Message-ID, In-Reply-To, or References.
+    /// iris searches INBOX, each `\Sent`, `\Drafts`, `\Archive`, and `\All`
+    /// mailbox, and `id`'s mailbox, and reads only the headers of what it finds:
+    ///
+    /// 1. The candidates: the messages whose subject has `id`'s subject
+    ///    (SUBJECT), once per mailbox. Servers such as Zoho never match a
+    ///    HEADER search on In-Reply-To or References, so the subject is the
+    ///    only way to find the replies. When a server refuses the SUBJECT
+    ///    search, that mailbox has no candidates.
+    /// 2. The messages whose Message-ID is a known ID (HEADER Message-ID), in
+    ///    every mailbox, to find the ones the SUBJECT search missed. At first
+    ///    these are the IDs that `id` names, its own too, so its copies are
+    ///    found; later, only the known IDs that no message read so far has.
+    /// 3. Every candidate with the subject that names a known ID joins the
+    ///    thread and adds the IDs it names, until none joins: iPhone Mail puts
+    ///    only the parent in References, so the links go one step at a time.
+    ///    Step 2 runs again with the new IDs until there are none.
+    ///
+    /// The candidates do not depend on which message of the thread `id` is,
+    /// so every message of the thread gives the same thread.
     ///
     /// A message in several mailboxes is shown once, by its Message-ID, from
     /// the first mailbox in the order of `threadMailboxes(listed:inputMailbox:)`
@@ -159,35 +174,48 @@ public struct MailReader: Sendable {
             let subject = ThreadSubject.normalized(input.subject)
             // Every message whose headers were fetched, in the thread or not, so none is fetched twice.
             var fetched: [IrisID: ThreadHeaders] = [id: input]
-            var members: [IrisID] = [id]
+            var members: Set<IrisID> = [id]
+            var knownIDs = Set(input.linkedMessageIDs)
             var searchedIDs: Set<String> = []
             var newIDs = input.linkedMessageIDs
+            var isFirstRound = true
             while !newIDs.isEmpty {
                 searchedIDs.formUnion(newIDs)
-                var foundIDs: [String] = []
                 for mailbox in mailboxes {
                     _ = try await examine(mailbox, with: client)
-                    let matches = try await client.searchUIDs(headers: Self.threadHeaderFields, containingAny: newIDs)
-                    let unfetched = Set(matches.filter { fetched[threadCopy(mailbox, $0)] == nil })
+                    var matches: Set<UInt32> = []
+                    // An empty subject would match every message.
+                    if isFirstRound && !subject.isEmpty {
+                        matches.formUnion(try await subjectMatches(subject, in: mailbox, with: client))
+                    }
+                    for start in stride(from: 0, to: newIDs.count, by: Self.messageIDSearchChunkSize) {
+                        let chunk = Array(newIDs[start..<min(start + Self.messageIDSearchChunkSize, newIDs.count)])
+                        matches.formUnion(try await client.searchUIDs(header: "Message-ID", containingAny: chunk))
+                    }
+                    let unfetched = matches.filter { fetched[threadCopy(mailbox, $0)] == nil }
                     guard !unfetched.isEmpty else {
                         continue
                     }
-                    for headers in try await client.fetchThreadHeaders(uids: unfetched.sorted()) {
-                        let copy = threadCopy(mailbox, headers.uid)
-                        // Skip a UID that was not asked for, such as an unsolicited FETCH.
-                        guard unfetched.contains(headers.uid), fetched.updateValue(headers, forKey: copy) == nil else {
-                            continue
-                        }
-                        guard ThreadSubject.normalized(headers.subject) == subject else {
-                            continue
-                        }
-                        members.append(copy)
-                        for linked in headers.linkedMessageIDs where !searchedIDs.contains(linked) && !foundIDs.contains(linked) {
-                            foundIDs.append(linked)
-                        }
+                    // A UID that was not asked for, such as from an unsolicited FETCH, is skipped.
+                    for headers in try await client.fetchThreadHeaders(uids: unfetched.sorted()) where unfetched.contains(headers.uid) {
+                        fetched[threadCopy(mailbox, headers.uid)] = headers
                     }
                 }
-                newIDs = foundIDs
+                isFirstRound = false
+
+                var joined = true
+                while joined {
+                    joined = false
+                    for (copy, headers) in fetched where !members.contains(copy)
+                        && ThreadSubject.normalized(headers.subject) == subject
+                        && !knownIDs.isDisjoint(with: headers.linkedMessageIDs) {
+                        members.insert(copy)
+                        knownIDs.formUnion(headers.linkedMessageIDs)
+                        joined = true
+                    }
+                }
+                let readIDs = Set(fetched.values.compactMap(\.messageID))
+                newIDs = knownIDs.subtracting(searchedIDs).subtracting(readIDs).sorted()
             }
 
             // One copy per Message-ID: the first in mailbox order, then the lowest UID.
@@ -222,6 +250,22 @@ public struct MailReader: Sendable {
             return messages.sorted { lhs, rhs in
                 date(lhs) == date(rhs) ? precedes(lhs.irisID, rhs.irisID) : date(lhs) < date(rhs)
             }
+        }
+    }
+
+    /// The UIDs in the open mailbox, `mailbox`, whose subject has `subject`
+    /// (SUBJECT). When the server refuses the search (Zoho refuses text that
+    /// is not ASCII), there are none, and only the Message-ID searches find
+    /// messages in `mailbox`.
+    private func subjectMatches(_ subject: String, in mailbox: String, with client: any MailClient) async throws -> [UInt32] {
+        do {
+            return try await client.searchUIDs(matching: MessageFilter(subject: subject))
+        } catch IrisError.searchFailed(_, let reason) {
+            IrisLog.log(
+                "The server refused to search \"\(mailbox)\" by subject (\(reason)), "
+                    + "so the thread may miss replies in it."
+            )
+            return []
         }
     }
 

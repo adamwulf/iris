@@ -24,10 +24,9 @@ protocol MailClient: Sendable {
     /// of `filter` (UID SEARCH), in any order. `filter` is not empty.
     func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32]
     /// The UIDs of the messages in the open mailbox that have any of `values`
-    /// in any of the header `fields` (UID SEARCH with HEADER keys joined by
-    /// OR), in any order. The server matches text inside the header and ignores
-    /// case. `fields` and `values` are not empty.
-    func searchUIDs(headers fields: [String], containingAny values: [String]) async throws -> [UInt32]
+    /// in the header `field`, in any order: one UID SEARCH with a HEADER key
+    /// per value, joined by OR. `values` is not empty.
+    func searchUIDs(header field: String, containingAny values: [String]) async throws -> [UInt32]
     /// UID, flags, envelope, and internal date of the messages with these sequence numbers.
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope]
     /// The same for the messages with these UIDs (UID FETCH). `uids` is not empty.

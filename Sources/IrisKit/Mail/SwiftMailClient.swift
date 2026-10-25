@@ -14,11 +14,6 @@ struct SwiftMailClient: MailWriteClient {
     /// in chunks. 100 envelopes are tens of kilobytes, which a slow link moves in time.
     static let envelopeChunkSize = 100
 
-    /// The most values that one header SEARCH holds. RFC 7162, section 4, asks
-    /// clients to keep a command line to about 8192 octets. Ten message IDs
-    /// in three header fields are 30 HEADER keys, a few kilobytes.
-    static let headerSearchChunkSize = 10
-
     /// The header fields that `fetchThreadHeaders` asks for.
     static let threadHeaderFields = ["Message-ID", "In-Reply-To", "References", "Subject", "Date"]
 
@@ -32,9 +27,9 @@ struct SwiftMailClient: MailWriteClient {
         case list
         /// `mailbox` is the wire name, in modified UTF-7.
         case examine(mailbox: String)
-        /// The SEARCH for the `list` filter options.
+        /// The SEARCH for a `MessageFilter`: the `list` filter options, and the subject search of `thread`.
         case search
-        /// The SEARCH for the messages of a thread.
+        /// The HEADER SEARCH of `thread`.
         case headerSearch
         case fetchEnvelopes
         case fetchThreadHeaders
@@ -175,26 +170,18 @@ struct SwiftMailClient: MailWriteClient {
         return criteria
     }
 
-    func searchUIDs(headers fields: [String], containingAny values: [String]) async throws -> [UInt32] {
-        var uids: Set<UInt32> = []
-        for criteria in Self.headerSearchCriteria(fields: fields, values: values) {
-            let result: ExtendedSearchResult<UID> = try await run(.headerSearch) {
-                try await server.extendedSearch(criteria: [criteria])
-            }
-            uids.formUnion(result.all?.toArray().map(\.value) ?? [])
+    func searchUIDs(header field: String, containingAny values: [String]) async throws -> [UInt32] {
+        let result: ExtendedSearchResult<UID> = try await run(.headerSearch) {
+            try await server.extendedSearch(criteria: [Self.headerSearchCriteria(field: field, values: values)])
         }
-        return Array(uids)
+        return result.all?.toArray().map(\.value) ?? []
     }
 
-    /// One SEARCH key for each `headerSearchChunkSize` values: a HEADER key for
-    /// every field and value, joined by OR. The ORs make a balanced tree, so the
-    /// nesting stays shallow.
-    static func headerSearchCriteria(fields: [String], values: [String]) -> [SearchCriteria] {
-        stride(from: 0, to: values.count, by: headerSearchChunkSize).map { start in
-            let chunk = values[start..<min(start + headerSearchChunkSize, values.count)]
-            let keys = chunk.flatMap { value in fields.map { SearchCriteria.header($0, value) } }
-            return anyOf(keys[...])
-        }
+    /// The SEARCH key for `values` in the header `field`: a HEADER key per
+    /// value, joined by OR. The ORs make a balanced tree, so the nesting stays
+    /// shallow. `values` is not empty.
+    static func headerSearchCriteria(field: String, values: [String]) -> SearchCriteria {
+        anyOf(values.map { SearchCriteria.header(field, $0) }[...])
     }
 
     /// The key that matches when any of `keys` matches. `keys` is not empty.

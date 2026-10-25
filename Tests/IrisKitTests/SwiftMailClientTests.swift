@@ -343,37 +343,20 @@ final class SwiftMailClientTests: XCTestCase {
         assertCriteria(MessageFilter(since: since), [.since(since.start)])
     }
 
-    func testHeaderSearchForOneFieldAndOneValueIsOneHeaderKey() {
+    func testHeaderSearchForOneValueIsOneHeaderKey() {
         XCTAssertEqual(
-            "\(SwiftMailClient.headerSearchCriteria(fields: ["Message-ID"], values: ["<a@x>"]))",
-            "\([SearchCriteria.header("Message-ID", "<a@x>")])"
+            "\(SwiftMailClient.headerSearchCriteria(field: "Message-ID", values: ["<a@x>"]))",
+            "\(SearchCriteria.header("Message-ID", "<a@x>"))"
         )
     }
 
-    func testHeaderSearchJoinsEveryFieldAndValueWithABalancedOr() {
-        let criteria = SwiftMailClient.headerSearchCriteria(fields: ["Message-ID", "References"], values: ["<a@x>", "<b@x>"])
+    func testHeaderSearchJoinsTheValuesWithABalancedOr() {
+        let criteria = SwiftMailClient.headerSearchCriteria(field: "Message-ID", values: ["<a@x>", "<b@x>", "<c@x>", "<d@x>", "<e@x>"])
         let expected: SearchCriteria = .or(
-            .or(.header("Message-ID", "<a@x>"), .header("References", "<a@x>")),
-            .or(.header("Message-ID", "<b@x>"), .header("References", "<b@x>"))
+            .or(.header("Message-ID", "<a@x>"), .header("Message-ID", "<b@x>")),
+            .or(.header("Message-ID", "<c@x>"), .or(.header("Message-ID", "<d@x>"), .header("Message-ID", "<e@x>")))
         )
-        XCTAssertEqual("\(criteria)", "\([expected])")
-    }
-
-    func testHeaderSearchSplitsTheValuesIntoChunks() {
-        let size = SwiftMailClient.headerSearchChunkSize
-        let values = (1...(2 * size + 1)).map { "<\($0)@x>" }
-
-        let criteria = SwiftMailClient.headerSearchCriteria(fields: ["Message-ID"], values: values)
-
-        XCTAssertEqual(criteria.count, 3, "one SEARCH per chunk of \(size) values")
-        XCTAssertEqual("\(criteria[2])", "\(SearchCriteria.header("Message-ID", values[2 * size]))")
-        for (index, chunk) in criteria.enumerated() {
-            let described = "\(chunk)"
-            let chunkValues = values[(index * size)..<min((index + 1) * size, values.count)]
-            for value in chunkValues {
-                XCTAssertTrue(described.contains("\"\(value)\""), "\(value) in chunk \(index)")
-            }
-        }
+        XCTAssertEqual("\(criteria)", "\(expected)")
     }
 
     // MARK: - Store

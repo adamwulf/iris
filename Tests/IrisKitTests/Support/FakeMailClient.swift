@@ -10,7 +10,7 @@ actor FakeMailClient: MailWriteClient {
         case listMailboxes
         case examine(String)
         case searchUIDs(MessageFilter)
-        case searchHeaders(fields: [String], values: [String])
+        case searchHeader(String, values: [String])
         case fetchEnvelopes(ClosedRange<Int>)
         case fetchEnvelopesByUID([UInt32])
         case fetchThreadHeaders([UInt32])
@@ -22,8 +22,18 @@ actor FakeMailClient: MailWriteClient {
 
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
-        case login, capabilities, listMailboxes, examine, searchUIDs, searchHeaders, fetchEnvelopes, fetchThreadHeaders,
+        case login, capabilities, listMailboxes, examine, searchUIDs, searchHeader, fetchEnvelopes, fetchThreadHeaders,
              fetchRawMessage, select, setSeen
+    }
+
+    /// How the fake answers a search in a mailbox of `mailboxMessages`.
+    enum SearchRules: CaseIterable {
+        /// As Zoho answered the probes on 2026-10-24 (see `zohoHeaderMatch`
+        /// and `zohoSubjectMatches`).
+        case zoho
+        /// As RFC 3501 says: the text inside the header, ignoring case, in
+        /// any header, and any text in SUBJECT.
+        case rfc3501
     }
 
     /// One message in a fake mailbox, for `thread`: the headers that the header
@@ -63,7 +73,7 @@ actor FakeMailClient: MailWriteClient {
             return Data(lines.joined(separator: "\r\n").utf8)
         }
 
-        /// The text of a header field, as the header search reads it.
+        /// The text of a header field, as an RFC 3501 header search reads it.
         func header(_ field: String) -> String? {
             switch field.lowercased() {
             case "message-id": return messageID
@@ -96,6 +106,7 @@ actor FakeMailClient: MailWriteClient {
     private let envelopes: [MessageEnvelope]
     private let rawMessages: [UInt32: Data]
     private let mailboxMessages: [String: [UInt32: Message]]
+    private let searchRules: SearchRules
     private let errors: [Method: any Error]
     /// The wire name of the mailbox that the last EXAMINE opened.
     private var openMailbox: String?
@@ -112,9 +123,9 @@ actor FakeMailClient: MailWriteClient {
     ///
     /// `mailboxMessages` holds whole mailboxes for `thread`, by wire name and
     /// UID. A mailbox in it can be examined without a status. In such a
-    /// mailbox the header search matches like a server (the text inside the
-    /// field, ignoring case), `fetchThreadHeaders` returns the messages' headers,
-    /// and `fetchRawMessage` returns their raw text.
+    /// mailbox the header search and the subject search (`searchUIDs(matching:)`
+    /// with only `subject` set) answer by `searchRules`, `fetchThreadHeaders`
+    /// returns the messages' headers, and `fetchRawMessage` returns their raw text.
     init(
         accountName: String = "work",
         capabilities: [String] = [],
@@ -124,6 +135,7 @@ actor FakeMailClient: MailWriteClient {
         envelopes: [MessageEnvelope] = [],
         rawMessages: [UInt32: Data] = [:],
         mailboxMessages: [String: [UInt32: Message]] = [:],
+        searchRules: SearchRules = .zoho,
         errors: [Method: any Error] = [:]
     ) {
         self.accountName = accountName
@@ -134,6 +146,7 @@ actor FakeMailClient: MailWriteClient {
         self.envelopes = envelopes
         self.rawMessages = rawMessages
         self.mailboxMessages = mailboxMessages
+        self.searchRules = searchRules
         self.errors = errors
     }
 
@@ -195,17 +208,66 @@ actor FakeMailClient: MailWriteClient {
 
     func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32] {
         try record(.searchUIDs(filter), .searchUIDs)
-        return searchResult
+        guard let mailbox = openMailbox, mailboxMessages[mailbox] != nil else {
+            return searchResult
+        }
+        precondition(filter == MessageFilter(subject: filter.subject), "the fake matches only the subject in mailboxMessages")
+        let text = filter.subject ?? ""
+        switch searchRules {
+        case .zoho:
+            guard text.unicodeScalars.allSatisfy(\.isASCII) else {
+                // What SwiftMailClient makes of Zoho's NO [BADCHARSET].
+                throw IrisError.searchFailed(account: accountName, reason: "NO [BADCHARSET (US-ASCII)] Unsupported charset")
+            }
+            return openMessages.filter { _, message in Self.zohoSubjectMatches(message.subject, text) }.map(\.key)
+        case .rfc3501:
+            return openMessages.filter { _, message in Self.contains(message.subject, text) }.map(\.key)
+        }
     }
 
-    func searchUIDs(headers fields: [String], containingAny values: [String]) async throws -> [UInt32] {
-        try record(.searchHeaders(fields: fields, values: values), .searchHeaders)
+    func searchUIDs(header field: String, containingAny values: [String]) async throws -> [UInt32] {
+        try record(.searchHeader(field, values: values), .searchHeader)
         return openMessages.filter { _, message in
-            fields.contains { field in
-                guard let text = message.header(field) else { return false }
-                return values.contains { text.range(of: $0, options: .caseInsensitive) != nil }
+            values.contains { value in
+                switch searchRules {
+                case .zoho: return Self.zohoHeaderMatch(field, of: message, value: value)
+                case .rfc3501: return Self.contains(message.header(field), value)
+                }
             }
         }.map(\.key)
+    }
+
+    /// Whether `text` has `value` in it, ignoring case, as RFC 3501 says SEARCH matches.
+    private static func contains(_ text: String?, _ value: String) -> Bool {
+        text?.range(of: value, options: .caseInsensitive) != nil
+    }
+
+    // The search rules below come from the probes against Zoho
+    // (imappro.zoho.com) on 2026-10-24. RFC 3501 asks for a substring match
+    // in any header, but Zoho searches a word index.
+
+    /// Zoho's HEADER search: Message-ID matches the whole ID, with or without
+    /// the angle brackets, and ignores case. In-Reply-To and References never
+    /// match, even when the header has the ID.
+    private static func zohoHeaderMatch(_ field: String, of message: Message, value: String) -> Bool {
+        guard field.lowercased() == "message-id", let messageID = message.messageID else {
+            return false
+        }
+        func bare(_ id: String) -> String {
+            id.trimmingCharacters(in: CharacterSet(charactersIn: "<>")).lowercased()
+        }
+        return bare(messageID) == bare(value)
+    }
+
+    /// Zoho's SUBJECT search: each word of `text` must be a whole word of the
+    /// subject, ignoring case, so "Champ" does not match "Champion".
+    /// (Text that is not ASCII is refused before this.)
+    private static func zohoSubjectMatches(_ subject: String?, _ text: String) -> Bool {
+        func words(_ text: String) -> Set<String> {
+            Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+        }
+        let wanted = words(text)
+        return !wanted.isEmpty && wanted.isSubset(of: words(subject ?? ""))
     }
 
     func fetchThreadHeaders(uids: [UInt32]) async throws -> [ThreadHeaders] {
