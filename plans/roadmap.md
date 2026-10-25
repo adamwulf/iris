@@ -45,6 +45,9 @@ use. Keep results in README.md with the date, provider, and case checked.
 - On Zoho and Gmail, attach a file larger than the server accepts: record
   APPENDLIMIT (`draftTooLarge`) or a tagged NO (`draftRefused` and its
   reason), and the upload time against the 30 second limit.
+- On Zoho and Gmail, save a draft with `--attach` of a non-ASCII filename
+  (RFC 2231 `filename*=`). Check the name in Apple Mail and, for Gmail,
+  in its web view.
 - Record how Gmail and iCloud match SUBJECT, TEXT (`list --search`), and
   TO (`list --to`) words, and how Zoho matches ordinary TEXT/TO words.
   Zoho's earlier TEXT probe with a Message-ID does not establish those
