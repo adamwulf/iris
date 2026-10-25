@@ -77,7 +77,7 @@ final class DraftBodyTests: XCTestCase {
         defer { IrisLog.handler = nil }
 
         XCTAssertEqual(try read(file: "-", stdinIsTerminal: true, stdin: Data("Typed.".utf8)), "Typed.")
-        XCTAssertEqual(recorder.lines, ["Reading the reply from stdin; end it with Ctrl-D."])
+        XCTAssertEqual(recorder.lines, ["Reading the draft body from stdin; end it with Ctrl-D."])
     }
 
     func testDashFileFromAPipeLogsNothing() throws {

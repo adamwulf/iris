@@ -6,6 +6,16 @@ import XCTest
 /// The parts of `SwiftMailClient` that need no server: the TLS choice, the
 /// error mapping, and the mailbox and envelope conversions.
 final class SwiftMailClientTests: XCTestCase {
+    func testDraftFlagsIgnoreOtherUIDsAndUseTheLatestAnswerForTheRequestedUID() {
+        let infos = [
+            MessageInfo(sequenceNumber: SequenceNumber(1), uid: UID(9), flags: [.seen]),
+            MessageInfo(sequenceNumber: SequenceNumber(2), uid: UID(11), flags: [.deleted]),
+            MessageInfo(sequenceNumber: SequenceNumber(1), uid: UID(9), flags: [.draft, .seen]),
+        ]
+        XCTAssertEqual(SwiftMailClient.flags(in: infos, uid: 9), [#"\draft"#, #"\seen"#])
+        XCTAssertNil(SwiftMailClient.flags(in: infos, uid: 12))
+    }
+
     private let account = Account(
         name: "work", host: "imap.example.com", port: 993, username: "me@example.com",
         authentication: .password("secret")

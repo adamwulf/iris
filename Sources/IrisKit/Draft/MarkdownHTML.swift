@@ -4,11 +4,13 @@ import Markdown
 /// The HTML of a draft's text/html part: Markdown rendered with
 /// swift-markdown's `HTMLFormatter`, and plain text escaped.
 enum MarkdownHTML {
-    static func html(fromMarkdown markdown: String) -> String {
+    /// CID images are kept only when an update preserves the referenced inline part.
+    /// New replies pass no IDs, because they do not copy the original's inline parts.
+    static func html(fromMarkdown markdown: String, inlineContentIDs: Set<String> = []) -> String {
         // Without smart punctuation, so the HTML says what the text part says:
         // the parser would turn "quotes" into curly ones and -- into a dash.
         let parsed = Document(parsing: markdown, options: .disableSmartOpts)
-        var escaper = HTMLEscaper(source: markdown)
+        var escaper = HTMLEscaper(source: markdown, inlineContentIDs: inlineContentIDs)
         let document = escaper.visit(parsed) ?? Document()
         return HTMLFormatter.format(document)
     }
@@ -65,8 +67,9 @@ enum MarkdownHTML {
 /// It also makes every soft break a line break: `HTMLFormatter` writes a soft
 /// break as a bare newline, which HTML shows as a space, so "Thanks,\nAdam"
 /// would read "Thanks, Adam". And it drops `cid:` images: they point at a
-/// MIME part of the original (a signature logo, often), which the draft does
-/// not have. The links, bold, italic, and struck text, and paragraphs that
+/// MIME part of the original (a signature logo, often), which a new reply does
+/// not have. Updates allow the IDs of inline parts they preserve. The links,
+/// bold, italic, and struck text, and paragraphs that
 /// they leave blank (only white space and line breaks) go too, and so do the
 /// line breaks they leave at the start or end of a paragraph.
 ///
@@ -78,9 +81,11 @@ enum MarkdownHTML {
 private struct HTMLEscaper: MarkupRewriter {
     /// The Markdown's lines, to read the underline of a setext heading.
     private let sourceLines: [Substring]
+    private let inlineContentIDs: Set<String>
 
-    init(source: String) {
+    init(source: String, inlineContentIDs: Set<String>) {
         sourceLines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        self.inlineContentIDs = inlineContentIDs
     }
 
     static func escaped(_ text: String) -> String {
@@ -258,8 +263,13 @@ private struct HTMLEscaper: MarkupRewriter {
     }
 
     mutating func visitImage(_ image: Image) -> Markup? {
-        if image.source?.lowercased().hasPrefix("cid:") == true {
-            return nil
+        if let source = image.source, source.lowercased().hasPrefix("cid:") {
+            // A CID URL percent-encodes characters of the Content-ID. Compare
+            // the decoded ID exactly; only the scheme is case-insensitive.
+            guard let contentID = String(source.dropFirst(4)).removingPercentEncoding,
+                  inlineContentIDs.contains(contentID) else {
+                return nil
+            }
         }
         var image = image
         image.source = image.source.map(Self.escaped)

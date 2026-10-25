@@ -141,31 +141,32 @@ final class MailErrorTests: XCTestCase {
 
     // MARK: - Drafts
 
-    func testDraftBodyErrorsSayHowToGiveTheReply() throws {
+    func testDraftBodyErrorsSayHowToGiveTheBodyForReplyOrUpdate() throws {
         let twice = try XCTUnwrap(IrisError.draftBodyGivenTwice.errorDescription)
         XCTAssertEqual(
             twice,
-            "The reply was given twice: as an argument and with -F. "
+            "The draft body was given twice: as an argument and with -F. "
                 + "Give it one way: as an argument, with -F <path>, or on stdin."
         )
         let missing = try XCTUnwrap(IrisError.draftBodyMissing.errorDescription)
         XCTAssertTrue(missing.contains("as an argument"), missing)
         XCTAssertTrue(missing.contains("-F <path> (-F - reads stdin)"), missing)
-        XCTAssertTrue(missing.contains("echo 'Thanks!' | iris draft '<iris-id>'"), missing)
+        XCTAssertTrue(missing.contains("iris draft reply '<iris-id>' 'Thanks!'"), missing)
+        XCTAssertTrue(missing.contains("iris draft update '<iris-id>' 'Updated text'"), missing)
 
         XCTAssertEqual(
             IrisError.draftBodyEmpty(source: "stdin").errorDescription,
-            "The reply from stdin is empty. Write the reply in Markdown, "
+            "The draft body from stdin is empty. Write the body in Markdown, "
                 + "and give it as an argument, with -F <path>, or on stdin."
         )
         XCTAssertEqual(
             IrisError.draftBodyNotRead(source: "the file \"reply.md\"", reason: "No such file.").errorDescription,
-            "Could not read the reply from the file \"reply.md\" (No such file.). "
-                + "Check the path, or give the reply as an argument or on stdin."
+            "Could not read the draft body from the file \"reply.md\" (No such file.). "
+                + "Check the path, or give the body as an argument or on stdin."
         )
         XCTAssertEqual(
             IrisError.draftBodyNotUTF8(source: "stdin").errorDescription,
-            "The reply from stdin is not UTF-8 text. Save it as UTF-8, or give the reply as an argument."
+            "The draft body from stdin is not UTF-8 text. Save it as UTF-8, or give the body as an argument."
         )
     }
 
@@ -190,7 +191,7 @@ final class MailErrorTests: XCTestCase {
         XCTAssertEqual(
             IrisError.draftTooLarge(account: "work", size: 2_000_000, limit: 1_000_000).errorDescription,
             "The draft is 2000000 bytes, and the server takes at most 1000000 bytes (account \"work\"). "
-                + "Attach fewer or smaller files, shorten the reply, or leave out the quoted message with --no-quote."
+                + "Shorten the body or reduce attachments in your mail app; for draft reply, leave out the quoted message with --no-quote."
         )
     }
 
@@ -229,7 +230,7 @@ final class MailErrorTests: XCTestCase {
             ).errorDescription,
             "The server refused to save the draft in \"Drafts\" (account \"work\"): "
                 + "Command failed: NO [TOOBIG] Message too large. The usual cause is the draft's size: "
-                + "attach fewer or smaller files, or leave out the quoted message with --no-quote. "
+                + "shorten the body or reduce attachments in your mail app. For draft reply, leave out the quoted message with --no-quote. "
                 + "A full mailbox is another: make room, then try again."
         )
     }
@@ -237,10 +238,10 @@ final class MailErrorTests: XCTestCase {
     func testAReplyThatNamesAFileSaysToRepeatAttachOrUseF() {
         XCTAssertEqual(
             IrisError.draftBodyNamesAFile(path: "b.pdf").errorDescription,
-            "The reply is \"b.pdf\", which is the name of a file. Each --attach takes one path, "
+            "The draft body is \"b.pdf\", which is the name of a file. Each --attach takes one path, "
                 + "so a second path after it (or the second file that a pattern such as *.pdf matched) "
-                + "becomes the reply. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
-                + "and give a reply that is in a file with -F <path>."
+                + "becomes the body. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
+                + "and give a body that is in a file with -F <path>."
         )
     }
 

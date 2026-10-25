@@ -122,12 +122,19 @@ final class ReadOnlyCommandTests: XCTestCase {
         // The write commands parse at the top, but not under `ro`.
         XCTAssertTrue(try Iris.parseAsRoot(["read", "work/INBOX/42"]) is Read)
         XCTAssertTrue(try Iris.parseAsRoot(["unread", "work/INBOX/42"]) is Unread)
-        let draft = try XCTUnwrap(try Iris.parseAsRoot(["draft", "work/INBOX/42", "Thanks!"]) as? Draft)
+        let draft = try XCTUnwrap(try Iris.parseAsRoot(["draft", "reply", "work/INBOX/42", "Thanks!"]) as? Draft.Reply)
         XCTAssertEqual(draft.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "read", "work/INBOX/42"]))
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "unread", "work/INBOX/42"]))
-        for arguments in [["ro", "draft"], ["ro", "draft", "work/INBOX/42", "Thanks!"], ["ro", "draft", "work/INBOX/42", "-F", "-"]] {
-            XCTAssertThrowsError(try Iris.parseAsRoot(arguments), "\(arguments)")
+        XCTAssertTrue(try Iris.parseAsRoot(["draft", "update", "work/Drafts/42", "Replacement"]) is Draft.Update)
+        XCTAssertEqual(names(Draft.configuration.subcommands), ["reply", "update"])
+        for command in Draft.configuration.subcommands {
+            XCTAssertFalse(command is any ReadOnlyCommand.Type)
+        }
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "draft"]))
+        for subcommand in ["reply", "update"] {
+            XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "draft", subcommand, "work/Drafts/42", "Body"]))
+            XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "draft", subcommand, "work/Drafts/42", "-F", "-"]))
         }
     }
 

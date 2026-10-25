@@ -44,6 +44,17 @@ final class MarkdownHTMLTests: XCTestCase {
         )
     }
 
+    func testPreservedInlineIDsAllowOnlyMatchingCidImagesAndKeepEscaping() {
+        let markdown = "![Logo](CID:logo%40example.com \"A & B\")\n\n"
+            + "![Missing](cid:other@example.com)\n\n<script>bad()</script>"
+        let rendered = MarkdownHTML.html(fromMarkdown: markdown, inlineContentIDs: ["logo@example.com"])
+        XCTAssertTrue(rendered.contains("src=\"CID:logo%40example.com\""), rendered)
+        XCTAssertTrue(rendered.contains("title=\"A &amp; B\""), rendered)
+        XCTAssertFalse(rendered.contains("cid:other@example.com"), rendered)
+        XCTAssertTrue(rendered.contains("&lt;script&gt;bad()&lt;/script&gt;"), rendered)
+        XCTAssertFalse(html(markdown).contains("<img"), "new replies still discard all CID images")
+    }
+
     /// Signatures link their logo and social icons; SwiftText keeps that as `[![Image](cid:...)](url)`.
     func testALinkLeftEmptyByACidImageIsLeftOut() {
         XCTAssertEqual(

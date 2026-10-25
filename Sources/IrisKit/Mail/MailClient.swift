@@ -77,6 +77,14 @@ protocol MailWriteClient: MailClient {
     /// mailbox (UID STORE +FLAGS), or removes it (-FLAGS) when `seen` is false.
     /// The server answers OK for a missing UID and changes nothing.
     func setSeen(_ seen: Bool, uid: UInt32) async throws
+    /// The flags of one UID, or nil when it does not exist. Used before
+    /// replacing a draft: the mailbox name alone never proves it is a draft.
+    func fetchFlags(uid: UInt32) async throws -> [String]?
+    /// Adds only `\Deleted` to one UID, after its replacement was saved.
+    func setDeleted(uid: UInt32) async throws
+    /// UID EXPUNGE of exactly one UID. The caller must first require UIDPLUS;
+    /// there must never be a fallback to mailbox-wide EXPUNGE.
+    func expunge(uid: UInt32) async throws
     /// Saves `draft` in `mailbox` (a wire name) with APPEND and the flags
     /// `\Seen \Draft`. Returns the new message's UID from APPENDUID, or nil when the
     /// server does not report it (it has no UIDPLUS). A `draftMayBeSaved`

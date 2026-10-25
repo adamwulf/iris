@@ -15,37 +15,12 @@ attachment download. Direct iCloud testing is out of scope. Further
 provider or failure-case testing is not an active milestone; the known
 limits below remain useful when diagnosing a problem.
 
-## Next: create reply drafts and update existing drafts
-
-Agreed on 2026-10-25; not implemented yet. Keep both operations under
-`draft` so the command names make clear that they save drafts, not send
-mail. Separate creating a reply from editing a saved draft:
-
-| Command | Behavior |
-| ------- | -------- |
-| `iris draft reply <iris-id> 'text'` | Create a new reply draft from the named message. Move the current `iris draft` behavior here, including `--all`, `--no-quote`, and `--attach`. |
-| `iris draft update <iris-id> 'text'` | Update the named existing draft with a replacement body. |
-
-Both commands accept body text as an argument, from `-F`, or from stdin,
-as the current draft command does. Both only save drafts; neither sends
-mail, and neither belongs under `iris ro`.
-
-For `draft update`:
-
-- Require an existing draft and reject ordinary messages.
-- Replace the body, preserving recipients, subject, threading headers,
-  and attachments unless explicitly changed.
-- Do not automatically add another reply quote.
-- Print the saved draft's iris ID; callers use that ID for subsequent
-  operations, since it may differ from the input ID.
-
-Later, consider `iris draft new --to ... --subject ... 'text'` to create a
-standalone draft. It is deferred from this first change.
-
 ## Feature candidates
 
 These are the remaining ideas, not a committed implementation order:
 
+- **Standalone drafts:** `iris draft new --to ... --subject ...` remains deferred;
+  `draft reply` and `draft update` are implemented.
 - **Archive and move messages:** let an agent file mail after processing it.
 - **An iris skill for agents:** `skill/iris/SKILL.md`, with guidance for
   reading mail, using iris IDs, handling attachments, and saving drafts.
@@ -61,10 +36,15 @@ future diagnostic tool. It is not a prerequisite for the features above.
 
 ## Known limits
 
+- `iris draft update` downloads the whole original, including attachments,
+  with SwiftMail's 10 second deadline. It requires UIDPLUS to remove only the
+  old UID after saving the replacement. SwiftMail's email writer cannot retain
+  a Content-ID on an explicitly non-inline attachment, so update rejects that
+  shape before saving. Use a mail app for those drafts.
 - Raw message download has a 10 second total deadline: SwiftMail's
   `FetchRawMessageCommand.timeoutSeconds` is hard-coded at the pinned
   revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. `iris show`,
-  `iris thread`, and `iris draft` download a message over 1 MiB in parts
+  `iris thread`, and `iris draft reply` download a message over 1 MiB in parts
   (its headers and BODYSTRUCTURE, then only its text and HTML parts, 60
   seconds each), so they show or quote its body; `show` and `thread` also
   list its attachment IDs. `iris show --format raw` always needs the whole
@@ -156,7 +136,7 @@ future diagnostic tool. It is not a prerequisite for the features above.
   that part is not shown and not listed (`--body text` shows it). SwiftMail
   keeps only leaf parts, not the multipart subtypes, so iris cannot tell a
   footer from the text rendition of the same body.
-- `iris draft` decodes the original as `iris show` does. When its HTML body
+- `iris draft reply` decodes the original as `iris show` does. When its HTML body
   cannot be converted and it has no text part, the error gives `show`'s
   advice (`--format raw`), which `draft` does not have, even with
   `--no-quote`, which needs no body.

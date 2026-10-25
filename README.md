@@ -2,12 +2,12 @@
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
 at a time, shows a message, or a whole thread, as Markdown, downloads an
-attachment, and saves a reply as a draft. Reading changes nothing: iris
-opens mailboxes read-only and never marks a message as read. The only
+attachment, saves a reply as a draft, and updates draft bodies. Reading changes
+nothing: iris opens mailboxes read-only and never marks a message as read. The only
 commands that change mail are `iris read` and `iris unread`, which mark one
-message as read or unread, and `iris draft`, which adds a new draft to the
-Drafts mailbox. iris never sends mail: you review and send the draft in your
-mail app.
+message as read or unread, and `iris draft`, whose `reply` and `update`
+subcommands save drafts. iris never sends mail: you review and send the draft
+in your mail app.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. Adam confirms that all
 functionality works well with agents on his Zoho and Gmail accounts.
@@ -55,7 +55,7 @@ IRIS_PERSONAL_IMAP_PASSWORD=abcdabcdabcdabcd
 IRIS_WORK_IMAP_HOST=imappro.zoho.com
 IRIS_WORK_IMAP_USERNAME=me@example.com
 IRIS_WORK_IMAP_PASSWORD=app-specific-password
-# The From line of drafts (optional; only `iris draft` reads it).
+# The From line of drafts (optional; only `iris draft reply` reads it).
 IRIS_WORK_FROM=Jane Doe <jane@example.com>
 
 # Which account to use when --account is not given.
@@ -66,9 +66,9 @@ IRIS_DEFAULT_ACCOUNT=personal
 Run `iris accounts` to see the accounts and any missing keys, and
 `iris check` to log in once and confirm the settings.
 
-`IRIS_<NAME>_FROM` is the From line of the drafts that `iris draft` saves:
+`IRIS_<NAME>_FROM` is the From line of the drafts that `iris draft reply` saves:
 `Name <address>`, or the address alone. Reading mail does not need it, so
-`iris accounts` does not check it. Without it, `iris draft` uses the username
+`iris accounts` does not check it. Without it, `iris draft reply` uses the username
 when the username is an address (for an account that signs in with Google,
 the address you sign in as). iCloud's username is not (`emily`, not
 `emily@icloud.com`), so an iCloud account needs `IRIS_<NAME>_FROM` to save
@@ -141,7 +141,7 @@ the environment, iris writes no file: it prints the line for you to save.)
 Run `iris check --account personal` to test the account.
 
 From then on, each command gets a new access token from Google before it
-logs in, `iris draft` too. iris never sends mail, but Gmail's IMAP accepts
+logs in, `iris draft reply` too. iris never sends mail, but Gmail's IMAP accepts
 only the `https://mail.google.com/` scope, which is full access to the
 mailbox.
 
@@ -205,11 +205,14 @@ client ID but no refresh token yet.
 - `iris read` and `iris unread`: mark one message, by its iris ID, as read
   or unread (they add or remove the `\Seen` flag). Each one sets the state,
   so running it again changes nothing. They print nothing when they succeed.
-- `iris draft`: save a reply to a message, by its iris ID, as a draft in the
+- `iris draft reply`: save a reply to a message, by its iris ID, as a draft in the
   `\Drafts` mailbox. The reply is Markdown; the draft has it as plain text
   and as HTML, with the original quoted below it. `--all` replies to all,
   and `--attach <path>` (once per file) attaches files. iris never sends the
   draft.
+- `iris draft update`: replace an existing draft's body without adding a quote,
+  preserving recipients (including Bcc), subject, threading headers, and attachments.
+  Prints the replacement iris ID. Requires UIDPLUS for safe removal of the original.
 
 ### Validation status (2026-10-25)
 
@@ -268,10 +271,11 @@ iris download 'work/INBOX/4821' 1.2 -o ~/Downloads/scan.png  # saved as that fil
 iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
 
-iris draft 'work/INBOX/4821' 'Thanks, that works for me.'   # a reply, as a draft
-iris draft 'work/INBOX/4821' -F reply.md --all              # reply to all, from a file
-pbpaste | iris draft 'work/INBOX/4821' --no-quote           # from stdin, without the quote
-iris draft 'work/INBOX/4821' -F reply.md --attach q4.pdf    # with a file attached
+iris draft reply 'work/INBOX/4821' 'Thanks, that works for me.'   # a reply, as a draft
+iris draft reply 'work/INBOX/4821' -F reply.md --all              # reply to all, from a file
+pbpaste | iris draft reply 'work/INBOX/4821' --no-quote           # from stdin, without the quote
+iris draft reply 'work/INBOX/4821' -F reply.md --attach q4.pdf    # with a file attached
+iris draft update 'work/Drafts/77' -F revised.md                 # replace a saved draft body
 ```
 
 List commands (`accounts`, `mailboxes`, `list`, `auth status`) take
@@ -575,7 +579,7 @@ every part download then): try again on a faster connection.
 
 SwiftMail, the IMAP library iris uses, stops the download of a whole
 message after 10 seconds, and attachments are what make a message large.
-So `iris show` (Markdown and JSON), `iris thread`, and `iris draft` first
+So `iris show` (Markdown and JSON), `iris thread`, and `iris draft reply` first
 ask the server for the message's size. A message of up to 1 MiB (nearly
 all mail without attachments) is downloaded whole, as always. A larger one
 is downloaded in parts: its headers and its list of parts, then only its
@@ -603,17 +607,17 @@ one under 1 MiB on a slow connection. That is a known limit of SwiftMail.
 
 ### Drafts
 
-`iris draft <iris-id>` saves a reply to that message as a draft. It never
+`iris draft reply <iris-id>` saves a reply to that message as a draft. It never
 sends anything: open the draft in your mail app, check it, and send it from
 there. The reply is Markdown, from exactly one source:
 
-- the argument after the iris ID: `iris draft 'work/INBOX/4821' 'Thanks!'`.
+- the argument after the iris ID: `iris draft reply 'work/INBOX/4821' 'Thanks!'`.
   A reply that starts with `-` (a Markdown list) would read as an option, so
-  put `--` before it: `iris draft 'work/INBOX/4821' -- '- yes'`. Or use a
+  put `--` before it: `iris draft reply 'work/INBOX/4821' -- '- yes'`. Or use a
   file or stdin.
 - a file: `-F reply.md` (or `--file`); `-F -` reads stdin
 - stdin, when there is no argument and no `-F` and stdin is not a terminal:
-  `pbpaste | iris draft 'work/INBOX/4821'`
+  `pbpaste | iris draft reply 'work/INBOX/4821'`
 
 With no reply on a terminal, iris stops with an error instead of waiting for
 you to type. An empty reply, or one that is not UTF-8, is an error too.
@@ -675,6 +679,34 @@ marks `\Drafts` (`iris mailboxes` shows it; Gmail's is `[Gmail]/Drafts`), and
 prints the draft's iris ID, for example `work/Drafts/77`. A server without
 UIDPLUS does not report the new message's UID; then iris prints nothing on
 stdout and says on stderr where it saved the draft.
+
+### Updating a draft
+
+`iris draft update <iris-id>` replaces the body of an existing draft. It
+accepts Markdown as an argument, with `-F`, or on stdin, like `draft reply`.
+It preserves To, Cc, Bcc, Reply-To, From, subject, Message-ID, threading
+headers, and regular and inline attachments. It adds no quote; include any
+quote you want in the replacement body. The new body is saved as plain text
+and rendered HTML.
+
+The message must have the `\Draft` flag and must not be marked deleted; being
+in a folder named Drafts is not enough. The server must support UIDPLUS. iris
+saves the replacement in the same mailbox first, then deletes and expunges
+only the original UID. It never expunges unrelated messages. Use the printed
+replacement iris ID for subsequent operations: it normally differs from the
+input ID.
+
+If saving fails, the original is not removed. If the server confirms the save
+without a usable replacement UID, or removing the original fails, iris reports
+a partial result. The error names the replacement ID when known and tells you
+to inspect both drafts before retrying. An upload timeout can also leave a
+replacement on the server.
+
+Updating downloads the whole original, including attachments, with a 10 second
+deadline, and uploading has a 30 second deadline. Large drafts can time out. A
+draft with attachment metadata SwiftMail cannot preserve (a Content-ID on an
+explicitly non-inline attachment) is rejected before saving; edit it in your
+mail app.
 
 ### Read-only access for agents
 

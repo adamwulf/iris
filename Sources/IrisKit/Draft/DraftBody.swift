@@ -1,15 +1,15 @@
 import Foundation
 
-/// Reads the reply of `iris draft`, in Markdown, from its one source: the
-/// argument, a file (`-F <path>`), or stdin (`-F -`, or no argument and no
-/// `-F` while stdin is not a terminal).
+/// Reads the Markdown body of `iris draft reply` or `iris draft update` from
+/// its one source: the argument, a file (`-F <path>`), or stdin (`-F -`, or no
+/// argument and no `-F` while stdin is not a terminal).
 public enum DraftBody {
     /// The `-F` value that reads stdin, as in `git commit -F -`.
     public static let stdinPath = "-"
 
-    /// The reply from `argument`, else from the file at `path` (stdin for `-`),
+    /// The draft body from `argument`, else from the file at `path` (stdin for `-`),
     /// else from stdin when it is not a terminal. Throws when both `argument`
-    /// and `path` are given, when there is no source, and when the reply cannot
+    /// and `path` are given, when there is no source, and when the body cannot
     /// be read, is not UTF-8, or is empty or only whitespace.
     ///
     /// - Parameters:
@@ -44,7 +44,7 @@ public enum DraftBody {
             return try nonEmpty(argument, source: "the argument")
         case (nil, let path?) where path == stdinPath:
             if stdinIsTerminal {
-                IrisLog.log("Reading the reply from stdin; end it with Ctrl-D.")
+                IrisLog.log("Reading the draft body from stdin; end it with Ctrl-D.")
             }
             return try text(of: readStdin, source: "stdin")
         case (nil, let path?):
