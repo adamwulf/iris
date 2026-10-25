@@ -13,13 +13,35 @@ enum MarkdownHTML {
         return HTMLFormatter.format(document)
     }
 
-    /// `text` escaped, with `<br />` at each line end. It is not read as
-    /// Markdown, so a plain-text body shows as it was written: `-- ` under a
-    /// line would otherwise make that line a heading.
+    /// The spaces that a tab in a plain-text body becomes.
+    static let tabWidth = 4
+
+    /// `text` escaped, with `<br />` at each line end and its spaces kept. It
+    /// is not read as Markdown, so a plain-text body shows as it was written:
+    /// `-- ` under a line would otherwise make that line a heading.
     static func html(fromPlainText text: String) -> String {
         text.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { escaped(String($0)) }
+            .map { keepingSpaces(escaped(String($0))) }
             .joined(separator: "<br />\n") + "\n"
+    }
+
+    /// `line` with a tab as `tabWidth` spaces, and `&nbsp;` for a space at the
+    /// start or after another space. HTML drops leading spaces and collapses
+    /// runs, so quoted code, logs, and aligned columns would lose their
+    /// layout; a single space between words stays a space, so lines still wrap.
+    static func keepingSpaces(_ line: String) -> String {
+        var result = ""
+        var afterSpace = true
+        for character in line.replacingOccurrences(of: "\t", with: String(repeating: " ", count: tabWidth)) {
+            if character == " " {
+                result += afterSpace ? "&nbsp;" : " "
+                afterSpace = true
+            } else {
+                result.append(character)
+                afterSpace = false
+            }
+        }
+        return result
     }
 
     /// `text` with `&`, `<`, `>`, and `"` escaped, for HTML text and attribute values.

@@ -101,6 +101,13 @@ final class MarkdownHTMLTests: XCTestCase {
             MarkdownHTML.html(fromPlainText: "Hi <Jane> & co,\n\nThe plan\n-- \nBob"),
             "Hi &lt;Jane&gt; &amp; co,<br />\n<br />\nThe plan<br />\n-- <br />\nBob\n"
         )
+        // HTML drops leading spaces and collapses runs, so they become &nbsp;, and a tab
+        // becomes spaces. One space between words stays a space, so lines still wrap.
+        XCTAssertEqual(
+            MarkdownHTML.html(fromPlainText: "if ok {\n    run()\n}\na  b   c\n\tname:\tJane"),
+            "if ok {<br />\n&nbsp;&nbsp;&nbsp;&nbsp;run()<br />\n}<br />\na &nbsp;b &nbsp;&nbsp;c<br />\n"
+                + "&nbsp;&nbsp;&nbsp;&nbsp;name: &nbsp;&nbsp;&nbsp;Jane\n"
+        )
     }
 
     /// The quoted original is untrusted: iris never emits HTML that it did not make.
