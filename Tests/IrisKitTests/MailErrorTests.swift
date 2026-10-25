@@ -123,11 +123,75 @@ final class MailErrorTests: XCTestCase {
         XCTAssertFalse(message.contains("IRIS_WORK_IMAP_PORT"))
     }
 
-    func testRedactingRemovesEveryCopyOfTheSecret() {
+    func testRedactingRemovesEveryCopyOfEverySecret() {
         XCTAssertEqual(
-            SwiftMailClient.redacting("hunter2", in: "LOGIN me hunter2 failed: hunter2"),
-            "LOGIN me <password> failed: <password>"
+            Redaction.redacting(["hunter2"], in: "LOGIN me hunter2 failed: hunter2"),
+            "LOGIN me <redacted> failed: <redacted>"
         )
-        XCTAssertEqual(SwiftMailClient.redacting("", in: "NO login failed"), "NO login failed")
+        XCTAssertEqual(
+            Redaction.redacting(["client-secret", "1//refresh"], in: "refresh_token=1//refresh&client_secret=client-secret"),
+            "refresh_token=<redacted>&client_secret=<redacted>"
+        )
+        XCTAssertEqual(Redaction.redacting(["", "x"], in: "NO login failed"), "NO login failed", "an empty secret is skipped")
+    }
+
+    func testRedactingRemovesALongerSecretWholeWhenItContainsAShorterOne() {
+        XCTAssertEqual(Redaction.redacting(["abc", "abcdef"], in: "token abcdef"), "token <redacted>")
+    }
+
+    // MARK: - Google sign-in
+
+    func testNotSignedInNamesTheKeysAndTheLoginCommand() throws {
+        XCTAssertEqual(
+            IrisError.googleNotSignedIn(account: "personal").errorDescription,
+            "The account \"personal\" signs in with Google (it has IRIS_PERSONAL_GOOGLE_CLIENT_ID), "
+                + "but it is not signed in yet: IRIS_PERSONAL_GOOGLE_REFRESH_TOKEN is not set. "
+                + "Run `iris auth login --account personal` to sign in."
+        )
+    }
+
+    func testSignInExpiredExplainsTheSevenDayTestingLimit() throws {
+        let message = try XCTUnwrap(IrisError.googleSignInExpired(account: "personal").errorDescription)
+        XCTAssertTrue(message.contains("expired or was revoked"), message)
+        XCTAssertTrue(message.contains("Testing mode signs you out every 7 days"), message)
+        XCTAssertTrue(message.contains("`iris auth login --account personal`"), message)
+    }
+
+    func testClientRejectedPointsAtTheClientKeys() throws {
+        let message = try XCTUnwrap(
+            IrisError.googleClientRejected(account: "personal", reason: "HTTP 401, invalid_client").errorDescription
+        )
+        XCTAssertTrue(message.contains("HTTP 401, invalid_client"), message)
+        XCTAssertTrue(message.contains("IRIS_PERSONAL_GOOGLE_CLIENT_ID"), message)
+        XCTAssertTrue(message.contains("IRIS_PERSONAL_GOOGLE_CLIENT_SECRET"), message)
+        XCTAssertTrue(message.contains("\"Desktop app\""), message)
+    }
+
+    func testTokenFailureAdvisesTheNetworkThenAnotherSignIn() throws {
+        let message = try XCTUnwrap(
+            IrisError.googleTokenFailed(account: "personal", reason: "HTTP 503").errorDescription
+        )
+        XCTAssertTrue(message.contains("HTTP 503"), message)
+        XCTAssertTrue(message.contains("network"), message)
+        XCTAssertTrue(message.contains("`iris auth login --account personal`"), message)
+    }
+
+    func testNoRefreshTokenPointsAtTheGooglePermissionsPage() throws {
+        let message = try XCTUnwrap(IrisError.googleNoRefreshToken(account: "personal").errorDescription)
+        XCTAssertTrue(message.contains("https://myaccount.google.com/permissions"), message)
+        XCTAssertTrue(message.contains("`iris auth login --account personal`"), message)
+    }
+
+    func testGoogleLoginRefusedPointsAtTheUsernameNotAnAppPassword() throws {
+        let message = try XCTUnwrap(IrisError.googleLoginRefused(
+            account: "personal", username: "me@gmail.com", host: "imap.gmail.com",
+            reason: "NO [AUTHENTICATIONFAILED] Invalid credentials (Failure)"
+        ).errorDescription)
+        XCTAssertTrue(message.contains("imap.gmail.com refused the Google sign-in for me@gmail.com"), message)
+        XCTAssertTrue(message.contains("[AUTHENTICATIONFAILED]"), message)
+        XCTAssertTrue(message.contains("IRIS_PERSONAL_IMAP_USERNAME"), message)
+        XCTAssertTrue(message.contains("`iris auth login --account personal`"), message)
+        XCTAssertFalse(message.contains("app-specific password"), message)
+        XCTAssertFalse(message.contains("IMAP_PASSWORD"), message)
     }
 }
