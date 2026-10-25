@@ -229,29 +229,4 @@ final class MailReaderAttachmentTests: XCTestCase {
         let calls = await fake.calls
         XCTAssertEqual(calls.suffix(2), [.fetchPart(part(2), 150), .logout])
     }
-
-    func testUnknownAttachmentPointsToShowForThatMessage() {
-        XCTAssertEqual(
-            IrisError.unknownAttachment(id(150, in: "Sent Items"), part(1, 2)).errorDescription,
-            "The message \"work/Sent Items/150\" has no attachment 1.2. "
-                + "Run `iris show 'work/Sent Items/150'` to see its attachment IDs."
-        )
-    }
-
-    func testAMissingStructureSaysToTryAgainOrUseTheRawSource() {
-        XCTAssertEqual(
-            IrisError.attachmentStructureMissing(id(150, in: "Sent Items")).errorDescription,
-            "The server did not describe the parts of the message \"work/Sent Items/150\" (its answer had no "
-                + "BODYSTRUCTURE that iris can read), so iris cannot find the attachment. Try again. If it keeps "
-                + "failing, `iris show 'work/Sent Items/150' --format raw` gives the message source, with every "
-                + "attachment in it."
-        )
-    }
-
-    func testAttachmentTimeoutExplainsTheSwiftMailLimit() throws {
-        let message = try XCTUnwrap(IrisError.attachmentDownloadTimedOut(seconds: 60).errorDescription)
-        XCTAssertTrue(message.contains("did not download in 60 seconds"), message)
-        XCTAssertTrue(message.contains("large"), message)
-        XCTAssertTrue(message.contains("known limit of SwiftMail"), message)
-    }
 }

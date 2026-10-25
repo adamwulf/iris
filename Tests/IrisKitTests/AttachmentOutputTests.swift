@@ -82,27 +82,6 @@ final class AttachmentOutputTests: XCTestCase {
         }
     }
 
-    func testTheTerminalErrorSaysToRedirectOrPassAPath() throws {
-        let message = try XCTUnwrap(IrisError.attachmentStdoutIsTerminal.errorDescription)
-        XCTAssertTrue(message.contains("stdout is a terminal"), message)
-        XCTAssertTrue(message.contains("`iris download '<iris-id>' <attachment-id> > <file>`"), message)
-        XCTAssertTrue(message.contains("-o <path>"), message)
-        XCTAssertTrue(message.contains("`iris ro download` has no -o"), message)
-    }
-
-    func testTheFolderErrorSaysToAddAFileName() {
-        XCTAssertEqual(
-            IrisError.attachmentOutputIsFolder(path: "Downloads").errorDescription,
-            "\"Downloads\" is a folder, and -o takes the path of the file to write. Add a file name, "
-                + "such as the filename that `iris show` lists for the attachment: -o 'Downloads/<file name>'."
-        )
-        XCTAssertEqual(
-            IrisError.attachmentOutputIsFolder(path: "/Users/me/Bob's files/").errorDescription,
-            "\"/Users/me/Bob's files/\" is a folder, and -o takes the path of the file to write. Add a file name, "
-                + #"such as the filename that `iris show` lists for the attachment: -o '/Users/me/Bob'\''s files/<file name>'."#
-        )
-    }
-
     // MARK: - Saving
 
     func testAPathIsTheFileToWriteAndNothingIsPrinted() throws {
@@ -153,17 +132,5 @@ final class AttachmentOutputTests: XCTestCase {
             }
             XCTAssertEqual(failedPath, target)
         }
-    }
-
-    func testTheFileErrorsSayToPassAnotherPath() {
-        XCTAssertEqual(
-            IrisError.attachmentFileExists(path: "report.pdf").errorDescription,
-            "The file \"report.pdf\" already exists, and iris never overwrites a file. Pass -o with another path."
-        )
-        XCTAssertEqual(
-            IrisError.attachmentNotSaved(path: "x/report.pdf", reason: "No such file or directory.").errorDescription,
-            "Could not save the attachment to \"x/report.pdf\" (No such file or directory.). "
-                + "Check that the folder exists and that you can write to it, or pass -o with another path."
-        )
     }
 }

@@ -39,13 +39,4 @@ final class AttachmentIDTests: XCTestCase {
     func testJSONIsOneString() throws {
         XCTAssertEqual(try OutputFormatter.json(AttachmentID(components: [1, 2]), pretty: false), #""1.2""#)
     }
-
-    func testInvalidAttachmentIDShowsTheFormAndWhereToFindTheIDs() {
-        XCTAssertEqual(
-            IrisError.invalidAttachmentID("x").errorDescription,
-            "\"x\" is not an attachment ID. An attachment ID is the number that `iris show` lists "
-                + "first on each attachment line, such as 2 or 1.2: numbers of 1 or more, joined by dots. "
-                + "Run `iris show '<iris-id>'` to see the attachment IDs of a message."
-        )
-    }
 }

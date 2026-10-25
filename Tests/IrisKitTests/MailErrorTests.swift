@@ -230,6 +230,75 @@ final class MailErrorTests: XCTestCase {
 
     // MARK: - Attachments
 
+    func testInvalidAttachmentIDShowsTheFormAndWhereToFindTheIDs() {
+        XCTAssertEqual(
+            IrisError.invalidAttachmentID("x").errorDescription,
+            "\"x\" is not an attachment ID. An attachment ID is the number that `iris show` lists "
+                + "first on each attachment line, such as 2 or 1.2: numbers of 1 or more, joined by dots. "
+                + "Run `iris show '<iris-id>'` to see the attachment IDs of a message."
+        )
+    }
+
+    func testUnknownAttachmentPointsToShowForThatMessage() {
+        XCTAssertEqual(
+            IrisError.unknownAttachment(
+                IrisID(account: "work", mailbox: "Sent Items", uid: 150), AttachmentID(components: [1, 2])
+            ).errorDescription,
+            "The message \"work/Sent Items/150\" has no attachment 1.2. "
+                + "Run `iris show 'work/Sent Items/150'` to see its attachment IDs."
+        )
+    }
+
+    func testAMissingStructureSaysToTryAgainOrUseTheRawSource() {
+        XCTAssertEqual(
+            IrisError.attachmentStructureMissing(IrisID(account: "work", mailbox: "Sent Items", uid: 150)).errorDescription,
+            "The server did not describe the parts of the message \"work/Sent Items/150\" (its answer had no "
+                + "BODYSTRUCTURE that iris can read), so iris cannot find the attachment. Try again. If it keeps "
+                + "failing, `iris show 'work/Sent Items/150' --format raw` gives the message source, with every "
+                + "attachment in it."
+        )
+    }
+
+    func testAttachmentTimeoutExplainsTheSwiftMailLimit() throws {
+        let message = try XCTUnwrap(IrisError.attachmentDownloadTimedOut(seconds: 60).errorDescription)
+        XCTAssertTrue(message.contains("did not download in 60 seconds"), message)
+        XCTAssertTrue(message.contains("large"), message)
+        XCTAssertTrue(message.contains("known limit of SwiftMail"), message)
+    }
+
+    func testTheTerminalErrorSaysToRedirectOrPassAPath() throws {
+        let message = try XCTUnwrap(IrisError.attachmentStdoutIsTerminal.errorDescription)
+        XCTAssertTrue(message.contains("stdout is a terminal"), message)
+        XCTAssertTrue(message.contains("`iris download '<iris-id>' <attachment-id> > <file>`"), message)
+        XCTAssertTrue(message.contains("-o <path>"), message)
+        XCTAssertTrue(message.contains("`iris ro download` has no -o"), message)
+    }
+
+    func testTheFolderErrorSaysToAddAFileName() {
+        XCTAssertEqual(
+            IrisError.attachmentOutputIsFolder(path: "Downloads").errorDescription,
+            "\"Downloads\" is a folder, and -o takes the path of the file to write. Add a file name, "
+                + "such as the filename that `iris show` lists for the attachment: -o 'Downloads/<file name>'."
+        )
+        XCTAssertEqual(
+            IrisError.attachmentOutputIsFolder(path: "/Users/me/Bob's files/").errorDescription,
+            "\"/Users/me/Bob's files/\" is a folder, and -o takes the path of the file to write. Add a file name, "
+                + #"such as the filename that `iris show` lists for the attachment: -o '/Users/me/Bob'\''s files/<file name>'."#
+        )
+    }
+
+    func testTheFileErrorsSayToPassAnotherPath() {
+        XCTAssertEqual(
+            IrisError.attachmentFileExists(path: "report.pdf").errorDescription,
+            "The file \"report.pdf\" already exists, and iris never overwrites a file. Pass -o with another path."
+        )
+        XCTAssertEqual(
+            IrisError.attachmentNotSaved(path: "x/report.pdf", reason: "No such file or directory.").errorDescription,
+            "Could not save the attachment to \"x/report.pdf\" (No such file or directory.). "
+                + "Check that the folder exists and that you can write to it, or pass -o with another path."
+        )
+    }
+
     func testNoBytesForAnAttachmentSaysNothingWasSavedAndToTryAgain() {
         XCTAssertEqual(
             IrisError.attachmentNotReceived(
