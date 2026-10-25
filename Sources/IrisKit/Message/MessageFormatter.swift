@@ -38,10 +38,11 @@ public enum MessageFormatter {
         }
     }
 
-    /// The message as Markdown: a subject heading, the From/To/Cc/Date lines and
-    /// the iris ID line when `irisID` is set (each but the last ends in a hard
-    /// break), the body, and the attachments and inline parts (only when there
-    /// are any). It has no trailing newline.
+    /// The message as Markdown: a subject heading, the From/To/Cc/Date lines,
+    /// the iris ID line when `irisID` is set, and the Apple Mail line when
+    /// `appleMailURL` is set (each but the last ends in a hard break), the
+    /// body, and the attachments and inline parts (only when there are any).
+    /// It has no trailing newline.
     ///
     /// - Parameter timeZone: The zone for the date line. Tests pass a fixed zone.
     public static func markdown(_ document: MessageDocument, timeZone: TimeZone = .current) -> String {
@@ -58,6 +59,11 @@ public enum MessageFormatter {
         if let irisID = document.irisID {
             // In code, so that Markdown does not read `_` or `[ ]` in the ID.
             headers.append("**Iris ID:** `\(irisID)`")
+        }
+        if let appleMailURL = document.appleMailURL {
+            // An autolink, so that a Markdown renderer makes it clickable.
+            // The URL has no space, `<`, or `>`: they are percent-encoded.
+            headers.append("**Apple Mail:** <\(appleMailURL)>")
         }
 
         // A hard break after each header line except the last, so that a

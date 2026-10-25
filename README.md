@@ -78,7 +78,8 @@ All three need an **app-specific password**, not your normal password.
 - `iris show`: one full message, by its iris ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
-  source.
+  source. Markdown and JSON include a `message:` URL that opens the message
+  in Apple Mail.
 
 ## Usage
 
@@ -134,6 +135,21 @@ The **message ID** is a different thing: the `Message-ID` header, which the
 sender's mail app writes. `iris show --format json` has both, as `irisID` and
 `messageID`. The same email can have the same message ID in more than one
 mailbox or account, so iris never uses it to find a message.
+
+### Open a message in Apple Mail
+
+When a message has a message ID, `iris show` also gives a `message:` URL that
+opens it in Apple Mail: an `Apple Mail` line in Markdown, and the
+`appleMailURL` key in JSON.
+
+```sh
+open 'message://%3Creply-2@example.com%3E'
+```
+
+The URL holds only the message ID. Mail looks it up in the messages it has
+downloaded, so the URL works only when the account is also set up in Mail.
+When the same message ID is in more than one mailbox (INBOX and Sent, or two
+Gmail labels), Mail opens one of the copies.
 
 ### Read-only access for agents
 

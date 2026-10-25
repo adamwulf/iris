@@ -9,6 +9,9 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
     /// The `Message-ID` header with angle brackets, for example `<abc@example.com>`.
     /// The sender's mail app writes it; it is not the iris ID.
     public let messageID: String?
+    /// The `message:` URL that opens this message in Apple Mail, made from
+    /// `messageID` (see `AppleMailURL`). `nil` when there is no message ID.
+    public let appleMailURL: String?
     public let subject: String?
     public let from: [MailAddress]
     public let to: [MailAddress]
@@ -45,6 +48,7 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
     ) {
         self.irisID = irisID
         self.messageID = messageID
+        self.appleMailURL = messageID.flatMap(AppleMailURL.string(forMessageID:))
         self.subject = subject
         self.from = from
         self.to = to
