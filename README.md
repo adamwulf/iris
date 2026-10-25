@@ -9,14 +9,11 @@ message as read or unread, and `iris draft`, which adds a new draft to the
 Drafts mailbox. iris never sends mail: you review and send the draft in your
 mail app.
 
-Made for Gmail, iCloud Mail, and Zoho Mail. `check`, `mailboxes`, `list`,
-`show`, and `thread` were run against Zoho Mail on 2026-10-24; `read`,
-`unread`, `draft`, and `download` have not run against a real server yet,
-and Gmail and iCloud Mail are not checked yet. Since then, `show`, `draft`,
-and `download` first ask for the message's size and parts in a new FETCH,
-`thread` asks for each message's size with its headers, and a message over
-1 MiB is read in parts (see "Large messages"); none of that has run against
-a real server yet.
+Made for Gmail, iCloud Mail, and Zoho Mail. Live validation is partial:
+Zoho's initial reader and thread commands were checked on 2026-10-24;
+Gmail/iCloud connections and the newer write, attachment, and large-message
+paths still need live checks. See [Validation status](#validation-status-2026-10-25)
+for the recorded coverage.
 
 ## Install
 
@@ -215,6 +212,34 @@ client ID but no refresh token yet.
   and `--attach <path>` (once per file) attaches files. iris never sends the
   draft.
 
+### Validation status (2026-10-25)
+
+The feature list above describes implemented behavior. Recorded live
+checks cover less than the implementation:
+
+| Area | Recorded checks | Still to check live |
+| ---- | --------------- | ------------------- |
+| Zoho IMAP | `check`, `mailboxes`, `list`, `show`, and `thread` on 2026-10-24 | The later outline FETCH and large-message parts path, `download`, `read`/`unread`, drafts and attachments, and ordinary TEXT/TO searches |
+| Gmail and iCloud IMAP | Pre-login capabilities captured during library research | Authenticated commands, thread searching, and post-login capabilities/mailbox names |
+| Gmail OAuth | Implementation and offline tests | Browser sign-in, token refresh/expiry, XOAUTH2 login, and draft saving |
+| Quoted-history trimming | Real messages from several mail apps checked on 2026-10-25; see "Quoted history and signatures" | Thunderbird, new Outlook, and a Gmail reply with answers between quoted lines |
+
+A Gmail-authored message read through Zoho checks that message's formatting,
+not the Gmail IMAP or OAuth connection. The remaining checks are in
+[the roadmap](plans/roadmap.md).
+
+The Zoho check used `imappro.zoho.com`. Its post-login CAPABILITY was:
+
+```text
+IMAP4rev1 UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR AUTH=XOAUTH2 UIDPLUS ESEARCH LIST-EXTENDED LIST-STATUS WITHIN LITERAL- ACL CONDSTORE
+```
+
+It advertised no SPECIAL-USE, THREAD, or MULTISEARCH. The merged mailbox
+list identified `Drafts`, two Sent mailboxes (`Sent` and `Sent Messages`),
+`Archive`, `Junk` and `Spam`, and `Trash` and `Deleted Messages`; there was
+no All Mail mailbox. On a server without SPECIAL-USE, SwiftMail guesses
+these roles from the names.
+
 ## Usage
 
 ```sh
@@ -324,16 +349,17 @@ same iris IDs; naming a message in another folder adds that folder.
 
 iris finds the replies by searching each mailbox for the subject, because
 servers such as Zoho cannot search the `In-Reply-To` and `References`
-headers. When a server refuses a subject (some refuse text that is not
-ASCII, such as "Adam’s plan" with a curly apostrophe), iris searches for
-its ASCII words instead ("adam", "plan"). When there is nothing it can
-search for (an empty subject, or one with no ASCII word of three or more
-letters, such as "Café"), it says so on stderr and follows only the
-`Message-ID`s that the messages name: then it finds only the messages that
-the named message leads back to, not the replies to them. The newest
-message of a thread that never branched gives the whole thread; on a
-thread that branched (A has replies B and C), naming C gives A and C, not
-B.
+headers. When a server refuses the subject search, or the search misses
+the named message in its own mailbox, iris tries the subject's ASCII words
+instead ("adam", "plan" for "Adam’s plan"). A non-ASCII subject such as
+"Café" is still searched whole; it needs no ASCII fallback when that search
+works. When no subject search can run (an empty subject, or failed searches
+with no usable fallback), iris says so on stderr and follows only the
+`Message-ID`s that the messages name in those mailboxes. Then it finds
+only the messages that the named message leads back to, not the replies
+to them. The newest message of a thread that never branched gives the
+whole thread; on a thread that branched (A has replies B and C), naming C
+gives A and C, not B.
 
 When one message cannot be shown (in every format but `id`), iris leaves
 it out, shows the others, and writes a line to stderr with its iris ID,
@@ -477,13 +503,18 @@ with "no matches found". Double quotes are not enough when a name has `$`,
 iris list --format id | while IFS= read -r id; do iris show "$id"; done
 ```
 
-An iris ID stays valid while the message stays in that mailbox. When a
-message moves to a different mailbox, it gets a new UID and a new iris ID.
+An iris ID stays valid while the message stays in that mailbox and the
+server keeps the mailbox's UIDVALIDITY. Moving a message gives it a new
+UID and iris ID. If the server rebuilds a mailbox and changes UIDVALIDITY,
+old iris IDs may name other messages or none; iris does not detect that
+change, so run `iris list` again.
 
 The **message ID** is a different thing: the `Message-ID` header, which the
 sender's mail app writes. `iris show --format json` has both, as `irisID` and
 `messageID`. The same email can have the same message ID in more than one
-mailbox or account, so iris never uses it to find a message.
+mailbox or account. Commands take an iris ID to choose one mailbox copy;
+`iris thread` uses message IDs internally to link messages and choose one
+copy of each.
 
 ### Open a message in Apple Mail
 
@@ -567,9 +598,13 @@ is different for a large message:
 - A plain-text body sent as `format=flowed` keeps its line breaks.
 - A `Date:` header without seconds shows as `(unknown)`.
 
+If the server gives no size, iris downloads the whole message. If a large
+message has no readable part structure, iris also falls back to a whole
+message download and says so on stderr; that download can still time out.
+
 `iris show --format raw` is the message source, so it is always the whole
-message, and a large one can still time out after 10 seconds. That is a
-known limit of SwiftMail.
+message. Any whole-message download can time out after 10 seconds, even
+one under 1 MiB on a slow connection. That is a known limit of SwiftMail.
 
 ### Drafts
 
@@ -670,5 +705,18 @@ For Claude Code, in `.claude/settings.json`:
 
 ## Development
 
+```sh
+swift build
+swift test
+swift run iris --help
+```
+
+The tests use fake IMAP clients and HTTP transports; they do not connect
+to a mail provider or send mail. One test exercises the OAuth redirect
+listener on `127.0.0.1`. CLI tests check argument parsing without running
+the commands. A passing suite does not replace the live provider checks.
+
 See [AGENTS.md](AGENTS.md) for the architecture and how to add a command.
-Future work is in [plans/roadmap.md](plans/roadmap.md).
+Future work is in [plans/roadmap.md](plans/roadmap.md). The
+[library research](plans/research/imap-libraries.md) records the original
+selection and its evidence, rather than the current implementation plan.

@@ -1,125 +1,63 @@
-# iris roadmap (rough plan)
+# iris roadmap
 
-This file is only future work. When a milestone is done, remove it from here
-and describe it in README.md.
+Reviewed against the code on 2026-10-25. This file tracks remaining work
+and known limits. Implemented features and recorded live checks are in
+[README.md](../README.md); the architecture and thread-search rationale
+are in [AGENTS.md](../AGENTS.md).
 
-Providers that must work: Gmail, Zoho Mail, iCloud Mail. Auth is an
-app-specific password over TLS on port 993, or, for a Gmail account that
-cannot make an app password, Google OAuth (XOAUTH2) after `iris auth login`.
+## Next: live checks against real accounts
 
-Milestone 1 (the inbox reader: accounts, check, mailboxes, list, show) and
-milestone 3 (`iris draft`, a reply saved as a draft) are done; README.md
-describes them.
+Gmail, Zoho Mail, and iCloud Mail remain the target providers. The commands
+below are implemented; these are validation tasks, not missing features.
+Keep the recorded results in README.md up to date as checks are completed,
+including the date, provider, and behavior checked.
 
-## Next: live check against real accounts
-
-- Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` once per
-  provider (Gmail, iCloud), and once each with a wrong password and a wrong
-  host.
-- Run `iris download` once per provider (Gmail, iCloud, Zoho), on a PDF, an
-  inline image, and a forwarded message (`message/rfc822`, which must save
-  as an `.eml`), and check that the bytes match the attachment.
-- Show a 20 MB message (a large PDF attached) on Zoho and on Gmail with
+- Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` on
+  Gmail and iCloud, including a wrong password and a wrong host. Repeat
+  `show` on Zoho to check the outline FETCH added after its first live
+  check, for a small message as well as a large one.
+- Check `iris thread` on Gmail and iCloud. Confirm that SUBJECT finds
+  replies, how each server matches words, and that `--format id` gives
+  the same iris IDs as the rendered thread when all messages download.
+- Run `iris download` on each provider, on a PDF, an inline image, and
+  a forwarded message (`message/rfc822`, saved as an `.eml`), and compare
+  the downloaded bytes with the attachment.
+- Show a 20 MB message (a large PDF attached) on Zoho and Gmail with
   `iris show`, `iris thread`, and `iris draft`: they must take the parts
-  path (no 10 second timeout), show the body and the attachment IDs, and
-  `iris download` must then fetch the PDF. Compare the body, the filenames,
-  and the estimated sizes with `iris show --format raw` of the same message
-  on a fast link, and with the same message under 1 MiB, which takes the
-  whole path. Note what each server sends in BODYSTRUCTURE for a non-ASCII
-  filename (`filename*=`), and whether its answer to the outline FETCH puts
-  RFC822.SIZE, BODYSTRUCTURE, and the header fields in one FETCH response.
-- Run `iris read`, `iris unread`, and `iris draft` once per provider (Gmail,
-  iCloud, Zoho). They have not run against a real server yet. For
-  `iris draft`, check that the draft opens in Apple Mail as its own draft,
-  in the thread, and that the server reports its UID (UIDPLUS; Zoho
-  advertises it). With `--attach`, check that Apple Mail and Gmail's web
-  view show the files with their names, also a non-ASCII name (RFC 2231
-  `filename*=`). Also attach a file larger than the server takes, on Zoho
-  and on Gmail: record whether each announces APPENDLIMIT (`draftTooLarge`)
-  or answers with a tagged NO (`draftRefused`, and the reason text it
-  sends), and how long the upload takes against the 30 second limit.
-- Run `iris list --search` and `iris list --to` once per provider (Gmail,
-  iCloud, Zoho). IMAP TEXT and TO have not been sent to a real server
-  yet: check that `--search` finds a word that is only in the body, and
-  how each server matches words (whole words, as SUBJECT on Zoho?).
-- Zoho (`imappro.zoho.com`) was checked on 2026-10-24: `check`,
-  `mailboxes`, `list`, `show`, and `thread` work. Post-login CAPABILITY: `IMAP4rev1
-  UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR
-  AUTH=XOAUTH2 UIDPLUS ESEARCH LIST-EXTENDED LIST-STATUS WITHIN LITERAL- ACL
-  CONDSTORE` (no SPECIAL-USE, no THREAD, no MULTISEARCH). Special-use
-  mailboxes: `Drafts`, two `\Sent` (`Sent` and `Sent Messages`), `Archive`,
-  `Junk` and `Spam`, `Trash` and `Deleted Messages`; no `\All`.
-- Gmail with Google OAuth, with Adam's Google Cloud app (External,
-  Testing): run `iris auth login`, then `iris auth status` and
-  `iris check`. Check the console steps in README.md ("Gmail with OAuth")
-  as they are done, the "not verified" warning, and the page the browser
-  shows after the redirect. After the 7 days (or after removing the access
-  at myaccount.google.com/permissions), `iris auth status` and `iris check`
-  should both show the expired sign-in (`invalid_grant`), and `iris draft`
-  on the OAuth account should save a draft. None of it has run against
-  Google yet.
-- Record the post-login CAPABILITY and the Drafts/Sent names for Gmail and
-  iCloud (open in `plans/research/imap-libraries.md`, section 5).
+  path, show or quote the body, and leave the PDF for `iris download`.
+  Compare the body, filenames, and estimated sizes with
+  `iris show --format raw` on a fast link, and with a message under 1 MiB
+  that takes the whole path. Record what BODYSTRUCTURE sends for a
+  non-ASCII filename (`filename*=`), and whether the outline's size,
+  structure, and header fields arrive in one FETCH response or several.
+- Run `iris read`, `iris unread`, and `iris draft` on each provider.
+  Confirm the read/unread state in another mail app. Check that a draft
+  opens in Apple Mail as its own draft, in the thread, and that the server
+  reports its UID (UIDPLUS). With `--attach`, check the filenames in
+  Apple Mail and Gmail's web view, including a non-ASCII name. On Zoho and
+  Gmail, also attach a file larger than the server accepts: record
+  APPENDLIMIT (`draftTooLarge`) or a tagged NO (`draftRefused` and its
+  reason), and the upload time against the 30 second limit.
+- Run `iris list --search` and `iris list --to` on each provider.
+  Check that `--search` finds a word only in the body, and record how TEXT
+  and TO match words. The Zoho TEXT probe with a Message-ID does not
+  establish ordinary body-word matching.
+- Check Gmail OAuth with Adam's Google Cloud app (External, Testing):
+  `iris auth login`, `iris auth status`, `iris check`, and saving a
+  draft. Verify the README console steps, consent warning, and redirect
+  page. After token expiry or revoking access,
+  `iris auth status` and `iris check` should report the expired sign-in
+  (`invalid_grant`).
+- Record post-login CAPABILITY and Drafts/Sent names for Gmail and iCloud.
+  The original research captured only their pre-login capabilities.
 
-## Milestone 2: threads
+## Quoted-history validation
 
-`iris thread` (step 1) and the trimming of quoted history (step 2) are
-done; README.md describes them, and AGENTS.md describes the walk and
-`QuotedHistory`. Why the walk works the way it does:
-
-- The shortcuts are not available, so every server gets the same walk:
-  - Gmail `X-GM-THRID`: SwiftMail can FETCH it but not SEARCH by it. The
-    swift-nio-imap revision it pins has no Gmail SEARCH keys (they came in
-    swift-nio-imap PR #853), and 1.16.0 is SwiftMail's latest release.
-  - `THREAD=REFERENCES`: swift-nio-imap has no THREAD command, and Zoho
-    does not advertise it.
-  - One search over the whole account: MULTISEARCH (RFC 7377) is not
-    advertised by Zoho or Gmail, and SwiftMail has no API for it.
-- The first plan, HEADER searches on `In-Reply-To` and `References`, cannot
-  find replies on Zoho. Probes on 2026-10-24 (read-only): HEADER
-  `Message-ID` matches the whole ID, with or without `< >`; HEADER
-  `In-Reply-To` and `References` never match, in any form, even when the
-  header holds the ID; TEXT with an ID matches nothing; SUBJECT matches
-  whole words ("Champ" does not find "Champion"), and an AND of SUBJECT
-  word keys gave exactly the right messages; and an OR tree that mixed in
-  the dead keys gave wrong answers (the same matching key found the message
-  with 3, 6, and 12 keys, but not with 9 or 15 to 18). So replies are found
-  through the subject, which every member must share. HEADER `Message-ID`
-  searches (at most 10 IDs each) run only where no SUBJECT search ran.
-- A server may refuse a subject that is not ASCII (Zoho did not, for a
-  curly apostrophe, emoji, em dash, arrows, or "café"), so iris then
-  searches for the subject's ASCII words. More probes for those words: a
-  word ends at punctuation, `-`, `.`, `@`, `_`, and the curly apostrophe,
-  but not at an ASCII apostrophe ("don" does not find "don't"), and "ai"
-  (two letters) finds nothing. So words with an ASCII apostrophe and words
-  shorter than 3 are left out, and at most the 5 longest are sent.
-- Apple Mail on iPhone puts only the parent in `References`, so the walk
-  links messages round after round (seen live on Zoho).
-- A subject change starts a new thread, as in Gmail: subjects are compared
-  without leading `Re:`/`Fwd:`/`Fw:` and `[tags]` (Mailman 3 writes
-  "[list] Re: x", gateways add "[EXTERNAL]"). Outlook users reply to an old
-  email and change the subject, so `References` links the new conversation
-  to the old one (seen live on Zoho).
-- Each `Message-ID` is shown once, from a fixed mailbox order, so every
-  message of a thread gives the same thread with the same iris IDs (when
-  the SUBJECT search runs and the thread is in the searched mailboxes).
-  Zoho's Sent held two copies of one sent message, and on Gmail one message
-  is in many mailboxes.
-- One message that does not download or cannot be read is left out with a
-  line on stderr; the rest of the thread is still shown. When nothing is
-  left to show, the command fails as `iris show` would for the message
-  named.
-
-Next:
-
-- Check `iris thread` on Gmail and iCloud. Gmail's SEARCH is also
-  index-based: confirm that SUBJECT finds the replies there, and how it
-  matches words.
-- Check the quoted-history trimming on a real Thunderbird reply, a new
-  Outlook reply, and a Gmail reply with answers between the quoted lines.
-  Gmail, Superhuman, Zoho on the web, Apple Mail (Mac and iPhone, HTML and
-  plain text), Outlook on the web, classic Outlook, and forwards were
-  checked on 2026-10-25 (README.md, "Quoted history and signatures").
+- Check trimming on a real Thunderbird reply, a new Outlook reply, and a
+  Gmail reply with answers between quoted lines. The existing real-message
+  checks and heuristic limits are in README.md, "Quoted history and
+  signatures". Use `--full` to compare the original body with the trimmed
+  output.
 
 ## Later, maybe
 
