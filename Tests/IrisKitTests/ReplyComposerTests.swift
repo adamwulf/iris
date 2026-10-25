@@ -100,7 +100,7 @@ final class ReplyComposerTests: XCTestCase {
         let list = MailAddress(name: "Team", address: "team@example.com")
         let draft = reply(to: original(to: [list, jane], replyTo: [list]), replyAll: true)
         XCTAssertEqual(draft.to, [list])
-        XCTAssertEqual(draft.cc, [jane], "the sender is Cc'd when the reply goes to Reply-To")
+        XCTAssertEqual(draft.cc, [jane], "jane is in the original's To, so she is Cc'd when the reply goes to Reply-To")
     }
 
     // MARK: - Recipients of a reply to your own message
@@ -120,15 +120,31 @@ final class ReplyComposerTests: XCTestCase {
         XCTAssertEqual(draft.cc, [bob])
     }
 
-    func testYourOwnMessageIsKnownByTheUsernameIgnoringCase() {
+    func testYourOwnMessageIsKnownByTheUsernameIgnoringCaseAndItLeavesTo() {
         let login = MailAddress(name: nil, address: "Login@Example.com")
-        let draft = reply(to: original(from: [login], to: [jane]), username: "login@example.com")
+        let draft = reply(to: original(from: [login], to: [jane, login]), username: "login@example.com")
         XCTAssertEqual(draft.to, [jane])
     }
 
-    func testYourOwnMessageIgnoresItsReplyTo() {
+    func testYourOwnMessageIgnoresAReplyToThatIsYou() {
+        XCTAssertEqual(reply(to: original(from: [me], to: [jane], replyTo: [me])).to, [jane])
+    }
+
+    /// A contact form sends From you, To you or an alias, and Reply-To the visitor.
+    func testYourOwnMessageGoesToAReplyToThatNamesSomeoneElse() {
+        let visitor = MailAddress(name: "Visitor", address: "visitor@example.org")
+        let alias = MailAddress(name: nil, address: "contact@example.com")
+        XCTAssertEqual(reply(to: original(from: [me], to: [me], replyTo: [visitor])).to, [visitor])
+        XCTAssertEqual(reply(to: original(from: [me], to: [alias], replyTo: [visitor])).to, [visitor])
+        XCTAssertEqual(reply(to: original(from: [me], to: [jane], replyTo: [me, visitor])).to, [visitor])
+    }
+
+    func testAllOnYourOwnMessageWithAReplyToCcsTheToAndCcRecipients() {
+        let bob = MailAddress(name: "Bob", address: "bob@example.com")
         let list = MailAddress(name: "Team", address: "team@example.com")
-        XCTAssertEqual(reply(to: original(from: [me], to: [jane], replyTo: [list])).to, [jane])
+        let draft = reply(to: original(from: [me], to: [jane, me], cc: [bob], replyTo: [list]), replyAll: true)
+        XCTAssertEqual(draft.to, [list])
+        XCTAssertEqual(draft.cc, [jane, bob])
     }
 
     func testYourOwnMessageLosesRepeatedToRecipients() {
@@ -136,8 +152,9 @@ final class ReplyComposerTests: XCTestCase {
         XCTAssertEqual(reply(to: original(from: [me], to: [jane, shouting])).to, [jane])
     }
 
-    /// With no one else in To (a note to yourself, or only Cc and Bcc), the
-    /// usual rule applies: the reply goes to the sender, you.
+    /// When neither Reply-To nor To names anyone but you (a note to yourself,
+    /// or only Cc and Bcc), the usual rule applies: the reply goes to the
+    /// sender, you. Only To counts, not Cc.
     func testYourOwnMessageToNoOneElseGoesToYou() {
         XCTAssertEqual(reply(to: original(from: [me], to: [me])).to, [me])
         XCTAssertEqual(reply(to: original(from: [me], to: [], cc: [jane])).to, [me])

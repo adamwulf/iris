@@ -57,15 +57,21 @@ public enum ReplyComposer {
         return subject.isEmpty ? "Re:" : "Re: \(subject)"
     }
 
-    /// Who the reply goes to: the original's Reply-To, else its From. When you
-    /// sent the original (its From is one of `me`, the user's own addresses),
-    /// the reply goes to the original's To recipients instead, as mail apps
-    /// reply to a message in Sent; when those are only you, the first rule applies.
+    /// Who the reply goes to: the original's Reply-To, else its From.
+    ///
+    /// When you sent the original (its first From address is one of `me`, the
+    /// user's own addresses), as for a message in Sent, the reply goes to the
+    /// people you wrote to instead, as mail apps reply: the original's
+    /// Reply-To when it names someone but you (a contact form sends From you,
+    /// Reply-To the visitor), else its To recipients, both without you and
+    /// without repeats. When neither names anyone but you, the first rule applies.
     static func recipients(of original: MessageDocument, me: [String]) -> [MailAddress] {
         if let sender = original.from.first, me.contains(where: { $0.lowercased() == sender.address.lowercased() }) {
-            let others = unique(original.to, excluding: me)
-            if !others.isEmpty {
-                return others
+            for candidates in [original.replyTo, original.to] {
+                let others = unique(candidates, excluding: me)
+                if !others.isEmpty {
+                    return others
+                }
             }
         }
         return original.replyTo.isEmpty ? original.from : original.replyTo
