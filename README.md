@@ -393,7 +393,10 @@ Gmail labels), Mail opens one of the copies.
 sends anything: open the draft in your mail app, check it, and send it from
 there. The reply is Markdown, from exactly one source:
 
-- the argument after the iris ID: `iris draft 'work/INBOX/4821' 'Thanks!'`
+- the argument after the iris ID: `iris draft 'work/INBOX/4821' 'Thanks!'`.
+  A reply that starts with `-` (a Markdown list) would read as an option, so
+  put `--` before it: `iris draft 'work/INBOX/4821' -- '- yes'`. Or use a
+  file or stdin.
 - a file: `-F reply.md` (or `--file`); `-F -` reads stdin
 - stdin, when there is no argument and no `-F` and stdin is not a terminal:
   `pbpaste | iris draft 'work/INBOX/4821'`

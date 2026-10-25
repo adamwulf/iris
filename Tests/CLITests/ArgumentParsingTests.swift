@@ -257,6 +257,19 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertTrue(command.noQuote)
     }
 
+    /// Without `--`, a reply that starts with `-` (a Markdown list) reads as an option.
+    func testDraftTakesAReplyThatStartsWithADashAfterDoubleDash() throws {
+        XCTAssertThrowsError(try Draft.parse(["work/INBOX/4821", "- yes"]))
+
+        let command = try Draft.parse(["work/INBOX/4821", "--", "- yes\n- no"])
+        XCTAssertEqual(command.body, "- yes\n- no")
+
+        let withOptions = try Draft.parse(["work/INBOX/4821", "--all", "--no-quote", "--", "-- signed"])
+        XCTAssertEqual(withOptions.body, "-- signed")
+        XCTAssertTrue(withOptions.all)
+        XCTAssertTrue(withOptions.noQuote)
+    }
+
     func testDraftTakesAFileWithShortAndLongNames() throws {
         XCTAssertEqual(try Draft.parse(["work/INBOX/42", "-F", "reply.md"]).file, "reply.md")
         XCTAssertEqual(try Draft.parse(["work/INBOX/42", "--file", "reply.md"]).file, "reply.md")

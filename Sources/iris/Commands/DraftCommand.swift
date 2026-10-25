@@ -13,7 +13,7 @@ struct Draft: AsyncParsableCommand {
     @Argument(help: .irisID, transform: IrisID.init(parsing:))
     var irisID: IrisID
 
-    @Argument(help: "The reply, in Markdown. Omit it to read the reply from -F or stdin.")
+    @Argument(help: "The reply, in Markdown. Omit it to read the reply from -F or stdin. A reply that starts with - (a Markdown list) needs -- before it, as in iris draft 'work/INBOX/4821' -- '- yes', or use -F or stdin.")
     var body: String?
 
     @Option(
