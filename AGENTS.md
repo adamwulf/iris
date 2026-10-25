@@ -48,8 +48,9 @@ Sources/iris/
   CLISupport.swift  log handler, swift-log bootstrap, AccountOptions (--account),
                     ArgumentHelp.irisID (the help for every iris ID argument)
   Commands/         one file per command
-Tests/IrisKitTests/ offline library tests; Support/ has FakeMailClient,
-                    StubTransport (HTTP), and FakeRedirectReceiver (sign-in)
+Tests/IrisKitTests/ offline library tests (LoopbackServerTests binds 127.0.0.1);
+                    Support/ has FakeMailClient, StubTransport (HTTP), and
+                    FakeRedirectReceiver (sign-in)
 Tests/CLITests/     argument parsing only, never run()
 ```
 
@@ -84,12 +85,13 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 (STORE answers OK for a missing UID), then STOREs. `read` always adds
 `\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
 
-Tests never touch the network. They use `FakeMailClient`, which returns
-scripted results and records the calls. The Google code has its own seams:
-`HTTPTransport` (tests use `StubTransport`) and `RedirectReceiver` (tests use
-`FakeRedirectReceiver`, whose `open` is the browser opener). No test opens a
-socket, so the real `LoopbackServer` is covered only through its static
-parts (`queryParameters(ofRequest:)`, `response(isRedirect:)`).
+Tests never touch the network: no test reaches another host. They use
+`FakeMailClient`, which returns scripted results and records the calls. The
+Google code has its own seams: `HTTPTransport` (tests use `StubTransport`)
+and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
+browser opener). One test opens a socket: `LoopbackServerTests` runs the
+real `LoopbackServer`, which binds 127.0.0.1 only, and sends it the
+favicon request and the redirect over loopback.
 
 ### Accounts
 
@@ -300,7 +302,8 @@ account (`--account <name>`).
   and the redirect URI is `http://127.0.0.1:<port>`; the exchange must send
   the same URI. `waitForRedirect` registers its continuation before it calls
   back to open the browser, ignores requests with neither `code` nor `error`
-  (`/favicon.ico`), and gives up after 300 seconds. No semaphores: the
+  (`/favicon.ico`), and gives up after 300 seconds; each wait has a number,
+  so an earlier wait's timeout never ends a later wait. No semaphores: the
   listener's start waits on a continuation.
 - **PKCE and state:** each sign-in makes a new random state and PKCE
   verifier (`OAuthRandom`, `SystemRandomNumberGenerator`). The page gets

@@ -42,6 +42,8 @@ final class LoopbackServer: RedirectReceiver {
     private struct State {
         var listener: NWListener?
         var waiter: CheckedContinuation<[String: String], any Error>?
+        /// Counts the waits, so the timeout of one wait never ends a later one.
+        var wait = 0
     }
 
     private let queue = DispatchQueue(label: "iris.loopback")
@@ -94,9 +96,13 @@ final class LoopbackServer: RedirectReceiver {
 
     func waitForRedirect(timeoutSeconds: Int, registered: () -> Void) async throws -> [String: String] {
         try await withCheckedThrowingContinuation { continuation in
-            state.withLock { $0.waiter = continuation }
+            let wait = state.withLock { state in
+                state.waiter = continuation
+                state.wait += 1
+                return state.wait
+            }
             queue.asyncAfter(deadline: .now() + .seconds(timeoutSeconds)) { [weak self] in
-                self?.finish(.failure(LoopbackError.timedOut(seconds: timeoutSeconds)))
+                self?.finish(.failure(LoopbackError.timedOut(seconds: timeoutSeconds)), onlyWait: wait)
             }
             registered()
         }
@@ -128,9 +134,13 @@ final class LoopbackServer: RedirectReceiver {
         }
     }
 
-    /// Resumes the waiter once; later results are dropped.
-    private func finish(_ result: Result<[String: String], any Error>) {
-        let waiter = state.withLock { state in
+    /// Resumes the waiter once; later results are dropped. With `onlyWait`,
+    /// only while that wait is still the current one.
+    private func finish(_ result: Result<[String: String], any Error>, onlyWait: Int? = nil) {
+        let waiter = state.withLock { state -> CheckedContinuation<[String: String], any Error>? in
+            guard onlyWait == nil || onlyWait == state.wait else {
+                return nil
+            }
             defer { state.waiter = nil }
             return state.waiter
         }
