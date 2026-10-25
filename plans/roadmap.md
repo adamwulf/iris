@@ -11,9 +11,10 @@ done; README.md describes it.
 
 ## Next: live check against real accounts
 
-- Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` once per
-  provider (Gmail, iCloud, Zoho), and once each with a wrong password and a
-  wrong host. Nothing has run against a real server yet.
+- Run `iris check`, `iris mailboxes`, `iris list`, `iris show`, `iris read`,
+  and `iris unread` once per provider (Gmail, iCloud, Zoho), and once each
+  with a wrong password and a wrong host. Nothing has run against a real
+  server yet.
 - Record the post-login CAPABILITY and the Drafts/Sent names per provider
   (open in `plans/research/imap-libraries.md`, section 5).
 
@@ -54,7 +55,8 @@ done; README.md describes it.
 - iris never sends mail. The user reviews and sends the draft from a mail app.
 - `draft` is a write command: it is never under `iris ro` (see AGENTS.md,
   "Read-only and write commands"), and its APPEND call lives outside
-  `MailReader`. `iris thread` (milestone 2) is read-only and goes in both.
+  `MailReader` (in `MailWriter` and `MailWriteClient`, as for `iris read`).
+  `iris thread` (milestone 2) is read-only and goes in both.
 - Probably needs a new optional key for the From address and display name
   (for example `IRIS_<NAME>_FROM`), because the username is not always the
   address.
@@ -62,7 +64,7 @@ done; README.md describes it.
 ## Later, maybe
 
 - XOAUTH2 login for Gmail.
-- More `list` filters (body text, To, Cc), mark as read, archive/move.
+- More `list` filters (body text, To, Cc), archive/move.
 - A live smoke test (`iris test`) against a real account, like graham's.
 - A file log (FellerBuncher) like graham's.
 - `skill/iris/SKILL.md` for agents.

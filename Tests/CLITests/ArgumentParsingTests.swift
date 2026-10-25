@@ -151,6 +151,32 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertThrowsError(try Show.parse(["work/INBOX/42", "--mailbox", "INBOX"]))
     }
 
+    func testReadAndUnreadTakeOneIrisID() throws {
+        XCTAssertEqual(
+            try Read.parse(["personal/[Gmail]/All Mail/7"]).irisID,
+            IrisID(account: "personal", mailbox: "[Gmail]/All Mail", uid: 7)
+        )
+        XCTAssertEqual(try Unread.parse(["work/INBOX/42"]).irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+    }
+
+    func testReadAndUnreadNeedAFullIrisID() {
+        for parse in [{ _ = try Read.parse($0) }, { _ = try Unread.parse($0) }] as [([String]) throws -> Void] {
+            XCTAssertThrowsError(try parse([]))
+            XCTAssertThrowsError(try parse(["42"]))
+            XCTAssertThrowsError(try parse(["INBOX/42"]))
+            XCTAssertThrowsError(try parse(["work/INBOX/42", "work/INBOX/43"]))
+        }
+        XCTAssertThrowsError(try Read.parse(["42"])) { error in
+            XCTAssertTrue(Read.message(for: error).contains("\"42\" is not an iris ID"), Read.message(for: error))
+        }
+    }
+
+    func testReadAndUnreadHaveNoAccountOrMailboxOption() {
+        // The iris ID names both.
+        XCTAssertThrowsError(try Read.parse(["work/INBOX/42", "--account", "work"]))
+        XCTAssertThrowsError(try Unread.parse(["work/INBOX/42", "--mailbox", "INBOX"]))
+    }
+
     /// ArgumentParser lists an option's values itself, so our help strings no longer list them too.
     func testHelpNoLongerHasTheOldValueLists() {
         let oldPhrases = ["table, json, jsonl, or id", "markdown, json, or raw", "auto (HTML", "text, or html"]

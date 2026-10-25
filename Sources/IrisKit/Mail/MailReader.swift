@@ -126,14 +126,6 @@ public struct MailReader: Sendable {
     /// the login or `body` throws.
     func withClient<T>(_ body: (any MailClient) async throws -> T) async throws -> T {
         let client = makeClient(account)
-        do {
-            try await client.login()
-            let result = try await body(client)
-            await client.logout()
-            return result
-        } catch {
-            await client.logout()
-            throw error
-        }
+        return try await client.session { try await body(client) }
     }
 }

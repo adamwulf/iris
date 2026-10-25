@@ -35,6 +35,11 @@ enum CLI {
     }
 }
 
+extension ArgumentHelp {
+    /// The help for an iris ID argument, the same in every command that takes one.
+    static let irisID: ArgumentHelp = "The iris ID from `iris list`: <account>/<mailbox>/<UID>, for example 'work/INBOX/4821'. Put it in single quotes: a mailbox name can have spaces or [ ], which the shell would change."
+}
+
 /// The `--account` option for the commands that talk to a server and take no iris ID.
 /// A command that takes an iris ID uses the account that the ID names.
 struct AccountOptions: ParsableArguments {

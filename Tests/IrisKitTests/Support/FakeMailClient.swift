@@ -1,9 +1,9 @@
 import Foundation
 @testable import IrisKit
 
-/// A `MailClient` with scripted answers. It records every call, so tests can
-/// check what the reader asked for and that it logged out.
-actor FakeMailClient: MailClient {
+/// A `MailClient` and `MailWriteClient` with scripted answers. It records every
+/// call, so tests can check what the reader or writer asked for and that it logged out.
+actor FakeMailClient: MailWriteClient {
     enum Call: Equatable {
         case login
         case capabilities
@@ -13,12 +13,14 @@ actor FakeMailClient: MailClient {
         case fetchEnvelopes(ClosedRange<Int>)
         case fetchEnvelopesByUID([UInt32])
         case fetchRawMessage(UInt32)
+        case select(String)
+        case setSeen(Bool, UInt32)
         case logout
     }
 
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
-        case login, capabilities, listMailboxes, examine, searchUIDs, fetchEnvelopes, fetchRawMessage
+        case login, capabilities, listMailboxes, examine, searchUIDs, fetchEnvelopes, fetchRawMessage, select, setSeen
     }
 
     private(set) var calls: [Call] = []
@@ -33,9 +35,9 @@ actor FakeMailClient: MailClient {
     private let errors: [Method: any Error]
 
     /// Mailbox names are wire names (modified UTF-7), as in `MailClient`:
-    /// `mailboxes` holds them, `statuses` is keyed by them, and `examine` throws
-    /// `unknownMailbox` with the wire name, as SwiftMailClient does, for a name
-    /// that is not in `statuses`. `searchUIDs` returns `searchResult` for every
+    /// `mailboxes` holds them, `statuses` is keyed by them, and `examine` and
+    /// `select` throw `unknownMailbox` with the wire name, as SwiftMailClient
+    /// does, for a name that is not in `statuses`. `searchUIDs` returns `searchResult` for every
     /// filter: the server does the matching, so a test scripts its answer.
     /// `fetchEnvelopes` returns the `envelopes` whose sequence number (or UID)
     /// is asked for, in the order given. `fetchRawMessage` returns empty data
@@ -106,10 +108,7 @@ actor FakeMailClient: MailClient {
 
     func examine(mailbox: String) async throws -> MailboxStatus {
         try record(.examine(mailbox), .examine)
-        guard let status = statuses[mailbox] else {
-            throw IrisError.unknownMailbox(account: accountName, name: mailbox, reason: "NO no such mailbox")
-        }
-        return status
+        return try status(of: mailbox)
     }
 
     func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32] {
@@ -132,8 +131,24 @@ actor FakeMailClient: MailClient {
         return rawMessages[uid] ?? Data()
     }
 
+    func select(mailbox: String) async throws {
+        try record(.select(mailbox), .select)
+        _ = try status(of: mailbox)
+    }
+
+    func setSeen(_ seen: Bool, uid: UInt32) async throws {
+        try record(.setSeen(seen, uid), .setSeen)
+    }
+
     func logout() async {
         calls.append(.logout)
+    }
+
+    private func status(of mailbox: String) throws -> MailboxStatus {
+        guard let status = statuses[mailbox] else {
+            throw IrisError.unknownMailbox(account: accountName, name: mailbox, reason: "NO no such mailbox")
+        }
+        return status
     }
 
     private func record(_ call: Call, _ method: Method) throws {

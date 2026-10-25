@@ -8,10 +8,7 @@ struct Show: ReadOnlyCommand {
     )
 
     // The iris ID names the account and the mailbox, so `show` has no --account or --mailbox.
-    @Argument(
-        help: "The iris ID from `iris list`: <account>/<mailbox>/<UID>, for example 'work/INBOX/4821'. Put it in single quotes: a mailbox name can have spaces or [ ], which the shell would change.",
-        transform: IrisID.init(parsing:)
-    )
+    @Argument(help: .irisID, transform: IrisID.init(parsing:))
     var irisID: IrisID
 
     @Option(help: "The part to show. auto shows the HTML part as Markdown when there is one, else the plain text.")

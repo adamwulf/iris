@@ -10,7 +10,7 @@ struct Iris: AsyncParsableCommand {
         version: "0.1.0",
         // Every read-only command is here and under `iris ro`. A write command
         // goes only here, never in `ReadOnly.commands`.
-        subcommands: ReadOnly.commands.map { $0 as any ParsableCommand.Type } + [ReadOnly.self]
+        subcommands: ReadOnly.commands.map { $0 as any ParsableCommand.Type } + [Read.self, Unread.self, ReadOnly.self]
     )
 
     static func main() async {

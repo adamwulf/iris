@@ -25,6 +25,7 @@ Sources/IrisKit/
   Config/      DotEnv (.env loader), AccountResolver (named accounts), Account
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
                MailReader (sessions, paging, errors), MailModels (rows, pages),
+               MailWriter (the calls that change mail: read and unread),
                MessageFilter (the `list` filter options, sent as UID SEARCH),
                IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
@@ -37,7 +38,8 @@ Sources/IrisKit/
   IrisLog.swift     the logging seam
 Sources/iris/
   Iris.swift        @main root command; ExpressibleByArgument conformances
-  CLISupport.swift  log handler, swift-log bootstrap, AccountOptions (--account)
+  CLISupport.swift  log handler, swift-log bootstrap, AccountOptions (--account),
+                    ArgumentHelp.irisID (the help for every iris ID argument)
   Commands/         one file per command
 Tests/IrisKitTests/ offline library tests; Support/FakeMailClient.swift
 Tests/CLITests/     argument parsing only, never run()
@@ -45,10 +47,11 @@ Tests/CLITests/     argument parsing only, never run()
 
 ### The IMAP seam
 
-`MailClient` is the protocol for the few IMAP calls iris makes. One client is
-one session: `login()`, the calls, then `logout()`. `MailReader` owns that
-order (`withClient` logs out on success, on error, and after a failed login)
-and holds the logic: paging math, ordering, date fallback, and modified
+`MailClient` is the protocol for the few IMAP calls iris makes to read mail.
+One client is one session: `login()`, the calls, then `logout()`.
+`MailClient.session` keeps that order (it logs out on success, on error, and
+after a failed login); `MailReader` and `MailWriter` run every call in one.
+`MailReader` holds the read logic: paging math, ordering, date fallback, and modified
 UTF-7 in both directions (it decodes LIST names in `mailboxes()`, encodes
 `--mailbox` before EXAMINE, and puts the typed name back into an
 `unknownMailbox` error). Without a filter, `list` pages by sequence number
@@ -62,6 +65,15 @@ and tested in `SwiftMailClientTests`: the error mapping
 (`searchCriteria(for:)`), `MailboxInfo(swiftMail:)`, and
 `MessageEnvelope(swiftMail:)`.
 
+`MailWriteClient` refines `MailClient` with the calls that change mail:
+`select(mailbox:)` (SELECT, read-write) and `setSeen(_:uid:)` (UID STORE
++FLAGS or -FLAGS `\Seen`). Only `MailWriter` holds one; `MailReader` holds a
+plain `MailClient`, so it cannot reach them. `SwiftMailClient` and
+`FakeMailClient` conform to both. `MailWriter` SELECTs the mailbox (encoded
+like EXAMINE), fetches the envelope by UID to check that the message exists
+(STORE answers OK for a missing UID), then STOREs. `read` always adds
+`\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
+
 Tests never touch the network. They use `FakeMailClient`, which returns
 scripted results and records the calls.
 
@@ -72,7 +84,7 @@ Each account is a group of keys, `IRIS_<NAME>_IMAP_HOST`, `_PORT` (optional,
 underscores because the suffix is fixed. The process environment wins over
 `.env`; the nearest `.env` wins over a parent's. Commands resolve the account
 once, at the start, through `AccountOptions.resolve()`. A command that takes
-an `IrisID` (such as `show`) has no `--account`: it resolves the account that
+an `IrisID` (such as `show` and `read`) has no `--account`: it resolves the account that
 the ID names, with `AccountResolver.resolve(name:settings:)`. Resolver functions take
 the settings as a parameter, so tests never read the real environment.
 
@@ -144,8 +156,9 @@ enforces it:
 - A **read-only** command (it cannot send, draft, move, flag, or delete) is
   declared `struct X: ReadOnlyCommand` and added to `ReadOnly.commands`. It
   then appears both as `iris x` and `iris ro x`.
-- A **write** command is declared `struct X: AsyncParsableCommand` and added
-  only to `Iris.configuration.subcommands`, after the read-only ones. Never
+- A **write** command (such as `read` and `unread`) is declared
+  `struct X: AsyncParsableCommand` and added only to
+  `Iris.configuration.subcommands`, after the read-only ones. Never
   mark it `ReadOnlyCommand`: `ReadOnly.commands` is typed
   `[any ReadOnlyCommand.Type]`, so the compiler keeps write commands out of
   `ro`.
@@ -157,7 +170,8 @@ enforces it:
   so `iris ro draft show` behaves like `iris draft show`, and
   `iris ro draft new` fails to parse.
 - Keep write calls out of `MailReader` and out of the IMAP calls it uses: put
-  them in a separate type, so a read-only command cannot reach them.
+  them in `MailWriter` and `MailWriteClient` (see "The IMAP seam"), so a
+  read-only command cannot reach them.
 
 `ReadOnlyCommandTests` checks that `ro` has only read-only commands, that
 every read-only command is in both places, and that `iris ro <write command>`
@@ -190,15 +204,16 @@ names the account (`--account <name>`).
 - **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
   `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
   `MailClient` (and `FakeMailClient`) use wire names only. `MailReader`
-  decodes in `mailboxes()` and encodes before EXAMINE. Users only see and type
-  the decoded names.
+  decodes in `mailboxes()` and encodes before EXAMINE, and `MailWriter`
+  encodes before SELECT. Users only see and type the decoded names.
 - **Transport security:** iris passes `.startTLS` for port 143 and
   `.implicitTLS` for every other port. SwiftMail's `.automatic` would continue
   in plain text on 143 when the server has no STARTTLS.
-- **Read-only:** use EXAMINE, never SELECT, and `BODY.PEEK[]`, so iris never
-  sets `\Seen`.
+- **Read-only:** `MailReader` uses EXAMINE, never SELECT, and `BODY.PEEK[]`,
+  so reading never sets `\Seen`. Only `MailWriter` SELECTs, for the STORE.
 - **UIDs** belong to one mailbox. A missing UID gets an empty answer, not an
-  error; `MailReader` turns that into `unknownMessage`.
+  error (FETCH returns nothing, and STORE answers OK); `MailReader` and
+  `MailWriter` turn that into `unknownMessage`.
 - **SEARCH days:** SwiftMail takes a `Date` for SINCE and BEFORE and turns
   it into a day with the `Calendar` it is given. Its `IMAPCalendarDay`
   holds only the years 1900 to 2500, and SwiftMail stops the program

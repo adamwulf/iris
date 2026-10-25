@@ -35,6 +35,34 @@ protocol MailClient: Sendable {
     func logout() async
 }
 
+/// The IMAP calls that change mail, for `MailWriter`. `MailReader` holds only a
+/// `MailClient`, so a read-only command cannot reach them.
+protocol MailWriteClient: MailClient {
+    /// Opens a mailbox read-write (SELECT), so STORE can change its flags.
+    /// `mailbox` is the wire name, and an `unknownMailbox` error holds it.
+    func select(mailbox: String) async throws
+    /// Adds the `\Seen` flag to the message with this UID in the selected
+    /// mailbox (UID STORE +FLAGS), or removes it (-FLAGS) when `seen` is false.
+    /// The server answers OK for a missing UID and changes nothing.
+    func setSeen(_ seen: Bool, uid: UInt32) async throws
+}
+
+extension MailClient {
+    /// Logs in, runs `body`, and logs out after it, also when the login or
+    /// `body` throws.
+    func session<T>(_ body: () async throws -> T) async throws -> T {
+        do {
+            try await login()
+            let result = try await body()
+            await logout()
+            return result
+        } catch {
+            await logout()
+            throw error
+        }
+    }
+}
+
 /// What EXAMINE reports about a mailbox.
 struct MailboxStatus: Sendable, Equatable {
     let messageCount: Int

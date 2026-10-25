@@ -41,16 +41,22 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(irisError(IMAPError.authFailed("NO bad secret"), .login), expected)
     }
 
-    func testSelectFailedOnExamineBecomesUnknownMailbox() {
-        XCTAssertEqual(
-            irisError(IMAPError.selectFailed("NO [NONEXISTENT] secret"), .examine(mailbox: "Nope")),
-            .unknownMailbox(account: "work", name: "Nope", reason: "NO [NONEXISTENT] <password>")
-        )
-        XCTAssertEqual(
-            irisError(IMAPError.selectFailed("NO"), .examine(mailbox: "[Gmail]/Entw&APw-rfe")),
-            .unknownMailbox(account: "work", name: "[Gmail]/Entw&APw-rfe", reason: "NO"),
-            "the error holds the wire name; MailReader puts back the name the user typed"
-        )
+    func testSelectFailedOnExamineOrSelectBecomesUnknownMailbox() {
+        let opens: [(String) -> SwiftMailClient.Command] = [
+            { .examine(mailbox: $0) },
+            { .select(mailbox: $0) },
+        ]
+        for open in opens {
+            XCTAssertEqual(
+                irisError(IMAPError.selectFailed("NO [NONEXISTENT] secret"), open("Nope")),
+                .unknownMailbox(account: "work", name: "Nope", reason: "NO [NONEXISTENT] <password>")
+            )
+            XCTAssertEqual(
+                irisError(IMAPError.selectFailed("NO"), open("[Gmail]/Entw&APw-rfe")),
+                .unknownMailbox(account: "work", name: "[Gmail]/Entw&APw-rfe", reason: "NO"),
+                "the error holds the wire name; MailReader and MailWriter put back the name the user typed"
+            )
+        }
     }
 
     func testTimeoutOnARawMessageBecomesMessageDownloadTimedOut() {
@@ -71,7 +77,7 @@ final class SwiftMailClientTests: XCTestCase {
 
     func testTimeoutAfterLoginBecomesServerTimedOut() {
         let commands: [SwiftMailClient.Command] = [
-            .capability, .list, .examine(mailbox: "INBOX"), .search, .fetchEnvelopes,
+            .capability, .list, .examine(mailbox: "INBOX"), .search, .fetchEnvelopes, .select(mailbox: "INBOX"), .store,
         ]
         for command in commands {
             XCTAssertEqual(
@@ -100,6 +106,7 @@ final class SwiftMailClientTests: XCTestCase {
     func testConnectionFailureAfterLoginBecomesConnectionLostWithoutThePassword() {
         let commands: [SwiftMailClient.Command] = [
             .capability, .list, .examine(mailbox: "INBOX"), .search, .fetchEnvelopes, .fetchRawMessage,
+            .select(mailbox: "INBOX"), .store,
         ]
         for command in commands {
             XCTAssertEqual(
@@ -120,7 +127,11 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(
             irisError(IMAPError.selectFailed("NO"), .fetchEnvelopes),
             .serverError(account: "work", command: "FETCH", reason: "Select mailbox failed: NO"),
-            "selectFailed means an unknown mailbox only for EXAMINE"
+            "selectFailed means an unknown mailbox only for EXAMINE and SELECT"
+        )
+        XCTAssertEqual(
+            irisError(IMAPError.storeFailed("NO [READ-ONLY] secret"), .store),
+            .serverError(account: "work", command: "STORE", reason: "Store failed: NO [READ-ONLY] <password>")
         )
     }
 
@@ -154,6 +165,7 @@ final class SwiftMailClientTests: XCTestCase {
         }
         let commands: [SwiftMailClient.Command] = [
             .capability, .list, .examine(mailbox: "INBOX"), .search, .fetchEnvelopes, .fetchRawMessage,
+            .select(mailbox: "INBOX"), .store,
         ]
         for command in commands {
             XCTAssertEqual(
@@ -176,6 +188,8 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.Command.search.name, "SEARCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchEnvelopes.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchRawMessage.name, "FETCH")
+        XCTAssertEqual(SwiftMailClient.Command.select(mailbox: "INBOX").name, "SELECT")
+        XCTAssertEqual(SwiftMailClient.Command.store.name, "STORE")
     }
 
     // MARK: - Search

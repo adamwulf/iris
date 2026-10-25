@@ -1,8 +1,10 @@
 # iris
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
-at a time and shows a full message as Markdown. iris only reads: it opens
-mailboxes read-only and never marks a message as read.
+at a time and shows a full message as Markdown. Reading changes nothing: iris
+opens mailboxes read-only and never marks a message as read. The only
+commands that change mail are `iris read` and `iris unread`, which mark one
+message as read or unread.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. It has not yet been tested
 against a live server.
@@ -81,6 +83,9 @@ All three need an **app-specific password**, not your normal password.
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
   source. Markdown and JSON include a `message:` URL that opens the message
   in Apple Mail.
+- `iris read` and `iris unread`: mark one message, by its iris ID, as read
+  or unread (they add or remove the `\Seen` flag). Each one sets the state,
+  so running it again changes nothing. They print nothing when they succeed.
 
 ## Usage
 
@@ -98,6 +103,9 @@ iris show 'work/INBOX/4821'                # one message, as Markdown
 iris show 'work/INBOX/4821' --body text    # the plain-text part instead of the HTML
 iris show 'work/INBOX/4821' --format raw > message.eml
 iris show 'personal/[Gmail]/Sent Mail/77'
+
+iris read 'work/INBOX/4821'                # mark as read
+iris unread 'work/INBOX/4821'              # mark as unread
 ```
 
 List commands take `--format table|json|jsonl|id`. Hints and errors go to
@@ -105,7 +113,7 @@ stderr, so stdout is safe to pipe.
 
 `iris list` shows `●` in the `UNREAD` column, just left of the subject (and
 `"unread": true` in JSON), for a message without the `\Seen` flag. Listing
-does not change the flag.
+and showing do not change the flag; `iris read` and `iris unread` do.
 
 ### Filters
 
@@ -186,8 +194,8 @@ Gmail labels), Mail opens one of the copies.
 
 `iris ro <command>` runs the same command as `iris <command>`, but only the
 read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
-`list`, and `show`. Commands that change mail (such as drafts, when they
-come) are not there, so `iris ro draft ...` fails.
+`list`, and `show`. Commands that change mail (`read`, `unread`, and drafts,
+when they come) are not there, so `iris ro read ...` fails.
 
 To let an agent read your mail but never change it, allow only that prefix.
 For Claude Code, in `.claude/settings.json`:
