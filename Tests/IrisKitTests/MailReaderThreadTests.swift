@@ -472,9 +472,10 @@ final class MailReaderThreadTests: XCTestCase {
             ],
         ])
 
-        let found = try await thread(fake, from: "work/INBOX/1")
+        let messages = try await reader(fake).thread(IrisID(account: "work", mailbox: "INBOX", uid: 1))
 
-        XCTAssertEqual(found, ["work/INBOX/1"])
+        XCTAssertEqual(messages.map(\.irisID.description), ["work/INBOX/1"])
+        XCTAssertEqual(messages.map(\.isInput), [true], "so a failed download fails the command as show does")
         let calls = await fake.calls
         XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchThreadHeaders([1]), .fetchRawMessage(1), .logout])
     }
