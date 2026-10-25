@@ -374,7 +374,8 @@ final class SwiftMailClientTests: XCTestCase {
         inReplyTo: "<m3@example.com>",
         references: (1...3).map { "<message-\($0)-0123456789@mail.example.com>" },
         markdown: "Looks *good*.\n\nOn 2026-10-24 13:42 CDT, Jane Doe wrote:\n> Can you look?",
-        html: "<p>Looks <em>good</em>.</p>\n"
+        html: "<p>Looks <em>good</em>.</p>\n",
+        attachments: []
     )
 
     func testEmailFromADraftHasItsHeadersAndBothParts() {
@@ -406,7 +407,7 @@ final class SwiftMailClientTests: XCTestCase {
     func testEmailFromADraftWithoutThreadingHasNoThreadingHeaders() {
         let first = DraftMessage(
             from: reply.from, to: reply.to, cc: [], subject: "Re:", inReplyTo: nil, references: [],
-            markdown: "Hi", html: "<p>Hi</p>\n"
+            markdown: "Hi", html: "<p>Hi</p>\n", attachments: []
         )
         let email = Email(draft: first)
         XCTAssertNil(email.additionalHeaders)
@@ -414,6 +415,104 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertFalse(content.contains("In-Reply-To:"), content)
         XCTAssertFalse(content.contains("References:"), content)
         XCTAssertFalse(content.contains("\r\nCc:"), content)
+    }
+
+    // MARK: - Draft attachments
+
+    /// 60 bytes: base64 makes 80 characters, more than one line of 76.
+    private let plan = DraftAttachment(
+        filename: "Q4 plan.pdf", mimeType: "application/pdf", data: Data((0..<60).map { UInt8($0) })
+    )
+    private let empty = DraftAttachment(filename: "empty.txt", mimeType: "text/plain", data: Data())
+
+    /// `reply` with `attachments`.
+    private func draft(attaching attachments: [DraftAttachment]) -> DraftMessage {
+        DraftMessage(
+            from: reply.from, to: reply.to, cc: reply.cc, subject: reply.subject, inReplyTo: reply.inReplyTo,
+            references: reply.references, markdown: reply.markdown, html: reply.html, attachments: attachments
+        )
+    }
+
+    /// The type in the message's own Content-Type header: the first one, after the headers.
+    private func topLevelContentType(of content: String) -> String? {
+        guard let start = content.range(of: "\r\nContent-Type: ")?.upperBound else {
+            return nil
+        }
+        return String(content[start...].prefix { $0 != ";" && !$0.isNewline })
+    }
+
+    func testEmailFromADraftWithoutAttachmentsStaysMultipartAlternative() {
+        let email = Email(draft: reply)
+        XCTAssertNil(email.attachments)
+
+        let content = email.constructContent(use8BitMIME: true)
+        XCTAssertEqual(topLevelContentType(of: content), "multipart/alternative", content)
+        XCTAssertFalse(content.contains("multipart/mixed"), content)
+        XCTAssertFalse(content.contains("Content-Disposition:"), content)
+    }
+
+    func testEmailFromADraftHasItsAttachmentsAsRegularOnesInOrder() throws {
+        let email = Email(draft: draft(attaching: [plan, empty]))
+
+        let attachments = try XCTUnwrap(email.attachments)
+        XCTAssertEqual(attachments.map(\.filename), ["Q4 plan.pdf", "empty.txt"])
+        XCTAssertEqual(attachments.map(\.mimeType), ["application/pdf", "text/plain"])
+        XCTAssertEqual(attachments.map(\.data), [plan.data, Data()])
+        XCTAssertEqual(attachments.map(\.isInline), [false, false])
+        XCTAssertEqual(attachments.map(\.contentID), [nil, nil])
+    }
+
+    func testContentOfADraftWithAttachmentsIsMultipartMixedWithABase64PartPerFile() throws {
+        // As IMAPServer.append(email:to:flags:internalDate:) writes it.
+        let content = Email(draft: draft(attaching: [plan, empty])).constructContent(use8BitMIME: true)
+
+        XCTAssertEqual(topLevelContentType(of: content), "multipart/mixed", content)
+        let boundaryStart = try XCTUnwrap(content.range(of: "multipart/mixed; boundary=\"")?.upperBound)
+        let boundary = String(content[boundaryStart...].prefix { $0 != "\"" })
+        XCTAssertEqual(
+            content.components(separatedBy: "--\(boundary)\r\n").count - 1, 3,
+            "one part for the text and HTML, and one per file: \(content)"
+        )
+        XCTAssertTrue(content.hasSuffix("--\(boundary)--\r\n"), content)
+
+        // The text and HTML first, as without attachments, then the files in order.
+        let markers = [
+            "Content-Type: multipart/alternative;", "Content-Type: text/plain; charset=UTF-8\r\n",
+            "Content-Type: text/html; charset=UTF-8\r\n", "filename=\"Q4 plan.pdf\"", "filename=\"empty.txt\"",
+        ]
+        let positions = markers.compactMap { content.range(of: $0)?.lowerBound }
+        XCTAssertEqual(positions.count, markers.count, content)
+        XCTAssertEqual(positions, positions.sorted(), content)
+
+        let encoded = plan.data.base64EncodedString()
+        XCTAssertTrue(
+            content.contains(
+                "Content-Type: application/pdf\r\nContent-Transfer-Encoding: base64\r\n"
+                    + "Content-Disposition: attachment; filename=\"Q4 plan.pdf\"\r\n\r\n"
+                    + String(encoded.prefix(76)) + "\r\n" + String(encoded.dropFirst(76)) + "\r\n"
+            ),
+            "base64 in lines of 76 characters that end with CRLF: \(content)"
+        )
+        XCTAssertTrue(
+            content.contains(
+                "Content-Type: text/plain\r\nContent-Transfer-Encoding: base64\r\n"
+                    + "Content-Disposition: attachment; filename=\"empty.txt\"\r\n\r\n\r\n"
+            ),
+            "an empty file is an empty part: \(content)"
+        )
+    }
+
+    /// SwiftMail writes a filename that is not printable ASCII as one RFC 2231
+    /// parameter: `filename*=` with the name in UTF-8, percent-encoded.
+    func testANonASCIIFilenameIsWrittenAsAnRFC2231Parameter() {
+        let resume = DraftAttachment(filename: "R\u{E9}sum\u{E9}.pdf", mimeType: "application/pdf", data: Data("%PDF".utf8))
+
+        let content = Email(draft: draft(attaching: [resume])).constructContent(use8BitMIME: true)
+
+        XCTAssertTrue(
+            content.contains("Content-Disposition: attachment; filename*=UTF-8''R%C3%A9sum%C3%A9.pdf\r\n"), content
+        )
+        XCTAssertFalse(content.contains("filename=\""), "only the encoded form: \(content)")
     }
 
     func testRefusedHeaderSearchIsAServerErrorNotAFilterError() {

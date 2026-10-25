@@ -43,10 +43,12 @@ final class ReplyComposerTests: XCTestCase {
         body: String = "Looks good.",
         username: String = "adam@example.com",
         replyAll: Bool = false,
-        quote: Bool = true
+        quote: Bool = true,
+        attachments: [DraftAttachment] = []
     ) -> DraftMessage {
         ReplyComposer.reply(
-            to: original, body: body, from: me, username: username, replyAll: replyAll, quote: quote, timeZone: chicago
+            to: original, body: body, from: me, username: username, replyAll: replyAll, quote: quote,
+            attachments: attachments, timeZone: chicago
         )
     }
 
@@ -347,5 +349,29 @@ final class ReplyComposerTests: XCTestCase {
 
     func testNoQuoteLeavesTheQuoteOutOfTheHTMLToo() {
         XCTAssertEqual(reply(to: original(), quote: false).html, "<p>Looks good.</p>\n")
+    }
+
+    // MARK: - Attachments
+
+    func testTheAttachmentsPassThroughInOrderAndLeaveTheBodyAlone() {
+        let files = [
+            DraftAttachment(filename: "plan.pdf", mimeType: "application/pdf", data: Data("%PDF".utf8)),
+            DraftAttachment(filename: "empty.txt", mimeType: "text/plain", data: Data()),
+        ]
+
+        let draft = reply(to: original(), attachments: files)
+
+        XCTAssertEqual(draft.attachments, files)
+        let plain = reply(to: original())
+        XCTAssertEqual(draft.markdown, plain.markdown)
+        XCTAssertEqual(draft.html, plain.html)
+    }
+
+    func testAReplyWithoutAttachmentsHasNone() {
+        // Without the attachments argument, as before --attach.
+        let draft = ReplyComposer.reply(
+            to: original(), body: "Hi", from: me, username: "adam@example.com", replyAll: false, quote: true
+        )
+        XCTAssertEqual(draft.attachments, [])
     }
 }

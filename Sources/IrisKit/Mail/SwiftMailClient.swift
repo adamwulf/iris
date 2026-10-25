@@ -470,9 +470,14 @@ struct SwiftMailClient: MailWriteClient {
 extension Email {
     /// `draft` as SwiftMail writes it. `constructContent` adds Date (now), a new
     /// Message-ID, and multipart/alternative with the text and HTML parts.
+    /// With attachments, it puts that inside multipart/mixed, followed by one
+    /// base64 part per file with `Content-Disposition: attachment`.
     init(draft: DraftMessage) {
         func emailAddress(_ address: MailAddress) -> EmailAddress {
             EmailAddress(name: address.name, address: address.address)
+        }
+        let attachments = draft.attachments.map { attachment in
+            Attachment(filename: attachment.filename, mimeType: attachment.mimeType, data: attachment.data, isInline: false)
         }
         self.init(
             sender: emailAddress(draft.from),
@@ -480,7 +485,8 @@ extension Email {
             ccRecipients: draft.cc.map(emailAddress),
             subject: draft.subject,
             textBody: draft.markdown,
-            htmlBody: draft.html
+            htmlBody: draft.html,
+            attachments: attachments.isEmpty ? nil : attachments
         )
         let headers = draft.threadingHeaders
         additionalHeaders = headers.isEmpty ? nil : headers

@@ -157,7 +157,8 @@ final class MailWriterTests: XCTestCase {
             inReplyTo: nil,
             references: [],
             markdown: "Looks good.",
-            html: "<p>Looks good.</p>\n"
+            html: "<p>Looks good.</p>\n",
+            attachments: []
         )
     }
 
@@ -304,7 +305,8 @@ final class MailWriterTests: XCTestCase {
             markdown: markdown,
             // The original is text/plain, so the quote is its text, escaped.
             html: "<p>Looks good.</p>\n<p>On 2026-10-24 13:42 CDT, Jane Doe wrote:</p>\n"
-                + "<blockquote type=\"cite\">\nCan you look at the plan?\n</blockquote>\n"
+                + "<blockquote type=\"cite\">\nCan you look at the plan?\n</blockquote>\n",
+            attachments: []
         )
         let calls = await fake.calls
         XCTAssertEqual(calls, [

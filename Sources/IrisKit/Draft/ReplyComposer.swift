@@ -11,6 +11,7 @@ public enum ReplyComposer {
     ///     leaves it out of Cc.
     ///   - replyAll: Also Cc the original's To and Cc recipients.
     ///   - quote: Add the original's body after the reply, as a Markdown quote.
+    ///   - attachments: The files the draft attaches, in this order, unchanged.
     ///   - timeZone: The zone for the date in the quote's first line. Tests pass a fixed zone.
     public static func reply(
         to original: MessageDocument,
@@ -19,6 +20,7 @@ public enum ReplyComposer {
         username: String,
         replyAll: Bool,
         quote: Bool,
+        attachments: [DraftAttachment] = [],
         timeZone: TimeZone = .current
     ) -> DraftMessage {
         let me = [from.address] + (username.contains("@") ? [username] : [])
@@ -44,7 +46,8 @@ public enum ReplyComposer {
             inReplyTo: inReplyTo,
             references: references,
             markdown: markdown,
-            html: html
+            html: html,
+            attachments: attachments
         )
     }
 
