@@ -389,8 +389,10 @@ iris cuts only at the marks that mail apps leave:
   (or Zoho's `---- On <date> <name> wrote ----`) with only `>` lines under
   it, the same line quoted as the first line of a quote (iPhone writes
   `> On ... wrote:`), the `From:` / `Sent:` (or `Date:`) / `Subject:`
-  header block of Outlook (and of Zoho's plain-text part), and a signature
-  after a `-- ` line (but not when answers to quoted lines follow it).
+  header block of Outlook (and of Zoho's plain-text part), and a `-- `
+  signature line, which cuts everything under it, an unmarked quote in
+  any language too, but not when an answer (text under a quoted line) or a
+  quoted forward follows it.
 
 Only the end of a body is cut. When someone answers between the quoted
 lines, the answers and the quoted lines above them are kept; only quoted
@@ -413,14 +415,16 @@ Limits:
   stops the HTML marks from being used, since the quote is no longer at
   the end. A `-- ` footer (Google Groups) is cut, and the quote above it
   too when a text mark finds it (an English `On ... wrote:` line,
-  Outlook's header); otherwise the quote is kept. A footer without a `-- `
+  Outlook's header, or a `-- ` signature above it); otherwise the quote is
+  kept. A footer without a `-- `
   line (Mailman's, a company disclaimer) reads as new text after the
   quote, so the quote is kept.
 - Outlook writes the same header for a forward. A forward is known only by
   `Fwd:` or `Fw:`, so a forward from an Outlook in another language
   (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.
 - The text marks are in English. A plain-text reply with
-  `Am ... schrieb ...:` is shown whole; in older Apple Mail HTML, whose
+  `Am ... schrieb ...:` is shown whole (unless a `-- ` signature is above
+  the quote); in older Apple Mail HTML, whose
   attribution line sits above the quote with no class, a non-English one
   stays at the end; and a reply from classic desktop Outlook in another
   language (`Von:` / `Gesendet:` / `Betreff:`) is shown whole. The classes

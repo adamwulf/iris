@@ -70,9 +70,11 @@ enum QuotedHistory {
     /// The cut starts at the first of these:
     /// - The signature separator, a line that is exactly `-- `. In Markdown
     ///   from HTML, also a line that is `--` with only spaces after it:
-    ///   SwiftText drops the space, or writes a hard break after it. Not when
-    ///   an answer follows it (an unquoted line under a quoted line, before
-    ///   the history or the next `-- ` line), or when `keptAnswers`.
+    ///   SwiftText drops the space, or writes a hard break after it. The cut
+    ///   takes everything under it, a quote that no other mark finds too.
+    ///   Not when an answer (an unquoted line under a quoted line) or a
+    ///   quoted forward line follows it, before the history or the next
+    ///   `-- ` line, or when `keptAnswers`.
     /// - An attribution line, `On <date>, <name> wrote:` (it may wrap onto a
     ///   second line) or Zoho's `---- On <date> <name> wrote ----`, with only
     ///   quoted (`>`) and blank lines after it, at least one of them quoted,

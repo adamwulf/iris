@@ -691,7 +691,8 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertTrue(zoho.trimmed)
 
         // A Gmail reply without "Re:" that quotes a forward: the walk keeps
-        // the forward, which is no answer, so the signature still cuts.
+        // the forward, but its English attribution makes it history, which
+        // the signature rule does not look into, so the signature still cuts.
         let forward = try await trimmed("""
         <div dir="ltr">Thanks<br><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature">Adam</div></div><div class="gmail_quote"><div class="gmail_attr">On Fri, Oct 24, 2026 at 9:41 AM Jane Doe &lt;jane@example.com&gt; wrote:<br></div><blockquote class="gmail_quote">---------- Forwarded message ---------<br>From: Bob<br><br>Lunch on Tuesday?</blockquote></div>
         """)
