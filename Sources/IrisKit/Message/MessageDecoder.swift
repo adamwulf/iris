@@ -326,7 +326,8 @@ public enum MessageDecoder {
     ///   - trimming: Whether to leave out the quoted history and signature at
     ///     the end: first the HTML elements that mark them, then the text
     ///     markers in the Markdown (see `QuotedHistory`). When that leaves
-    ///     nothing, or the Markdown has a forward marker, the whole body is kept.
+    ///     nothing, or the Markdown has an unquoted forward marker above its
+    ///     history (`QuotedHistory.TextTrim.forward`), the whole body is kept.
     ///   - inReply: Whether the message is a reply, so that a quoted forward
     ///     at its end is the forward it answers (see
     ///     `QuotedHistory.removeHistory(fromHTMLParts:inReply:)`).

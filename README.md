@@ -405,8 +405,9 @@ Limits:
   on the language, except in older Gmail mail, whose attribution line has
   no mark of its own: a non-English one stays at the end of the body.
 - A reply to a forward is told from the forward itself by its `Re:`
-  subject. A reply from an Outlook in another language (`AW:`, `SV:`) to a
-  forward with no note of its own is shown whole.
+  subject. A reply whose subject starts with a translated prefix (`AW:`,
+  `SV:`) instead of `Re:`, and that quotes a forward with no note of its
+  own, is shown whole.
 - A plain-text reply from Apple Mail is kept whole: Apple Mail quotes its
   `On ... wrote:` line too, so there is no mark. Its HTML part, which iris
   shows by default, is trimmed.

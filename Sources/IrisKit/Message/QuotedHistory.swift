@@ -193,7 +193,7 @@ enum QuotedHistory {
 
     // MARK: - HTML
 
-    /// What `removeHistory(fromHTMLParts:)` removed.
+    /// What `removeHistory(fromHTMLParts:inReply:)` removed.
     struct Removal: Equatable {
         /// A quote, its attribution, or Outlook's header and what follows it.
         var quote = false
@@ -226,8 +226,9 @@ enum QuotedHistory {
     ///
     /// A quote or `div.gmail_quote` that starts a forward
     /// (`isForwardMarker(_:)`) counts as content: it is kept whole, and so is
-    /// everything before it. In a reply, it is the forward that the reply
-    /// quotes, so it is removed like any quote.
+    /// everything before it. In a reply, such a quote is the forward that the
+    /// reply quotes, so it is removed like any quote, and such a
+    /// `div.gmail_quote` is searched like any element.
     ///
     /// Outlook's reply header, `div#divRplyFwdMsg`, is removed with everything
     /// after it, and with the `<hr>` just above it: Outlook does not put the
@@ -325,13 +326,14 @@ enum QuotedHistory {
         return (removal, false)
     }
 
-    /// Whether `element` is a signature that `removeHistory(fromHTMLParts:)` removes.
+    /// Whether `element` is a signature that `removeHistory(fromHTMLParts:inReply:)` removes.
     static func isSignature(_ element: DOMElement) -> Bool {
         !classes(of: element).isDisjoint(with: signatureClasses)
     }
 
     /// Whether `element` is a quote (or its attribution) that
-    /// `removeHistory(fromHTMLParts:)` removes, unless it starts a forward.
+    /// `removeHistory(fromHTMLParts:inReply:)` removes, unless it starts a
+    /// forward in a message that is not a reply.
     static func isQuote(_ element: DOMElement) -> Bool {
         let classes = classes(of: element)
         let isBlockquote = element.name == "blockquote"
