@@ -125,13 +125,15 @@ final class ArgumentParsingTests: XCTestCase {
         let command = try Show.parse(["work/INBOX/42"])
         XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
         XCTAssertEqual(command.body, .auto)
+        XCTAssertFalse(command.full, "the quoted history is hidden by default")
         XCTAssertEqual(command.format, .markdown)
     }
 
     func testShowParsesEveryOption() throws {
-        let command = try Show.parse(["personal/[Gmail]/Sent Mail/7", "--body", "text", "--format", "raw"])
+        let command = try Show.parse(["personal/[Gmail]/Sent Mail/7", "--body", "text", "--full", "--format", "raw"])
         XCTAssertEqual(command.irisID, IrisID(account: "personal", mailbox: "[Gmail]/Sent Mail", uid: 7))
         XCTAssertEqual(command.body, .text)
+        XCTAssertTrue(command.full)
         XCTAssertEqual(command.format, .raw)
     }
 
@@ -160,14 +162,23 @@ final class ArgumentParsingTests: XCTestCase {
         let command = try ThreadCommand.parse(["work/INBOX/42"])
         XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
         XCTAssertEqual(command.body, .auto)
+        XCTAssertFalse(command.full, "the quoted history is hidden by default")
         XCTAssertEqual(command.format, .markdown)
     }
 
     func testThreadParsesEveryOption() throws {
-        let command = try ThreadCommand.parse(["personal/[Gmail]/Sent Mail/7", "--body", "html", "--format", "json"])
+        let command = try ThreadCommand.parse(["personal/[Gmail]/Sent Mail/7", "--body", "html", "--full", "--format", "json"])
         XCTAssertEqual(command.irisID, IrisID(account: "personal", mailbox: "[Gmail]/Sent Mail", uid: 7))
         XCTAssertEqual(command.body, .html)
+        XCTAssertTrue(command.full)
         XCTAssertEqual(command.format, .json)
+    }
+
+    func testReadOnlyShowAndThreadTakeFull() throws {
+        let show = try XCTUnwrap(try Iris.parseAsRoot(["ro", "show", "work/INBOX/42", "--full"]) as? Show)
+        XCTAssertTrue(show.full)
+        let thread = try XCTUnwrap(try Iris.parseAsRoot(["ro", "thread", "work/INBOX/42", "--full"]) as? ThreadCommand)
+        XCTAssertTrue(thread.full)
     }
 
     func testThreadParsesTheJSONLinesAndIDFormats() throws {

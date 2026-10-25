@@ -1,4 +1,5 @@
 import Foundation
+import SwiftTextHTML
 
 /// How `iris show` prints one message.
 public enum MessageOutputFormat: String, CaseIterable, Sendable {
@@ -67,14 +68,18 @@ public enum MessageFormatter {
     /// it (whole, or a large one in parts): decoded, with the iris ID shown,
     /// ending with a newline. For `--format raw`, `iris show` writes the bytes
     /// of `MailReader.rawMessage(_:)` unchanged, so they stay the exact source.
+    ///
+    /// - Parameter full: Whether the body keeps the quoted history and
+    ///   signature at its end (`MessageDecoder.decode(_:body:full:)`).
     public static func render(
         message: DownloadedMessage,
         irisID: IrisID,
         format: MessageDocumentFormat,
         body preference: BodyPreference = .auto,
+        full: Bool = false,
         timeZone: TimeZone = .current
     ) async throws -> Data {
-        let document = try await document(message: message, irisID: irisID, body: preference)
+        let document = try await document(message: message, irisID: irisID, body: preference, full: full)
         switch format {
         case .markdown:
             return Data((markdown(document, timeZone: timeZone) + "\n").utf8)
@@ -126,15 +131,16 @@ public enum MessageFormatter {
         message: DownloadedMessage,
         irisID: IrisID,
         body preference: BodyPreference,
-        convertingHTMLWith htmlToMarkdown: (String) async throws -> String = MessageDecoder.markdown(fromHTML:),
+        full: Bool = false,
+        parsingHTMLWith parseHTML: (String) async throws -> HTMLDocument = MessageDecoder.htmlDocument(fromHTML:),
         log: (String) -> Void = IrisLog.log
     ) async throws -> MessageDocument {
         var document: MessageDocument
         switch message {
         case .whole(let data):
-            document = try await MessageDecoder.decode(data, body: preference, convertingHTMLWith: htmlToMarkdown, log: log)
+            document = try await MessageDecoder.decode(data, body: preference, full: full, parsingHTMLWith: parseHTML, log: log)
         case .parts(let parts):
-            document = try await MessageDecoder.decode(parts, body: preference, convertingHTMLWith: htmlToMarkdown, log: log)
+            document = try await MessageDecoder.decode(parts, body: preference, full: full, parsingHTMLWith: parseHTML, log: log)
         }
         document.irisID = irisID
         return document
@@ -153,7 +159,7 @@ public enum MessageFormatter {
     }
 
     /// The bytes `iris thread` writes to stdout for `messages`, in their order:
-    /// each message decoded, with its iris ID, as `render(message:irisID:format:body:timeZone:)`
+    /// each message decoded, with its iris ID, as `render(message:irisID:format:body:full:timeZone:)`
     /// makes it. Markdown puts `threadSeparator` between the messages; JSON is
     /// one array; JSON Lines is one compact object per line. Each ends with a
     /// newline. A note about the part shown of a message is logged with the
@@ -164,25 +170,30 @@ public enum MessageFormatter {
     /// it, so the rest of the thread is still shown. When no message is left
     /// to show, the error of the input message (`ThreadMessage.isInput`) is
     /// thrown, as `iris show` would throw it. Every other error throws.
+    ///
+    /// - Parameter full: Whether each body keeps the quoted history and
+    ///   signature at its end. Without it, each message shows only its own text.
     public static func render(
         thread messages: [ThreadMessage],
         format: ThreadMessagesFormat,
         body preference: BodyPreference = .auto,
+        full: Bool = false,
         timeZone: TimeZone = .current
     ) async throws -> Data {
         try await render(
-            thread: messages, format: format, body: preference, timeZone: timeZone,
-            convertingHTMLWith: MessageDecoder.markdown(fromHTML:)
+            thread: messages, format: format, body: preference, full: full, timeZone: timeZone,
+            parsingHTMLWith: MessageDecoder.htmlDocument(fromHTML:)
         )
     }
 
-    /// `render(thread:format:body:timeZone:)` with the HTML converter as a parameter, so that tests can make it fail.
+    /// `render(thread:format:body:full:timeZone:)` with the HTML parser as a parameter, so that tests can make it fail.
     static func render(
         thread messages: [ThreadMessage],
         format: ThreadMessagesFormat,
         body preference: BodyPreference,
+        full: Bool = false,
         timeZone: TimeZone,
-        convertingHTMLWith htmlToMarkdown: (String) async throws -> String
+        parsingHTMLWith parseHTML: (String) async throws -> HTMLDocument
     ) async throws -> Data {
         var documents: [MessageDocument] = []
         var leftOut: [(message: ThreadMessage, error: IrisError, line: String)] = []
@@ -194,7 +205,7 @@ public enum MessageFormatter {
             case .success(let downloaded):
                 do {
                     documents.append(try await document(
-                        message: downloaded, irisID: id, body: preference, convertingHTMLWith: htmlToMarkdown
+                        message: downloaded, irisID: id, body: preference, full: full, parsingHTMLWith: parseHTML
                     ) { note in
                         IrisLog.log("\(id): \(note)")
                     })
@@ -232,11 +243,15 @@ public enum MessageFormatter {
         }
     }
 
+    /// The line under a body whose end was left out (`MessageDocument.bodyTrimmed`).
+    static let trimmedNote = "(Quoted text or signature hidden: --full shows it.)"
+
     /// The message as Markdown: a subject heading, the From/To/Cc/Date lines,
     /// the iris ID line when `irisID` is set, and the Apple Mail line when
     /// `appleMailURL` is set (each but the last ends in a hard break), the
-    /// body, and the attachments and inline parts (only when there are any),
-    /// each with its attachment ID first. It has no trailing newline.
+    /// body, `trimmedNote` when the end of the body was left out, and the
+    /// attachments and inline parts (only when there are any), each with its
+    /// attachment ID first. It has no trailing newline.
     ///
     /// - Parameter timeZone: The zone for the date line. Tests pass a fixed zone.
     public static func markdown(_ document: MessageDocument, timeZone: TimeZone = .current) -> String {
@@ -264,6 +279,9 @@ public enum MessageFormatter {
         // Markdown renderer keeps one header per line.
         var lines = ["# \(subject ?? "(no subject)")", "", headers.joined(separator: "  \n")]
         lines += ["", "---", "", document.body.isEmpty ? "(no body)" : document.body]
+        if document.bodyTrimmed {
+            lines += ["", trimmedNote]
+        }
 
         if !document.attachments.isEmpty {
             lines += ["", "---", "", "**Attachments:**"]

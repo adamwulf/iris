@@ -27,6 +27,9 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
     public let body: String
     /// The part that `body` came from. `nil` when the message has no text or HTML part.
     public let bodySource: BodySource?
+    /// Whether the quoted history or the signature at the end of the body
+    /// was left out of `body` (see `QuotedHistory`). Always false with `--full`.
+    public let bodyTrimmed: Bool
     /// Every part that is not a body part, in section order: the file
     /// attachments and the inline parts.
     public let attachments: [MessageAttachment]
@@ -44,6 +47,7 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
         references: [String],
         body: String,
         bodySource: BodySource?,
+        bodyTrimmed: Bool = false,
         attachments: [MessageAttachment]
     ) {
         self.irisID = irisID
@@ -59,6 +63,7 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
         self.references = references
         self.body = body
         self.bodySource = bodySource
+        self.bodyTrimmed = bodyTrimmed
         self.attachments = attachments
     }
 }

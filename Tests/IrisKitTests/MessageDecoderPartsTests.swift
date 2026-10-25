@@ -123,7 +123,7 @@ final class MessageDecoderPartsTests: XCTestCase {
             let fromWhole = try await MessageDecoder.decode(whole, body: preference)
             let fromParts = try await MessageDecoder.decode(
                 MessageParts(outline: outline, bodies: bodies), body: preference,
-                convertingHTMLWith: MessageDecoder.markdown(fromHTML:)
+                parsingHTMLWith: MessageDecoder.htmlDocument(fromHTML:)
             )
 
             XCTAssertEqual(fromParts.body, fromWhole.body, "\(preference)")
@@ -147,7 +147,7 @@ final class MessageDecoderPartsTests: XCTestCase {
 
     func testTheAttachmentsOfABodyPartsMessageHaveTheSizesFromBodyStructure() async throws {
         let document = try await MessageDecoder.decode(
-            MessageParts(outline: outline, bodies: bodies), body: .auto, convertingHTMLWith: MessageDecoder.markdown(fromHTML:)
+            MessageParts(outline: outline, bodies: bodies), body: .auto, parsingHTMLWith: MessageDecoder.htmlDocument(fromHTML:)
         )
 
         XCTAssertEqual(document.attachments, [
@@ -216,7 +216,7 @@ final class MessageDecoderPartsTests: XCTestCase {
 
         let document = try await MessageDecoder.decode(
             MessageParts(outline: latin1, bodies: [id(1): Data("Caf=E9 au =\r\nlait".utf8)]), body: .auto,
-            convertingHTMLWith: MessageDecoder.markdown(fromHTML:)
+            parsingHTMLWith: MessageDecoder.htmlDocument(fromHTML:)
         )
 
         XCTAssertEqual(document.body, "Café au lait")

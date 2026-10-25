@@ -20,6 +20,9 @@ struct ThreadCommand: ReadOnlyCommand {
     @Option(help: "The part to show for each message. auto shows the HTML part as Markdown when there is one, else the plain text.")
     var body: BodyPreference = .auto
 
+    @Flag(help: "Show each body whole. Without it, each message shows only its own text: the quoted history (the earlier messages a reply quotes under its own text) and the signature at the end of each body are hidden, with a line that says so (json: bodyTrimmed). A forward is always shown whole.")
+    var full = false
+
     @Option(help: "The output format. markdown shows each message as `iris show` does, with a * * * line between messages. json is an array of the objects that `iris show --format json` gives, and jsonl gives one of those objects per line. id gives only the iris ID of each message, one per line, and downloads no message.")
     var format: ThreadOutputFormat = .markdown
 
@@ -28,7 +31,9 @@ struct ThreadCommand: ReadOnlyCommand {
         let reader = MailReader(account: account)
         if let messagesFormat = format.messagesFormat {
             let messages = try await reader.thread(irisID)
-            FileHandle.standardOutput.write(try await MessageFormatter.render(thread: messages, format: messagesFormat, body: body))
+            FileHandle.standardOutput.write(
+                try await MessageFormatter.render(thread: messages, format: messagesFormat, body: body, full: full)
+            )
         } else {
             // The walk reads only headers, so the iris IDs need no download.
             FileHandle.standardOutput.write(MessageFormatter.render(threadIDs: try await reader.threadIDs(irisID)))
