@@ -301,8 +301,10 @@ enum QuotedHistory {
     static let attributionClasses: Set<String> = ["gmail_attr", "moz-cite-prefix"]
     /// The classes of Gmail's and Zoho's element around the attribution and the quote.
     static let quoteContainerClasses: Set<String> = ["gmail_quote", "gmail_quote_container", "zmail_extra"]
-    /// The ids of the attribution and the quote that Zoho puts in its container.
-    static let containerQuoteIDs: Set<String> = ["Zm-_Id_-Sgn1", "blockquote_zmail"]
+    /// The id of the attribution (the From/Date/Subject header) that Zoho puts in its container.
+    static let containerAttributionIDs: Set<String> = ["Zm-_Id_-Sgn1"]
+    /// The id of the quote that Zoho puts in its container.
+    static let containerQuoteIDs: Set<String> = ["blockquote_zmail"]
     static let signatureClasses: Set<String> = ["gmail_signature", "gmail_signature_prefix", "moz-signature"]
     static let quoteIDs: Set<String> = ["mail-editor-reference-message-container"]
     static let outlookHeaderID = "divRplyFwdMsg"
@@ -359,6 +361,10 @@ enum QuotedHistory {
                 }
                 continue
             }
+            // Taken before the walk, which removes a marked attribution.
+            let hasMarkedAttribution = isQuoteContainer(child) && child.children.contains { node in
+                (node as? DOMElement).map(isMarkedAttribution) == true
+            }
             let inner = removeTrailingHistory(in: child, inReply: inReply, depth: depth + 1)
             removal = removal + inner.removal
             if inner.contentLeft {
@@ -366,8 +372,10 @@ enum QuotedHistory {
                 // in the container with no class, as bare text or in a
                 // plain div. When the quote under it is gone and only one
                 // line is left, it is that attribution: an answer written in
-                // the container adds a line (or an earlier quote does).
-                if isQuoteContainer(child) && inner.removal.quote && isOneLine(child) {
+                // the container adds a line (or an earlier quote does). A
+                // container with a marked attribution has none of these, so
+                // a line left above that attribution is the sender's.
+                if isQuoteContainer(child) && !hasMarkedAttribution && inner.removal.quote && isOneLine(child) {
                     element.children.remove(at: index)
                     continue
                 }
@@ -375,6 +383,13 @@ enum QuotedHistory {
             }
         }
         return (removal, false)
+    }
+
+    /// Whether `element` is an attribution with a mark: class `gmail_attr`
+    /// or `moz-cite-prefix`, or Zoho's header id.
+    static func isMarkedAttribution(_ element: DOMElement) -> Bool {
+        !classes(of: element).isDisjoint(with: attributionClasses)
+            || attribute("id", of: element).map(containerAttributionIDs.contains) == true
     }
 
     /// Whether `element` holds exactly one line of text, and no image.
@@ -410,7 +425,7 @@ enum QuotedHistory {
         let inContainer = parent.map(isQuoteContainer) ?? true
         return !classes.isDisjoint(with: attributionClasses)
             || (inContainer && isBlockquote && classes.contains("gmail_quote"))
-            || (inContainer && id.map(containerQuoteIDs.contains) == true)
+            || (inContainer && id.map { containerQuoteIDs.contains($0) || containerAttributionIDs.contains($0) } == true)
             || (isBlockquote && attribute("type", of: element)?.lowercased() == "cite")
             || id.map(quoteIDs.contains) == true
     }

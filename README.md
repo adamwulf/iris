@@ -420,7 +420,8 @@ Limits:
   quote starts with the forward line and nothing marks the reply, for
   example a Gmail reply in another language with an edited subject. A
   forward whose subject was changed to start with `Re:` loses the message
-  it forwards when that message is in a quote; `--full` shows it.
+  it forwards when the "Begin forwarded message:" line is inside the quote
+  too (Apple Mail on the Mac); `--full` shows it.
 - A quote that an Apple Mail sender adds to the end of their own text
   (with "Increase Quote Level") looks like a reply's quote, so it is hidden.
 - A signature without the `-- ` line (most signatures that people type) is

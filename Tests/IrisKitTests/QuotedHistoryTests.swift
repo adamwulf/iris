@@ -469,6 +469,16 @@ final class QuotedHistoryTests: XCTestCase {
         """)
         XCTAssertTrue(kept.text.hasSuffix("Yes, Tuesday works."), kept.text)
 
+        // A one-line answer above a marked attribution, inside the container.
+        for container in [
+            #"<div class="gmail_quote gmail_quote_container"><div dir="ltr">Tuesday works for me.</div><div class="gmail_attr">On Fri, Jane wrote:<br></div><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote></div>"#,
+            #"<div class="zmail_extra"><div>Tuesday works for me.<br></div><div id="Zm-_Id_-Sgn1">Von: Jane Doe<br>Datum: Fr., 23 Okt. 2026<br>Betreff: Mittagessen<br></div><div><br></div><blockquote id="blockquote_zmail"><div>Mittagessen am Dienstag?</div></blockquote></div>"#,
+        ] {
+            let marked = try await trimmed("<div>Hi Jane,<br></div>" + container)
+            XCTAssertEqual(marked.text, "Hi Jane,\n\nTuesday works for me.", container)
+            XCTAssertTrue(marked.trimmed, container)
+        }
+
         // Bare-text answers between quoted lines: the earlier quote stays too.
         let inline = try await trimmed("""
         <div>See inline.</div><div class="gmail_quote">On Fri, Jane wrote:<br><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote>Yes, Tuesday works.<br><blockquote class="gmail_quote">See you!</blockquote></div>
