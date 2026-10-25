@@ -15,6 +15,33 @@ attachment download. Direct iCloud testing is out of scope. Further
 provider or failure-case testing is not an active milestone; the known
 limits below remain useful when diagnosing a problem.
 
+## Next: create reply drafts and update existing drafts
+
+Agreed on 2026-10-25; not implemented yet. Keep both operations under
+`draft` so the command names make clear that they save drafts, not send
+mail. Separate creating a reply from editing a saved draft:
+
+| Command | Behavior |
+| ------- | -------- |
+| `iris draft reply <iris-id> 'text'` | Create a new reply draft from the named message. Move the current `iris draft` behavior here, including `--all`, `--no-quote`, and `--attach`. |
+| `iris draft update <iris-id> 'text'` | Update the named existing draft with a replacement body. |
+
+Both commands accept body text as an argument, from `-F`, or from stdin,
+as the current draft command does. Both only save drafts; neither sends
+mail, and neither belongs under `iris ro`.
+
+For `draft update`:
+
+- Require an existing draft and reject ordinary messages.
+- Replace the body, preserving recipients, subject, threading headers,
+  and attachments unless explicitly changed.
+- Do not automatically add another reply quote.
+- Print the saved draft's iris ID; callers use that ID for subsequent
+  operations, since it may differ from the input ID.
+
+Later, consider `iris draft new --to ... --subject ... 'text'` to create a
+standalone draft. It is deferred from this first change.
+
 ## Feature candidates
 
 These are the remaining ideas, not a committed implementation order:
