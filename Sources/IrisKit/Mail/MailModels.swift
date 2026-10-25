@@ -214,14 +214,26 @@ public struct ThreadMessage: Sendable, Equatable {
         case timedOut(seconds: Int)
         /// It left its mailbox after iris found it.
         case gone
+
+        /// The error that `iris show` gives for the message `id` in this case.
+        func irisError(for id: IrisID) -> IrisError {
+            switch self {
+            case .timedOut(let seconds): return .messageDownloadTimedOut(seconds: seconds)
+            case .gone: return .unknownMessage(id)
+            }
+        }
     }
 
     public let irisID: IrisID
     public let rawMessage: Result<Data, DownloadFailure>
+    /// Whether this is the message that the thread was asked for (the copy
+    /// shown of it, which can be in another mailbox).
+    public let isInput: Bool
 
-    init(irisID: IrisID, rawMessage: Result<Data, DownloadFailure>) {
+    init(irisID: IrisID, rawMessage: Result<Data, DownloadFailure>, isInput: Bool = false) {
         self.irisID = irisID
         self.rawMessage = rawMessage
+        self.isInput = isInput
     }
 }
 

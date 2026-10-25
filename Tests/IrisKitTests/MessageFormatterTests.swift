@@ -242,30 +242,66 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(
             recorder.lines[0],
             "Left work/Sent Mail/5 out of the thread: it did not download in 10 seconds. "
-                + "Run `iris show 'work/Sent Mail/5' --format raw` to see its source."
+                + "It may be large, or the connection may be slow. Try again on a faster connection."
         )
         XCTAssertTrue(recorder.lines[1].hasPrefix("Left work/INBOX/9 out of the thread: it could not be read as an email ("))
         XCTAssertTrue(recorder.lines[1].hasSuffix("Run `iris show 'work/INBOX/9' --format raw` to see its source."))
     }
 
-    func testRenderThreadWithNothingToShowIsEmptyAsInOutputFormatter() async throws {
-        // A thread of one large message whose download timed out, say.
-        IrisLog.handler = { _ in }
+    func testRenderThreadWithNothingToShowThrowsTheErrorOfTheInputMessage() async {
+        // In practice a thread of one large message whose download timed out:
+        // the command then fails as `iris show` does.
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
         defer { IrisLog.handler = nil }
-        let threads: [[ThreadMessage]] = [
-            [],
-            [ThreadMessage(irisID: irisID, rawMessage: .failure(.timedOut(seconds: 10)))],
-            [ThreadMessage(irisID: irisID, rawMessage: .failure(.gone)), ThreadMessage(irisID: irisID, rawMessage: .success(Data()))],
+        let other = IrisID(account: "work", mailbox: "INBOX", uid: 9)
+        let cases: [(messages: [ThreadMessage], error: IrisError, lines: Int)] = [
+            ([ThreadMessage(irisID: irisID, rawMessage: .failure(.timedOut(seconds: 10)), isInput: true)],
+             .messageDownloadTimedOut(seconds: 10), 0),
+            ([ThreadMessage(irisID: other, rawMessage: .success(Data())),
+              ThreadMessage(irisID: irisID, rawMessage: .failure(.gone), isInput: true)],
+             .unknownMessage(irisID), 1),
+            // With no input marked, the first message stands for it.
+            ([ThreadMessage(irisID: irisID, rawMessage: .failure(.gone)),
+              ThreadMessage(irisID: other, rawMessage: .failure(.timedOut(seconds: 10)))],
+             .unknownMessage(irisID), 1),
         ]
-        for messages in threads {
-            let markdown = try await MessageFormatter.render(thread: messages, format: .markdown)
-            let json = try await MessageFormatter.render(thread: messages, format: .json)
-
-            XCTAssertEqual(markdown, Data(), "\(messages.count) messages")
-            XCTAssertEqual(String(decoding: json, as: UTF8.self), "[]\n", "\(messages.count) messages")
+        for (index, test) in cases.enumerated() {
+            for format in ThreadOutputFormat.allCases {
+                let before = recorder.lines.count
+                do {
+                    _ = try await MessageFormatter.render(thread: test.messages, format: format)
+                    XCTFail("case \(index), \(format): expected \(test.error)")
+                } catch {
+                    XCTAssertEqual(error as? IrisError, test.error, "case \(index), \(format)")
+                }
+                XCTAssertEqual(recorder.lines.count - before, test.lines, "case \(index), \(format): lines for the others")
+            }
         }
+    }
+
+    func testRenderThreadOfNoMessagesIsEmptyAsInOutputFormatter() async throws {
+        let markdown = try await MessageFormatter.render(thread: [], format: .markdown)
+        let json = try await MessageFormatter.render(thread: [], format: .json)
+
+        XCTAssertEqual(markdown, Data())
+        XCTAssertEqual(String(decoding: json, as: UTF8.self), "[]\n")
         let rows: [MessageSummary] = []
         XCTAssertEqual(try OutputFormatter.render(rows, format: .json), "[]\n")
+    }
+
+    func testRenderThreadNamesTheMessageInEachNoteAboutThePartShown() async throws {
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+        let htmlOnly = ThreadMessage(
+            irisID: IrisID(account: "work", mailbox: "Sent", uid: 3),
+            rawMessage: .success(Data("Subject: Hi\r\nContent-Type: text/html\r\n\r\n<p>Hello</p>\r\n".utf8))
+        )
+
+        _ = try await MessageFormatter.render(thread: [thread[0], htmlOnly], format: .json, body: .text)
+
+        XCTAssertEqual(recorder.lines, ["work/Sent/3: The message has no text part, so the html part is shown."])
     }
 
     func testLeftOutLinesNameTheIrisIDTheReasonAndTheNextStep() {
@@ -273,17 +309,59 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(
             MessageFormatter.leftOutLine(id, because: .timedOut(seconds: 10)),
             "Left work/Bob's [x]/7 out of the thread: it did not download in 10 seconds. "
-                + #"Run `iris show 'work/Bob'\''s [x]/7' --format raw` to see its source."#
+                + "It may be large, or the connection may be slow. Try again on a faster connection.",
+            "`iris show` would hit the same time limit"
         )
         XCTAssertEqual(
             MessageFormatter.leftOutLine(id, because: .gone),
             "Left work/Bob's [x]/7 out of the thread: it is no longer in its mailbox. Run the command again."
         )
         XCTAssertEqual(
-            MessageFormatter.leftOutLine(id, because: "its HTML body could not be converted to Markdown (bad tag)"),
-            "Left work/Bob's [x]/7 out of the thread: its HTML body could not be converted to Markdown (bad tag). "
-                + #"Run `iris show 'work/Bob'\''s [x]/7' --format raw` to see its source."#
+            MessageFormatter.showSourceStep(id),
+            #"Run `iris show 'work/Bob'\''s [x]/7' --format raw` to see its source."#
         )
+    }
+
+    func testAnHTMLBodyThatCannotBeConvertedIsLeftOutWithTheRightNextStep() async throws {
+        struct ConversionFailure: Error, CustomStringConvertible {
+            let description = "bad tag"
+        }
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+        let both = ThreadMessage(irisID: IrisID(account: "work", mailbox: "INBOX", uid: 4), rawMessage: .success(Data("""
+        Subject: Both\r
+        Content-Type: multipart/alternative; boundary="b"\r
+        \r
+        --b\r
+        Content-Type: text/plain\r
+        \r
+        plain\r
+        --b\r
+        Content-Type: text/html\r
+        \r
+        <p>html</p>\r
+        --b--\r
+
+        """.utf8)))
+        let htmlOnly = ThreadMessage(
+            irisID: IrisID(account: "work", mailbox: "INBOX", uid: 5),
+            rawMessage: .success(Data("Subject: Hi\r\nContent-Type: text/html\r\n\r\n<p>Hello</p>\r\n".utf8))
+        )
+
+        _ = try await MessageFormatter.render(
+            thread: [thread[0], both, htmlOnly], format: .json, body: .html, timeZone: chicago,
+            convertingHTMLWith: { _ in throw ConversionFailure() }
+        )
+
+        XCTAssertEqual(recorder.lines, [
+            "work/INBOX/7: The message has no html part, so the text part is shown.",
+            // Only --body html gets here with a text part; it is the way to see the message.
+            "Left work/INBOX/4 out of the thread: its HTML body could not be converted to Markdown (bad tag). "
+                + "Run `iris show 'work/INBOX/4' --body text` to see its text part.",
+            "Left work/INBOX/5 out of the thread: its HTML body could not be converted to Markdown (bad tag). "
+                + "Run `iris show 'work/INBOX/5' --format raw` to see its source.",
+        ])
     }
 
     func testJSONIsDeterministicAndHasNoAttachmentBytes() throws {

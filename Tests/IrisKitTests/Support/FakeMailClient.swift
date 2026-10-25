@@ -120,7 +120,8 @@ actor FakeMailClient: MailWriteClient {
     /// `fetchRawMessage` returns their raw text. With `refusesNonASCII`, the
     /// SUBJECT search refuses text that is not ASCII, as a server without
     /// UTF-8 SEARCH does (NO [BADCHARSET]); Zoho accepted it in the probes.
-    /// `fetchRawMessage` throws the error in `rawMessageErrors` for its UID.
+    /// `fetchRawMessage` throws the error in `rawMessageErrors` for its UID;
+    /// after `messageDownloadTimedOut` no mailbox is open, as after SwiftMail's reconnect.
     init(
         accountName: String = "work",
         capabilities: [String] = [],
@@ -304,6 +305,10 @@ actor FakeMailClient: MailWriteClient {
     func fetchRawMessage(uid: UInt32) async throws -> Data {
         try record(.fetchRawMessage(uid), .fetchRawMessage)
         if let error = rawMessageErrors[uid] {
+            if case IrisError.messageDownloadTimedOut = error {
+                // SwiftMail reconnects after a timeout, and no mailbox is open on the new connection.
+                openMailbox = nil
+            }
             throw error
         }
         if let message = openMessages[uid] {

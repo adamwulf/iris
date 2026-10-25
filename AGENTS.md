@@ -113,14 +113,20 @@ message gone is kept as a `ThreadMessage.DownloadFailure`, and the
 mailbox is examined again before the next download (SwiftMail reconnects
 after a timeout, with no mailbox open). `MessageFormatter.render(thread:)`
 leaves out a message that failed, or that cannot be decoded, and logs one
-line for it (`leftOutLine`); every other error fails the command.
+line for it (`leftOutLine`); when none is left to show, it throws the error
+of the input message (`ThreadMessage.isInput`), as `show` would. The
+decoder's notes about the part shown go through its `log` parameter, which
+`render(thread:)` prefixes with the message's iris ID. An empty subject also
+logs one line, as a refused SUBJECT search does. Every other error fails
+the command.
 
 Tests never touch the network: no test reaches another host. They use
 `FakeMailClient`, which returns scripted results and records the calls. For
 `thread` it holds whole mailboxes (`mailboxMessages`) and searches them the
 way Zoho did in the 2026-10-24 probes (`SearchRules.zoho`), or by RFC 3501
 (`.rfc3501`); `refusesNonASCII` models a server that refuses non-ASCII
-SEARCH text, and `rawMessageErrors` a message that does not download. The
+SEARCH text, and `rawMessageErrors` a message that does not download (after
+a timeout no mailbox is open, as after SwiftMail's reconnect). The
 Google code has its own seams: `HTTPTransport` (tests use `StubTransport`)
 and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
 browser opener). One test opens a socket: `LoopbackServerTests` runs the

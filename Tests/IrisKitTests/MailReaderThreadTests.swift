@@ -572,11 +572,14 @@ final class MailReaderThreadTests: XCTestCase {
         XCTAssertEqual(subjectSearches(calls), Array(repeating: ["budget"], count: 5))
     }
 
-    func testAMessageWithoutASubjectIsNotSearchedBySubject() async throws {
+    func testAMessageWithoutASubjectIsNotSearchedBySubjectAndOneLineSaysSo() async throws {
         // An empty subject would match every message, so only the Message-ID searches run.
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
         let fake = server([
             "INBOX": [1: message("a", subject: "", day: 1)],
-            "Sent": [2: message("b", subject: "Re:", day: 2, replyTo: "a", references: ["a"])],
+            "Sent": [2: message("b", subject: "[list] Re:", day: 2, replyTo: "a", references: ["a"])],
         ])
 
         let found = try await thread(fake, from: "work/Sent/2")
@@ -584,6 +587,10 @@ final class MailReaderThreadTests: XCTestCase {
         XCTAssertEqual(found, ["work/INBOX/1", "work/Sent/2"])
         let calls = await fake.calls
         XCTAssertEqual(subjectSearches(calls), [])
+        XCTAssertEqual(recorder.lines, [
+            "The message has no subject to search for, so iris followed only the message IDs that the messages name, "
+                + "and the thread may miss replies.",
+        ])
     }
 
     func testARefusedSubjectIsSearchedByItsASCIIWordsForTheRestOfTheWalk() async throws {
@@ -735,30 +742,43 @@ final class MailReaderThreadTests: XCTestCase {
     }
 
     func testAMessageThatDoesNotDownloadIsReturnedAsAFailureAndTheRestStillDownload() async throws {
+        // The fake, like SwiftMail, has no mailbox open after a timeout, so
+        // without a new EXAMINE the next download in INBOX would find nothing.
         let timeout = IrisError.messageDownloadTimedOut(seconds: 10)
-        let gone = IrisError.unknownMessage(IrisID(account: "work", mailbox: "INBOX", uid: 3))
-        let a = message("a", subject: "Budget", day: 1)
+        let gone = IrisError.unknownMessage(IrisID(account: "work", mailbox: "Sent", uid: 2))
         let c = message("c", day: 3, replyTo: "b", references: ["a", "b"])
         let d = message("d", day: 4, replyTo: "c", references: ["a", "b", "c"])
         let fake = server([
-            "INBOX": [1: a, 3: c, 4: d],
+            "INBOX": [1: message("a", subject: "Budget", day: 1), 3: c, 4: d],
             "Sent": [2: message("b", day: 2, replyTo: "a", references: ["a"])],
-        ], rawMessageErrors: [2: timeout, 3: gone])
+        ], rawMessageErrors: [1: timeout, 2: gone])
 
         let messages = try await reader(fake).thread(IrisID(account: "work", mailbox: "INBOX", uid: 4))
 
         XCTAssertEqual(messages.map(\.irisID.description), ["work/INBOX/1", "work/Sent/2", "work/INBOX/3", "work/INBOX/4"])
         XCTAssertEqual(
-            messages.map(\.rawMessage), [.success(a.raw), .failure(.timedOut(seconds: 10)), .failure(.gone), .success(d.raw)]
+            messages.map(\.rawMessage), [.failure(.timedOut(seconds: 10)), .failure(.gone), .success(c.raw), .success(d.raw)]
         )
+        XCTAssertEqual(messages.map(\.isInput), [false, false, false, true])
         let calls = await fake.calls
         let downloads = calls.drop { if case .fetchRawMessage = $0 { return false } else { return true } }
         XCTAssertEqual(Array(downloads), [
-            // After a failed download the mailbox is opened again: SwiftMail
-            // reconnects after a timeout, and a new connection has no mailbox open.
-            .fetchRawMessage(1), .fetchRawMessage(3), .examine("INBOX"), .fetchRawMessage(4),
+            .fetchRawMessage(1), .examine("INBOX"), .fetchRawMessage(3), .fetchRawMessage(4),
             .examine("Sent"), .fetchRawMessage(2), .logout,
         ])
+    }
+
+    func testTheInputIsMarkedEvenWhenItsCopyIsInAnotherMailbox() async throws {
+        let a = message("a", subject: "Budget", day: 1)
+        let fake = server([
+            "INBOX": [5: a],
+            "[Gmail]/All Mail": [50: a, 51: message("b", day: 2, replyTo: "a", references: ["a"])],
+        ], mailboxes: gmailMailboxes)
+
+        let messages = try await reader(fake).thread(IrisID(account: "work", mailbox: "[Gmail]/All Mail", uid: 50))
+
+        XCTAssertEqual(messages.map(\.irisID.description), ["work/INBOX/5", "work/[Gmail]/All Mail/51"])
+        XCTAssertEqual(messages.map(\.isInput), [true, false])
     }
 
     func testOtherSubjectSearchErrorsStillFailAndLogOut() async {

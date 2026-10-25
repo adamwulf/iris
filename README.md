@@ -273,10 +273,22 @@ message of a thread that never branched gives the whole thread; on a
 thread that branched (A has replies B and C), naming C gives A and C, not
 B.
 
-When one message cannot be shown (it did not download in time, or it
-cannot be read), iris leaves it out, shows the others, and writes a line
-to stderr with its iris ID and the `iris show '<iris-id>' --format raw`
-command to see its source.
+When one message cannot be shown, iris leaves it out, shows the others,
+and writes a line to stderr with its iris ID, why, and what to do next:
+
+- It did not download in time (SwiftMail stops every download after 10
+  seconds): it may be large, or the connection slow, so try again on a
+  faster connection. `iris show` has the same limit.
+- It cannot be read as an email, or its HTML cannot be converted:
+  `iris show '<iris-id>' --format raw` shows its source. With
+  `--body html`, a message that also has a text part says to use
+  `iris show '<iris-id>' --body text`.
+
+When no message of the thread can be shown (in practice, a thread of one
+large message), the command fails with the error `iris show` would give
+for the message you named. Notes about which part of a message is shown
+(such as "The message has no text part") start with that message's iris
+ID.
 
 Limits:
 

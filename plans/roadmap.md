@@ -79,7 +79,9 @@ describes the walk. Why it works the way it does:
   Zoho's Sent held two copies of one sent message, and on Gmail one message
   is in many mailboxes.
 - One message that does not download or cannot be read is left out with a
-  line on stderr; the rest of the thread is still shown.
+  line on stderr; the rest of the thread is still shown. When nothing is
+  left to show, the command fails as `iris show` would for the message
+  named.
 
 Next:
 

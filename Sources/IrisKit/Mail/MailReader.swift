@@ -168,8 +168,8 @@ public struct MailReader: Sendable {
             guard let input = try await client.fetchThreadHeaders(uids: [id.uid]).first(where: { $0.uid == id.uid }) else {
                 throw IrisError.unknownMessage(id)
             }
-            guard input.messageID != nil else {
-                return [ThreadMessage(irisID: id, rawMessage: try await threadDownload(id, with: client))]
+            guard let inputMessageID = input.messageID else {
+                return [ThreadMessage(irisID: id, rawMessage: try await threadDownload(id, with: client), isInput: true)]
             }
 
             let mailboxes = Self.threadMailboxes(listed: Self.decoded(try await client.listMailboxes()), inputMailbox: id.mailbox)
@@ -202,6 +202,12 @@ public struct MailReader: Sendable {
             // The SUBJECT searches still to try. One that is refused, or that
             // misses `id` in its own mailbox, is dropped for the rest of the walk.
             var subjectSearches = Self.subjectSearches(for: subject)
+            if subjectSearches.isEmpty {
+                IrisLog.log(
+                    "The message has no subject to search for, so iris followed only the message IDs "
+                        + "that the messages name, and the thread may miss replies."
+                )
+            }
 
             /// The messages in the open mailbox, `mailbox`, that the first
             /// SUBJECT search left finds. Nil when none is left.
@@ -291,6 +297,7 @@ public struct MailReader: Sendable {
             }
 
             // Fetched in mailbox order, so each mailbox is opened once.
+            let inputCopy = chosen[inputMessageID]
             var messages: [ThreadMessage] = []
             var openMailbox: String?
             for copy in chosen.values.sorted(by: precedes) {
@@ -303,7 +310,7 @@ public struct MailReader: Sendable {
                     // After a timeout SwiftMail opens a new connection, where no mailbox is open.
                     openMailbox = nil
                 }
-                messages.append(ThreadMessage(irisID: copy, rawMessage: rawMessage))
+                messages.append(ThreadMessage(irisID: copy, rawMessage: rawMessage, isInput: copy == inputCopy))
             }
             func date(_ message: ThreadMessage) -> Date {
                 let headers = fetched[message.irisID]

@@ -14,11 +14,14 @@ public enum MessageDecoder {
         try await decode(data, body: preference, convertingHTMLWith: markdown(fromHTML:))
     }
 
-    /// `decode(_:body:)` with the HTML converter as a parameter, so that tests can make it fail.
+    /// `decode(_:body:)` with the HTML converter as a parameter, so that tests
+    /// can make it fail, and with the function that logs a note about the
+    /// part shown, so that a thread can name the message in it.
     static func decode(
         _ data: Data,
         body preference: BodyPreference,
-        convertingHTMLWith htmlToMarkdown: (String) async throws -> String
+        convertingHTMLWith htmlToMarkdown: (String) async throws -> String,
+        log: (String) -> Void = IrisLog.log
     ) async throws -> MessageDocument {
         let message: Message
         do {
@@ -27,7 +30,9 @@ public enum MessageDecoder {
             throw IrisError.messageNotParsed(reason: error.localizedDescription)
         }
 
-        let (body, bodySource) = try await body(of: message, preference: preference, htmlToMarkdown: htmlToMarkdown)
+        let (body, bodySource) = try await body(
+            of: message, preference: preference, htmlToMarkdown: htmlToMarkdown, log: log
+        )
         // EMLParser leaves In-Reply-To and References in the additional fields.
         let additionalFields = message.header.additionalFields ?? [:]
         return MessageDocument(
@@ -99,11 +104,13 @@ public enum MessageDecoder {
     }
 
     /// The body as Markdown, and the part it came from. When the message has
-    /// several parts of the chosen type, the body joins all of them.
+    /// several parts of the chosen type, the body joins all of them. A note
+    /// about which part is shown goes to `log`.
     static func body(
         of message: Message,
         preference: BodyPreference,
-        htmlToMarkdown: (String) async throws -> String
+        htmlToMarkdown: (String) async throws -> String,
+        log: (String) -> Void = IrisLog.log
     ) async throws -> (String, BodySource?) {
         let parts = bodyParts(of: message)
         let texts = parts.filter { isPlainText($0) }.compactMap { part in
@@ -128,12 +135,12 @@ public enum MessageDecoder {
                 )
                 return (converted, .html)
             } catch IrisError.htmlNotConverted(let reason, _) where preference == .auto && text != nil {
-                IrisLog.log("The HTML part could not be converted to Markdown (\(reason)), so the text part is shown.")
+                log("The HTML part could not be converted to Markdown (\(reason)), so the text part is shown.")
             }
         }
         if let text {
             if preference == .html && html == nil {
-                IrisLog.log("The message has no html part, so the text part is shown.")
+                log("The message has no html part, so the text part is shown.")
             }
             return (text, .text)
         }
@@ -141,7 +148,7 @@ public enum MessageDecoder {
             return ("", nil)
         }
         // Only `.text` gets here with an HTML part: the other choices returned or threw above.
-        IrisLog.log("The message has no text part, so the html part is shown.")
+        log("The message has no text part, so the html part is shown.")
         let converted = try await markdown(fromHTMLParts: html, hasTextPart: false, htmlToMarkdown: htmlToMarkdown)
         return (converted, .html)
     }
