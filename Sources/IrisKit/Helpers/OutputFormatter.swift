@@ -13,10 +13,17 @@ public enum OutputFormat: String, CaseIterable, Sendable {
 public protocol IrisRow: Encodable {
     /// The column headers for `--format table`.
     static var tableColumns: [String] { get }
+    /// The headers in `tableColumns` whose column (header and values) lines up
+    /// on the right. The others line up on the left.
+    static var rightAlignedColumns: Set<String> { get }
     /// One value per column, in the same order as `tableColumns`.
     var tableValues: [String] { get }
     /// What `--format id` prints.
     var idValue: String { get }
+}
+
+extension IrisRow {
+    public static var rightAlignedColumns: Set<String> { [] }
 }
 
 public enum OutputFormatter {
@@ -30,7 +37,7 @@ public enum OutputFormatter {
         let lines: [String]
         switch format {
         case .table:
-            lines = table(header: Row.tableColumns, rows: rows.map(\.tableValues))
+            lines = table(header: Row.tableColumns, rows: rows.map(\.tableValues), rightAligned: Row.rightAlignedColumns)
         case .json:
             // JSONEncoder pretty-prints an empty array as "[\n\n]".
             lines = [rows.isEmpty ? "[]" : try json(rows, pretty: true)]
@@ -42,8 +49,9 @@ public enum OutputFormatter {
         return lines.map { $0 + "\n" }.joined()
     }
 
-    /// The header line and one line per row, without line ends.
-    static func table(header: [String], rows: [[String]]) -> [String] {
+    /// The header line and one line per row, without line ends. The columns
+    /// whose header is in `rightAligned` line up on the right.
+    static func table(header: [String], rows: [[String]], rightAligned: Set<String>) -> [String] {
         let allRows = [header] + rows
         var widths = Array(repeating: 0, count: header.count)
         for row in allRows {
@@ -55,7 +63,8 @@ public enum OutputFormatter {
             let line = row.enumerated().map { index, value in
                 // Pad by Characters, as the widths count them. padding(toLength:)
                 // counts UTF-16 units, so it would cut an emoji in half.
-                value + String(repeating: " ", count: widths[index] - value.count)
+                let padding = String(repeating: " ", count: widths[index] - value.count)
+                return rightAligned.contains(header[index]) ? padding + value : value + padding
             }
             .joined(separator: "  ")
             // Drop the padding after the last value, so no line ends in whitespace.

@@ -192,14 +192,14 @@ final class MailModelsTests: XCTestCase {
             date: local,
             unread: false
         )
-        XCTAssertEqual(summary.tableValues, ["work/INBOX/42", "", "2026-03-07 09:05", "Jane Doe", "Hello"])
+        XCTAssertEqual(summary.tableValues, ["work/INBOX/42", "2026-03-07 09:05", "Jane Doe", "", "Hello"])
         XCTAssertEqual(summary.idValue, "work/INBOX/42")
     }
 
-    func testTableUnreadIsYesOrEmpty() {
+    func testTableUnreadIsAHeavyBulletOrEmpty() {
         let unread = MessageSummary(irisID: id(1), from: nil, subject: "", date: nil, unread: true)
         let read = MessageSummary(irisID: id(2), from: nil, subject: "", date: nil, unread: false)
-        XCTAssertEqual(unread.tableValues, ["work/INBOX/1", "yes", "", "", ""])
+        XCTAssertEqual(unread.tableValues, ["work/INBOX/1", "", "", "●", ""])
         XCTAssertEqual(read.tableValues, ["work/INBOX/2", "", "", "", ""])
     }
 
@@ -211,8 +211,8 @@ final class MailModelsTests: XCTestCase {
             irisID: id(2), from: MailAddress(name: "", address: "x@example.com"), subject: "", date: nil, unread: false
         )
         let noSender = MessageSummary(irisID: id(3), from: nil, subject: "", date: nil, unread: false)
-        XCTAssertEqual(noName.tableValues, ["work/INBOX/1", "", "", "bot@example.com", ""])
-        XCTAssertEqual(emptyName.tableValues, ["work/INBOX/2", "", "", "x@example.com", ""])
+        XCTAssertEqual(noName.tableValues, ["work/INBOX/1", "", "bot@example.com", "", ""])
+        XCTAssertEqual(emptyName.tableValues, ["work/INBOX/2", "", "x@example.com", "", ""])
         XCTAssertEqual(noSender.tableValues, ["work/INBOX/3", "", "", "", ""])
     }
 
@@ -224,7 +224,7 @@ final class MailModelsTests: XCTestCase {
             date: nil,
             unread: false
         )
-        XCTAssertEqual(summary.tableValues, ["work/INBOX/1", "", "", "Jane Doe", "Long  subject"])
+        XCTAssertEqual(summary.tableValues, ["work/INBOX/1", "", "Jane Doe", "", "Long  subject"])
     }
 
     func testJSONHasTheIrisIDAsOneStringTheFullSenderAnISO8601DateAndUnread() throws {
@@ -248,8 +248,8 @@ final class MailModelsTests: XCTestCase {
             MessageSummary(irisID: id(12, mailbox: "Sent Items"), from: nil, subject: "Re: Hi", date: nil, unread: false),
         ]
         XCTAssertEqual(try OutputFormatter.render(rows, format: .table), """
-        IRIS ID             UNREAD  DATE  FROM  SUBJECT
-        work/INBOX/7        yes                 Hi
+        IRIS ID             DATE  FROM  UNREAD  SUBJECT
+        work/INBOX/7                         ●  Hi
         work/Sent Items/12                      Re: Hi
 
         """)

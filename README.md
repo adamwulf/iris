@@ -74,7 +74,7 @@ All three need an **app-specific password**, not your normal password.
 - `iris mailboxes`: the mailbox names with their special-use attributes
   (`\Drafts`, `\Sent`, `\All`, ...).
 - `iris list`: a mailbox, newest first, one page at a time
-  (iris ID, unread, date, sender, subject). Filters: `--unread`,
+  (iris ID, date, sender, unread, subject). Filters: `--unread`,
   `--flagged`, `--from`, `--subject`, `--since`, `--before`.
 - `iris show`: one full message, by its iris ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
@@ -103,8 +103,9 @@ iris show 'personal/[Gmail]/Sent Mail/77'
 List commands take `--format table|json|jsonl|id`. Hints and errors go to
 stderr, so stdout is safe to pipe.
 
-`iris list` shows `yes` in the `UNREAD` column (and `"unread": true` in
-JSON) for a message without the `\Seen` flag. Listing does not change the flag.
+`iris list` shows `●` in the `UNREAD` column, just left of the subject (and
+`"unread": true` in JSON), for a message without the `\Seen` flag. Listing
+does not change the flag.
 
 ### Filters
 
