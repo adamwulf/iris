@@ -110,7 +110,15 @@ final class MessageDecoderPartsTests: XCTestCase {
         XCTAssertEqual(MessageDecoder.bodyParts(of: outline.parts).map(\.id), [id(1, 1), id(1, 2)])
     }
 
-    func testABodyPartsMessageHasTheBodyHeadersAndAttachmentIDsOfTheWholeMessage() async throws {
+    /// The same steps after the parse give the same body and attachment list.
+    ///
+    /// The header fields here are the outline's, written by hand to match the
+    /// whole message, so their checks show only that the document carries the
+    /// outline's fields unchanged, not that SwiftMail's parsing of
+    /// `BODY[HEADER.FIELDS]` agrees with EMLParser. That rests on SwiftMail's
+    /// source (it parses them with EMLParser's `buildMessageInfo`; see "Large
+    /// messages" in AGENTS.md) and on the live check in plans/roadmap.md.
+    func testABodyPartsMessageHasTheBodyAndAttachmentIDsOfTheWholeMessage() async throws {
         for preference in BodyPreference.allCases {
             let fromWhole = try await MessageDecoder.decode(whole, body: preference)
             let fromParts = try await MessageDecoder.decode(
@@ -120,6 +128,7 @@ final class MessageDecoderPartsTests: XCTestCase {
 
             XCTAssertEqual(fromParts.body, fromWhole.body, "\(preference)")
             XCTAssertEqual(fromParts.bodySource, fromWhole.bodySource, "\(preference)")
+            // The outline's fields, passed through.
             for keyPath in [\MessageDocument.from, \.to, \.cc, \.replyTo] {
                 XCTAssertEqual(fromParts[keyPath: keyPath], fromWhole[keyPath: keyPath], "\(preference)")
             }
