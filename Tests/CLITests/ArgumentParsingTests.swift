@@ -303,6 +303,7 @@ final class ArgumentParsingTests: XCTestCase {
     }
 
     /// Each --attach takes one path, so a second path is the reply, not another file.
+    /// `DraftBody.read` then rejects a reply that names a file (`draftBodyNamesAFile`).
     func testDraftAttachTakesOnePathEach() throws {
         let command = try Draft.parse(["work/INBOX/42", "--attach", "q4.pdf", "budget.xlsx"])
         XCTAssertEqual(command.attach, ["q4.pdf"])

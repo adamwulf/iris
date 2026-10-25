@@ -37,7 +37,9 @@ struct Draft: AsyncParsableCommand {
         let from = try AccountResolver.fromAddress(for: account, in: settings)
         // Before the reply, so a bad path fails before a reply typed on stdin, and before login.
         let attachments = try attach.map(DraftAttachment.read(path:))
-        let reply = try DraftBody.read(argument: body, file: file, stdinIsTerminal: isatty(STDIN_FILENO) == 1)
+        let reply = try DraftBody.read(
+            argument: body, file: file, attaching: !attach.isEmpty, stdinIsTerminal: isatty(STDIN_FILENO) == 1
+        )
         let saved = try await MailWriter(account: account).saveReply(
             to: irisID, body: reply, from: from, replyAll: all, quote: !noQuote, attachments: attachments
         )

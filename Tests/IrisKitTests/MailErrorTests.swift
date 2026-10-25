@@ -205,6 +205,16 @@ final class MailErrorTests: XCTestCase {
         )
     }
 
+    func testAReplyThatNamesAFileSaysToRepeatAttachOrUseF() {
+        XCTAssertEqual(
+            IrisError.draftBodyNamesAFile(path: "b.pdf").errorDescription,
+            "The reply is \"b.pdf\", which is the name of a file. Each --attach takes one path, "
+                + "so a second path after it (or the second file that a pattern such as *.pdf matched) "
+                + "becomes the reply. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
+                + "and give a reply that is in a file with -F <path>."
+        )
+    }
+
     func testRedactingRemovesEveryCopyOfEverySecret() {
         XCTAssertEqual(
             Redaction.redacting(["hunter2"], in: "LOGIN me hunter2 failed: hunter2"),

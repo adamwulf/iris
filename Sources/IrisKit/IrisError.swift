@@ -49,6 +49,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case draftAttachmentNotRead(path: String, reason: String)
     /// A path given with `iris draft --attach` is a folder, not a file.
     case draftAttachmentIsAFolder(path: String)
+    /// With `--attach`, the reply argument names a file or folder that exists:
+    /// most likely a second path after one `--attach` (`--attach a.pdf b.pdf`,
+    /// or a glob that matched more than one file).
+    case draftBodyNamesAFile(path: String)
 
     // IMAP
 
@@ -174,6 +178,11 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .draftAttachmentIsAFolder(let path):
             return "\"\(path)\" is a folder, and --attach takes a file. "
                 + "Give --attach once for each file in the folder, or attach a .zip of it."
+        case .draftBodyNamesAFile(let path):
+            return "The reply is \"\(path)\", which is the name of a file. Each --attach takes one path, "
+                + "so a second path after it (or the second file that a pattern such as *.pdf matched) "
+                + "becomes the reply. Give --attach once for each file, as in --attach a.pdf --attach b.pdf, "
+                + "and give a reply that is in a file with -F <path>."
         // IMAP
         case .loginFailed(let account, let username, let host, let reason):
             return "The server \(host) refused the login for \(username) (account \"\(account)\"): \(reason). "
