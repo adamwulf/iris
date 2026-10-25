@@ -21,7 +21,7 @@ Markdown into HTML. The reasons, the alternatives, and the risks are in
 **The one rule:** if it can be unit-tested, it belongs in `IrisKit`. The
 executable only parses arguments, calls the library, and prints. IrisKit never
 prints: it logs through `IrisLog`, and the executable decides where the lines
-go (stderr).
+go (stderr and, outside `ro`, rotating diagnostic files).
 
 ```
 Sources/IrisKit/
@@ -68,6 +68,8 @@ Sources/IrisKit/
                MailAddress (the one address type), DateText, ModifiedUTF7,
                CalendarDay (a YYYY-MM-DD day for --since and --before),
                Redaction (removes secrets from text that iris shows),
+               FileLogPolicy (no disk writes under ro, configured secret redaction,
+               and safe failure text for persistent diagnostics),
                AttachmentOutput (`download`: stdout, or a new file at the -o path)
   IrisError.swift   the one error type; each message says what to do next
   IrisLog.swift     the logging seam
@@ -75,12 +77,14 @@ Sources/iris/
   Iris.swift        @main root command; ExpressibleByArgument conformances
   CLISupport.swift  log handler, swift-log bootstrap, AccountOptions (--account),
                     ArgumentHelp.irisID (the help for every iris ID argument)
+  IrisFileLog.swift FellerBuncher file destination, independent of swift-log's
+                    global handler so SwiftMail protocol logs never reach disk
   Commands/         one file per command
 Tests/IrisKitTests/ offline library tests (LoopbackServerTests binds 127.0.0.1);
                     Support/ has FakeMailClient, LogRecorder, StubTransport
                     (HTTP), FakeRedirectReceiver (sign-in), and
                     ThreadMessage+Whole (a thread message by its raw bytes)
-Tests/CLITests/     argument parsing only, never run()
+Tests/CLITests/     argument parsing and file-log backend wiring, never run()
 ```
 
 ### The IMAP seam
@@ -776,7 +780,17 @@ account (`--account <name>`).
 - **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the
-  executable depends on swift-log.
+  executable depends on swift-log and FellerBuncher. `IrisFileLog` uses a
+  dedicated `FileDestination`, never FellerBuncher's global bootstrap: that
+  would persist SwiftMail's protocol diagnostics. Outside `ro`, after parsing,
+  it appends to `~/Library/Logs/iris/iris.log` with graham's defaults (10 MiB,
+  five rotated siblings, seven-day retention). Startup failure warns and
+  continues; both exit paths await `drain()`. `IrisLog.fileHandler` receives
+  library notices, with a separate safe `fileMessage` for the interactive
+  OAuth URL. Command starts/outcomes and Iris errors also go to disk; raw
+  arguments, other error descriptions, and stdout never do. `FileLogPolicy`
+  redacts configured credentials; network boundaries redact transient OAuth
+  secrets as before. `ro` never opens the destination, even for pruning.
 - **Google OAuth, 7 days:** Adam's Google Cloud app is External and in
   Testing, so Google ends each refresh token after 7 days (and when the
   Google password changes). The refresh then answers HTTP 400

@@ -4,10 +4,14 @@ import IrisKit
 import Logging
 
 enum CLI {
-    /// Library log lines go to stderr, so stdout stays clean for piping.
-    static func installLogHandler() {
+    /// Live lines go to stderr; persistent summaries go to the optional file
+    /// sink. Neither destination mixes diagnostics with stdout data.
+    static func installLogHandler(fileLog: IrisFileLog?) {
         IrisLog.handler = { message in
             printToStderr("iris: \(message)")
+        }
+        IrisLog.fileHandler = { message in
+            fileLog?.notice(message)
         }
     }
 
