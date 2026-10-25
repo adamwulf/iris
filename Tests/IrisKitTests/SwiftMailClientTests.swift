@@ -89,14 +89,15 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.partTimeoutSeconds, 60, "FetchMessagePartCommand.timeoutSeconds in SwiftMail 88c45cbd")
         XCTAssertEqual(
             irisError(IMAPError.timeout, .fetchStructure), .serverTimedOut(account: "work", command: "FETCH"),
-            "BODYSTRUCTURE is small, so its timeout says nothing about the attachment's size"
+            "FetchMessageInfoCommand's 10 seconds for BODYSTRUCTURE, which is small, so its timeout says nothing "
+                + "about the attachment's size"
         )
     }
 
     func testOtherPartAndStructureErrorsBecomeServerErrorsOrConnectionLost() {
         XCTAssertEqual(
-            irisError(IMAPError.fetchFailed("No body structure received"), .fetchStructure),
-            .serverError(account: "work", command: "FETCH", reason: "Fetch failed: No body structure received")
+            irisError(IMAPError.fetchFailed("no(NO [UNAVAILABLE] secret)"), .fetchStructure),
+            .serverError(account: "work", command: "FETCH", reason: "Fetch failed: no(NO [UNAVAILABLE] <redacted>)")
         )
         XCTAssertEqual(
             irisError(IMAPError.connectionFailed("Server terminated connection: secret"), .fetchPart),
@@ -714,6 +715,37 @@ final class SwiftMailClientTests: XCTestCase {
             encoding: "BASE64", filename: "report.pdf", size: 1234
         )
         XCTAssertEqual(PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [1, 2]), encoding: "BASE64"))
+    }
+
+    func testPartStructuresAreTheBodyStructureOfTheAnswerWithTheUID() {
+        let parts = [
+            MessagePart(sectionString: "1", contentType: "text/plain", encoding: "7BIT"),
+            MessagePart(sectionString: "2", contentType: "message/rfc822", encoding: "7BIT"),
+            MessagePart(sectionString: "2.1", contentType: "text/plain", encoding: "QUOTED-PRINTABLE"),
+        ]
+        // An unsolicited FETCH for another message, such as a flag change, can come first.
+        let unsolicited = MessageInfo(sequenceNumber: SequenceNumber(3), flags: [.seen])
+        let answer = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), parts: parts)
+
+        XCTAssertEqual(SwiftMailClient.partStructures(in: [unsolicited, answer], uid: 150), [
+            PartStructure(id: AttachmentID(components: [1]), encoding: "7BIT"),
+            PartStructure(id: AttachmentID(components: [2]), encoding: "7BIT"),
+            PartStructure(id: AttachmentID(components: [2, 1]), encoding: "QUOTED-PRINTABLE"),
+        ])
+    }
+
+    func testPartStructuresOfAMissingUIDAreNil() {
+        let other = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(151), parts: [
+            MessagePart(sectionString: "1", contentType: "text/plain"),
+        ])
+        XCTAssertNil(SwiftMailClient.partStructures(in: [], uid: 150), "no answer: no such message")
+        XCTAssertNil(SwiftMailClient.partStructures(in: [other], uid: 150), "only another message answered")
+    }
+
+    func testPartStructuresOfAnAnswerWithoutABodyStructureAreEmpty() {
+        // SwiftMail leaves `parts` empty when BODYSTRUCTURE is missing or cannot be parsed.
+        let answer = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150))
+        XCTAssertEqual(SwiftMailClient.partStructures(in: [answer], uid: 150), [])
     }
 
     func testPartStructureWithoutAnEncodingHasNone() {

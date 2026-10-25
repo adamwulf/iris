@@ -24,13 +24,6 @@ final class MailReaderAttachmentTests: XCTestCase {
         AttachmentID(components: components)
     }
 
-    /// The envelope of the message with this UID, so that the reader finds it.
-    private func envelope(_ uid: UInt32) -> MessageEnvelope {
-        MessageEnvelope(
-            sequenceNumber: 1, uid: uid, seen: false, from: nil, subject: "Report", date: nil, internalDate: nil
-        )
-    }
-
     /// A fake whose `mailbox` (a wire name) holds the message UID 150 with these parts.
     private func server(
         structure: [PartStructure],
@@ -40,7 +33,6 @@ final class MailReaderAttachmentTests: XCTestCase {
     ) -> FakeMailClient {
         FakeMailClient(
             statuses: [mailbox: MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)],
-            envelopes: [envelope(150)],
             structures: [150: structure],
             parts: [150: parts],
             errors: errors
@@ -77,9 +69,8 @@ final class MailReaderAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment, DownloadedAttachment(attachmentID: part(2), data: Data("Hello World".utf8)))
         let calls = await fake.calls
         XCTAssertEqual(calls, [
-            .login, .examine("INBOX"), .fetchEnvelopesByUID([150]), .fetchStructure(150), .fetchPart(part(2), 150),
-            .logout,
-        ], "EXAMINE and PEEK only, and never the whole message")
+            .login, .examine("INBOX"), .fetchStructure(150), .fetchPart(part(2), 150), .logout,
+        ], "EXAMINE, one BODYSTRUCTURE FETCH, and PEEK only, and never the whole message")
     }
 
     func testAttachmentDecodesQuotedPrintable() async throws {
@@ -137,7 +128,7 @@ final class MailReaderAttachmentTests: XCTestCase {
         XCTAssertEqual(calls.last, .logout)
     }
 
-    func testAMissingMessageThrowsUnknownMessageBeforeTheStructureFetch() async {
+    func testAMissingMessageThrowsUnknownMessageFromTheOneStructureFetch() async {
         let fake = server(structure: report, parts: [:])
 
         await assertThrows(.unknownMessage(id(999))) {
@@ -145,7 +136,30 @@ final class MailReaderAttachmentTests: XCTestCase {
         }
 
         let calls = await fake.calls
-        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchEnvelopesByUID([999]), .logout])
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchStructure(999), .logout])
+    }
+
+    /// Every message has a part, so an answer without parts is the server's
+    /// fault, not a wrong attachment ID.
+    func testAnAnswerWithoutABodyStructureIsNotAnUnknownAttachment() async {
+        let fake = server(structure: [], parts: [:])
+
+        await assertThrows(.attachmentStructureMissing(id(150))) {
+            try await self.reader(fake).attachment(self.part(2), of: self.id(150))
+        }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchStructure(150), .logout])
+    }
+
+    func testAStructureFetchTimeoutPassesThroughAndLogsOut() async {
+        let failure = IrisError.serverTimedOut(account: "work", command: "FETCH")
+        let fake = server(structure: report, parts: [:], errors: [.fetchStructure: failure])
+
+        await assertThrows(failure) { try await self.reader(fake).attachment(self.part(2), of: self.id(150)) }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchStructure(150), .logout])
     }
 
     func testUIDZeroIsRejectedBeforeConnecting() async {
@@ -189,6 +203,16 @@ final class MailReaderAttachmentTests: XCTestCase {
             IrisError.unknownAttachment(id(150, in: "Sent Items"), part(1, 2)).errorDescription,
             "The message \"work/Sent Items/150\" has no attachment 1.2. "
                 + "Run `iris show 'work/Sent Items/150'` to see its attachment IDs."
+        )
+    }
+
+    func testAMissingStructureSaysToTryAgainOrUseTheRawSource() {
+        XCTAssertEqual(
+            IrisError.attachmentStructureMissing(id(150, in: "Sent Items")).errorDescription,
+            "The server did not describe the parts of the message \"work/Sent Items/150\" (its answer had no "
+                + "BODYSTRUCTURE that iris can read), so iris cannot find the attachment. Try again. If it keeps "
+                + "failing, `iris show 'work/Sent Items/150' --format raw` gives the message source, with every "
+                + "attachment in it."
         )
     }
 

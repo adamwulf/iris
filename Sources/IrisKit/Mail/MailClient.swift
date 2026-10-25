@@ -46,10 +46,11 @@ protocol MailClient: Sendable {
     /// is never set. Empty when the open mailbox has no message with this UID.
     func fetchRawMessage(uid: UInt32) async throws -> Data
     /// The parts of the message with this UID in the open mailbox, from its
-    /// BODYSTRUCTURE, in section order: each part that is not a multipart,
-    /// and after a message/rfc822 part, the parts of the message inside it.
-    /// The message must be in the open mailbox.
-    func fetchStructure(uid: UInt32) async throws -> [PartStructure]
+    /// BODYSTRUCTURE (one UID FETCH), in section order: each part that is not
+    /// a multipart, and after a message/rfc822 part, the parts of the message
+    /// inside it. Nil when the open mailbox has no message with this UID.
+    /// Empty when the server's answer has no BODYSTRUCTURE that SwiftMail can read.
+    func fetchStructure(uid: UInt32) async throws -> [PartStructure]?
     /// The bytes of the part `id` of the message with this UID in the open
     /// mailbox, fetched with `BODY.PEEK[<section>]` so `\Seen` is never set.
     /// They are still in the part's Content-Transfer-Encoding. A timeout is

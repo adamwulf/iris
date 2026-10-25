@@ -130,10 +130,10 @@ actor FakeMailClient: MailWriteClient {
     /// `fetchRawMessage` throws the error in `rawMessageErrors` for its UID;
     /// after `messageDownloadTimedOut` no mailbox is open, as after SwiftMail's reconnect.
     ///
-    /// `fetchStructure` returns the `structures` of its UID, and throws the
-    /// `serverError` that SwiftMailClient makes of SwiftMail's failed FETCH
-    /// for a UID that is not in it. `fetchPart` returns the `parts` bytes,
-    /// still transfer-encoded, and empty data for a part that is not in it.
+    /// `fetchStructure` returns the `structures` of its UID, and nil for a UID
+    /// that is not in it, as for a missing message; an empty structure stands
+    /// for an answer without a BODYSTRUCTURE. `fetchPart` returns the `parts`
+    /// bytes, still transfer-encoded, and empty data for a part that is not in it.
     init(
         accountName: String = "work",
         capabilities: [String] = [],
@@ -335,13 +335,9 @@ actor FakeMailClient: MailWriteClient {
         return rawMessages[uid] ?? Data()
     }
 
-    func fetchStructure(uid: UInt32) async throws -> [PartStructure] {
+    func fetchStructure(uid: UInt32) async throws -> [PartStructure]? {
         try record(.fetchStructure(uid), .fetchStructure)
-        guard let structure = structures[uid] else {
-            // SwiftMail fails the FETCH when the server sends no BODYSTRUCTURE.
-            throw IrisError.serverError(account: accountName, command: "FETCH", reason: "Fetch failed: No body structure received")
-        }
-        return structure
+        return structures[uid]
     }
 
     func fetchPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {

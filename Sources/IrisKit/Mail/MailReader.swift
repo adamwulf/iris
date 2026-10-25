@@ -131,13 +131,16 @@ public struct MailReader: Sendable {
         }
         return try await withClient { client in
             _ = try await examine(id.mailbox, with: client)
-            // The server answers the BODYSTRUCTURE of a missing UID with
-            // nothing, which SwiftMail reports as a failed FETCH, so look for
-            // the message first. FETCH (UID FLAGS ENVELOPE INTERNALDATE) does not set \Seen.
-            guard try await client.fetchEnvelopes(uids: [id.uid]).contains(where: { $0.uid == id.uid }) else {
+            // The one FETCH of the BODYSTRUCTURE also finds whether the message exists.
+            guard let parts = try await client.fetchStructure(uid: id.uid) else {
                 throw IrisError.unknownMessage(id)
             }
-            guard let part = try await client.fetchStructure(uid: id.uid).first(where: { $0.id == attachmentID }) else {
+            // Every message has a part, so no parts means that the server sent
+            // no BODYSTRUCTURE iris can read, not that the attachment ID is wrong.
+            guard !parts.isEmpty else {
+                throw IrisError.attachmentStructureMissing(id)
+            }
+            guard let part = parts.first(where: { $0.id == attachmentID }) else {
                 throw IrisError.unknownAttachment(id, attachmentID)
             }
             let data = try await client.fetchPart(attachmentID, uid: id.uid)

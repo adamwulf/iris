@@ -97,13 +97,19 @@ the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
 `PartStructure(swiftMail:)`, and `Email(draft:)`.
 
 `download` (`MailReader.attachment(_:of:)`) is one read-only session:
-EXAMINE, `fetchEnvelopes(uids:)` to check that the message exists (the
-BODYSTRUCTURE of a missing UID gets no answer, which SwiftMail reports as a
-failed FETCH), `fetchStructure(uid:)` (BODYSTRUCTURE, as `[PartStructure]`:
-the section and the transfer encoding of each part), then
-`fetchPart(_:uid:)` (`BODY.PEEK[<section>]`) for that one part, never
-`fetchRawMessage` (see "Gotchas"). A section that is not in the structure
-is `unknownAttachment`, which names `iris show`. The bytes come back
+EXAMINE, `fetchStructure(uid:)`, then `fetchPart(_:uid:)`
+(`BODY.PEEK[<section>]`) for that one part, never `fetchRawMessage` (see
+"Gotchas"). `fetchStructure` is one UID FETCH (UID BODYSTRUCTURE), through
+SwiftMail's `fetchMessageInfosBulk(using:options: [.bodyStructure])`, not
+its `fetchStructure`, which fails for a missing UID and sends a second
+FETCH for filenames. It gives `[PartStructure]?` (the section and the
+transfer encoding of each part; `SwiftMailClient.partStructures(in:uid:)`
+takes them from the answer with that UID, skipping an unsolicited FETCH):
+nil for a missing message, which is `unknownMessage`, so it is also the
+existence check. Empty parts mean the answer had no BODYSTRUCTURE that
+SwiftMail could read (every message has a part): `attachmentStructureMissing`,
+not a wrong attachment ID. A section that is not in the structure is
+`unknownAttachment`, which names `iris show`. The bytes come back
 transfer-encoded; `TransferEncoding.decoded(_:encoding:)` decodes base64 and
 quoted-printable with SwiftMail's public `Data.decoded(for:)`. Any section
 in the structure downloads, also one inside a forwarded message (`2.1`).
@@ -193,8 +199,8 @@ way Zoho did in the 2026-10-24 probes (`SearchRules.zoho`), or by RFC 3501
 SEARCH text, and `rawMessageErrors` a message that does not download (after
 a timeout no mailbox is open, as after SwiftMail's reconnect). For
 `download` it holds each UID's `structures` and `parts` (the bytes still
-transfer-encoded), and fails `fetchStructure` for a UID it does not have,
-as SwiftMail does. The
+transfer-encoded): `fetchStructure` gives nil for a UID it does not have,
+and an empty structure stands for an answer without a BODYSTRUCTURE. The
 Google code has its own seams: `HTTPTransport` (tests use `StubTransport`)
 and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
 browser opener). One test opens a socket: `LoopbackServerTests` runs the
@@ -449,14 +455,16 @@ account (`--account <name>`).
   fixed at 60, `SwiftMailClient.partTimeoutSeconds`). It never uses
   `fetchRawMessage`: its 10 seconds fail large messages, and attachments are
   what make a message large. A part-fetch timeout is
-  `attachmentDownloadTimedOut`; a BODYSTRUCTURE timeout (10 seconds, but a
-  few hundred bytes) is `serverTimedOut`. No chunked or ranged fetch is
+  `attachmentDownloadTimedOut`; a BODYSTRUCTURE timeout (10 seconds,
+  `FetchMessageInfoCommand.timeoutSeconds`, for a few hundred bytes) is
+  `serverTimedOut`, as for the other small FETCHes. No chunked or ranged fetch is
   built, so an attachment that takes more than 60 seconds fails
   (`plans/roadmap.md`, "Known limits").
 - **message/rfc822 sections:** EMLParser (`show`) keeps a forwarded message
   as one part and does not open it, so the part after it is `3`, not a
   section inside it. SwiftMail's BODYSTRUCTURE conversion
-  (`[MessagePart](BodyStructure)`) keeps the message/rfc822 part at its own
+  (`[MessagePart](BodyStructure)`, which `FetchMessageInfoHandler` uses for
+  `MessageInfo.parts`) keeps the message/rfc822 part at its own
   section and then adds its inner parts (`2`, `2.1`, `2.2`; SwiftMail's
   `rfc822InsideMultipartMixed` test pins this). So every ID that `show`
   lists is in the structure, and `BODY[2]` gives the whole forwarded
@@ -477,10 +485,10 @@ account (`--account <name>`).
   Only `MailWriter` SELECTs, for the STORE.
 - **UIDs** belong to one mailbox. A missing UID gets an empty answer, not an
   error (FETCH returns nothing, and STORE answers OK); `MailReader` and
-  `MailWriter` turn that into `unknownMessage`. SwiftMail's `fetchStructure`
-  throws instead (`fetchFailed`, "No body structure received"), so
-  `MailReader.attachment` fetches the envelope first, as `MailWriter` does
-  before STORE.
+  `MailWriter` turn that into `unknownMessage`. SwiftMail's own
+  `fetchStructure` throws instead (`fetchFailed`, "No body structure
+  received"), so `SwiftMailClient.fetchStructure` asks for BODYSTRUCTURE
+  with `fetchMessageInfosBulk`, which gives no answer for a missing UID.
 - **SEARCH days:** SwiftMail takes a `Date` for SINCE and BEFORE and turns
   it into a day with the `Calendar` it is given. Its `IMAPCalendarDay`
   holds only the years 1900 to 2500, and SwiftMail stops the program

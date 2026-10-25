@@ -94,6 +94,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case invalidAttachmentID(String)
     /// The message has no part with this attachment ID.
     case unknownAttachment(IrisID, AttachmentID)
+    /// The server's answer to FETCH BODYSTRUCTURE had none that iris can read.
+    case attachmentStructureMissing(IrisID)
     /// The part did not arrive inside SwiftMail's fixed time limit for one part.
     case attachmentDownloadTimedOut(seconds: Int)
     /// `iris download` has no `-o`, and stdout is a terminal, which the bytes would garble.
@@ -265,6 +267,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .unknownAttachment(let id, let attachment):
             return "The message \"\(id)\" has no attachment \(attachment). "
                 + "Run `iris show \(id.shellQuoted)` to see its attachment IDs."
+        case .attachmentStructureMissing(let id):
+            return "The server did not describe the parts of the message \"\(id)\" (its answer had no BODYSTRUCTURE "
+                + "that iris can read), so iris cannot find the attachment. Try again. If it keeps failing, "
+                + "`iris show \(id.shellQuoted) --format raw` gives the message source, with every attachment in it."
         case .attachmentDownloadTimedOut(let seconds):
             return "The attachment did not download in \(seconds) seconds. It may be large, or the connection "
                 + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "

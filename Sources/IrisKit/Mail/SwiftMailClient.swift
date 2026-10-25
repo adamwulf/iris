@@ -279,14 +279,25 @@ struct SwiftMailClient: MailWriteClient {
         }
     }
 
-    func fetchStructure(uid: UInt32) async throws -> [PartStructure] {
-        // For a message with named parts, SwiftMail also reads their MIME
-        // headers (to put back backslashes in the filenames, which iris does
-        // not use); a failure there keeps the BODYSTRUCTURE answer.
-        let parts = try await run(.fetchStructure) {
-            try await server.fetchStructure(UID(uid))
+    func fetchStructure(uid: UInt32) async throws -> [PartStructure]? {
+        // One UID FETCH (UID BODYSTRUCTURE), with FetchMessageInfoCommand's 10
+        // seconds. IMAPServer.fetchStructure would fail for a missing UID, and
+        // sends a second FETCH for the filenames, which iris does not use.
+        let infos = try await run(.fetchStructure) {
+            try await server.fetchMessageInfosBulk(using: UIDSet(UID(uid)), options: [.bodyStructure])
         }
-        return parts.map(PartStructure.init(swiftMail:))
+        return Self.partStructures(in: infos, uid: uid)
+    }
+
+    /// The parts that FETCH (UID BODYSTRUCTURE) gave for `uid`, from the one
+    /// answer with that UID: an unsolicited FETCH for another message (such as
+    /// a flag change) is skipped. Nil when no answer has the UID, so the open
+    /// mailbox has no such message. Empty when the answer has no BODYSTRUCTURE
+    /// that SwiftMail could read.
+    static func partStructures(in infos: [MessageInfo], uid: UInt32) -> [PartStructure]? {
+        infos.first { $0.uid?.value == uid }.map { info in
+            info.parts.map(PartStructure.init(swiftMail:))
+        }
     }
 
     func fetchPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {
@@ -565,7 +576,7 @@ extension MessageEnvelope {
 }
 
 extension PartStructure {
-    /// `part` from BODYSTRUCTURE, as `IMAPServer.fetchStructure` gives it.
+    /// `part` from BODYSTRUCTURE, as SwiftMail's `[MessagePart](BodyStructure)` gives it.
     /// SwiftMail keeps a message/rfc822 part at its own section, so it can be
     /// fetched whole, and adds the parts inside it after it (`2`, then `2.1`, `2.2`).
     init(swiftMail part: MessagePart) {
