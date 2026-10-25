@@ -410,9 +410,13 @@ The draft is built from the original message:
 - **In-Reply-To** and **References**, so mail apps show the draft in the
   same thread.
 - **Body:** your reply, then `On <date>, <sender> wrote:` and the original's
-  body as a Markdown quote (`> `). `--no-quote` leaves the quote out. The
-  draft has a plain-text part (the Markdown) and an HTML part made from it.
-  HTML in the reply or the quote is shown as text, never run as HTML.
+  body. `--no-quote` leaves the quote out. The plain-text part is your
+  Markdown, with `> ` before each line of the original. The HTML part is
+  your Markdown rendered, with the original in a quote block as Apple Mail
+  quotes: an HTML original as HTML again, and a plain-text original as its
+  text, line by line, never read as Markdown. HTML in the reply or the quote
+  is shown as text, never run as HTML. Quoted images that pointed at a part
+  of the original (`cid:`, such as a signature logo) are left out.
 
 iris saves the draft with the `\Draft` flag in the mailbox that the server
 marks `\Drafts` (`iris mailboxes` shows it; Gmail's is `[Gmail]/Drafts`), and

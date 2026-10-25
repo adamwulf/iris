@@ -15,7 +15,8 @@ public struct DraftMessage: Sendable, Equatable {
     public let references: [String]
     /// The text/plain part: the reply and the quote, as Markdown.
     public let markdown: String
-    /// The text/html part, rendered from `markdown`.
+    /// The text/html part: the reply's Markdown rendered, then the quote
+    /// (see `ReplyComposer.quotation(of:timeZone:)`).
     public let html: String
 
     /// The longest header line iris writes, as RFC 5322 (section 2.1.1) asks.

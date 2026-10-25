@@ -406,9 +406,17 @@ account (`--account <name>`).
 - **HTMLFormatter** (swift-markdown) writes text, code, and link targets
   without escaping them, and passes raw HTML through. `MarkdownHTML` escapes
   them first, and turns raw HTML into text: the quoted original is untrusted,
-  so iris never emits HTML that it did not make. It also parses with
-  `.disableSmartOpts`, so the HTML part has the same quotes and dashes as the
-  text part.
+  so iris never emits HTML that it did not make. It writes a soft break as a
+  bare newline (a space in HTML), so `MarkdownHTML` makes each one a line
+  break, and it drops `cid:` images (SwiftText keeps an original's
+  `<img src="cid:...">`, which the draft has no part for). It also parses
+  with `.disableSmartOpts`, so the HTML part has the same quotes and dashes
+  as the text part.
+- **The HTML quote:** only an original whose body came from HTML
+  (`bodySource == .html`) is rendered as Markdown. A text/plain original is
+  escaped line by line (`MarkdownHTML.html(fromPlainText:)`), because as
+  Markdown a `-- ` signature line makes the line above it a heading. The
+  text part quotes both kinds with `> `.
 - **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the

@@ -28,8 +28,10 @@ public enum ReplyComposer {
         while markdown.last?.isWhitespace == true {
             markdown.removeLast()
         }
+        var html = MarkdownHTML.html(fromMarkdown: markdown)
         if quote, let quotation = quotation(of: original, timeZone: timeZone) {
-            markdown += "\n\n" + quotation
+            markdown += "\n\n" + quotation.text
+            html += quotation.html
         }
 
         let (inReplyTo, references) = threading(of: original)
@@ -41,7 +43,7 @@ public enum ReplyComposer {
             inReplyTo: inReplyTo,
             references: references,
             markdown: markdown,
-            html: MarkdownHTML.html(fromMarkdown: markdown)
+            html: html
         )
     }
 
@@ -84,20 +86,36 @@ public enum ReplyComposer {
         }
     }
 
-    /// `On <date>, <sender> wrote:` (or `<sender> wrote:` without a date), then
-    /// the original's body with `> ` before each line and `>` for an empty
-    /// line. Nil when the original has no body.
-    static func quotation(of original: MessageDocument, timeZone: TimeZone) -> String? {
+    /// The quote of `original` for both parts. Nil when the original has no body.
+    ///
+    /// The text part is the attribution line, then the original's body with
+    /// `> ` before each line and `>` for an empty line. The HTML part is the
+    /// attribution line, then the body in a `<blockquote type="cite">`, as
+    /// Apple Mail quotes: the Markdown rendered when the body came from an
+    /// HTML part, else the plain text escaped line by line. A plain-text body
+    /// is never read as Markdown, where a `-- ` signature line would make the
+    /// line above it a heading.
+    static func quotation(of original: MessageDocument, timeZone: TimeZone) -> (text: String, html: String)? {
         guard !original.body.isEmpty else {
             return nil
         }
-        let sender = original.from.first?.displayName ?? "someone"
-        let attribution = original.date.map { date in
-            "On \(DateText.string(from: date, timeZone: timeZone, showingZone: true)), \(sender) wrote:"
-        } ?? "\(sender) wrote:"
+        let attribution = attribution(of: original, timeZone: timeZone)
         let lines = original.body.split(separator: "\n", omittingEmptySubsequences: false).map { line in
             line.isEmpty ? ">" : "> " + line
         }
-        return ([attribution] + lines).joined(separator: "\n")
+        let quoted = original.bodySource == .html
+            ? MarkdownHTML.html(fromMarkdown: original.body)
+            : MarkdownHTML.html(fromPlainText: original.body)
+        let html = "<p>\(MarkdownHTML.escaped(attribution))</p>\n<blockquote type=\"cite\">\n\(quoted)</blockquote>\n"
+        return (([attribution] + lines).joined(separator: "\n"), html)
+    }
+
+    /// `On <date>, <sender> wrote:`, or `<sender> wrote:` when the original has no date.
+    static func attribution(of original: MessageDocument, timeZone: TimeZone) -> String {
+        let sender = original.from.first?.displayName ?? "someone"
+        guard let date = original.date else {
+            return "\(sender) wrote:"
+        }
+        return "On \(DateText.string(from: date, timeZone: timeZone, showingZone: true)), \(sender) wrote:"
     }
 }

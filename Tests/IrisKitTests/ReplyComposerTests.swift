@@ -19,7 +19,8 @@ final class ReplyComposerTests: XCTestCase {
         date: Date? = nil,
         inReplyTo: String? = nil,
         references: [String] = [],
-        body: String = "Can you look at the plan?"
+        body: String = "Can you look at the plan?",
+        bodySource: BodySource = .text
     ) -> MessageDocument {
         MessageDocument(
             messageID: messageID,
@@ -32,7 +33,7 @@ final class ReplyComposerTests: XCTestCase {
             inReplyTo: inReplyTo,
             references: references,
             body: body,
-            bodySource: .text,
+            bodySource: bodySource,
             attachments: []
         )
     }
@@ -230,12 +231,57 @@ final class ReplyComposerTests: XCTestCase {
         XCTAssertEqual(draft.markdown, "Line one\nLine two")
     }
 
-    func testTheHTMLPartIsTheMarkdownWithTheQuote() {
-        let draft = reply(to: original(), body: "Looks *good*.")
+    func testTheHTMLPartIsTheReplyThenTheAttributionAndACiteBlockquote() {
+        let draft = reply(to: original(), body: "Looks *good*.\nThanks")
         XCTAssertEqual(
             draft.html,
-            "<p>Looks <em>good</em>.</p>\n<p>On 2026-10-24 13:42 CDT, Jane Doe wrote:</p>\n"
-                + "<blockquote>\n<p>Can you look at the plan?</p>\n</blockquote>\n"
+            "<p>Looks <em>good</em>.<br />\nThanks</p>\n<p>On 2026-10-24 13:42 CDT, Jane Doe wrote:</p>\n"
+                + "<blockquote type=\"cite\">\nCan you look at the plan?\n</blockquote>\n"
         )
+    }
+
+    /// Read as Markdown, "Bob" would be a heading (setext, from the `-- ` line
+    /// under it) and `*Sales*` would be emphasis.
+    func testAPlainTextOriginalIsQuotedInTheHTMLAsTextNotMarkdown() {
+        let body = "Sounds good, <b>Adam</b> & all.\n\nThanks,\nBob\n-- \nBob Smith\n*Sales*"
+        let draft = reply(to: original(body: body, bodySource: .text))
+
+        XCTAssertEqual(
+            draft.html,
+            "<p>Looks good.</p>\n<p>On 2026-10-24 13:42 CDT, Jane Doe wrote:</p>\n<blockquote type=\"cite\">\n"
+                + "Sounds good, &lt;b&gt;Adam&lt;/b&gt; &amp; all.<br />\n<br />\nThanks,<br />\nBob<br />\n"
+                + "-- <br />\nBob Smith<br />\n*Sales*\n</blockquote>\n"
+        )
+        XCTAssertEqual(
+            draft.markdown,
+            "Looks good.\n\nOn 2026-10-24 13:42 CDT, Jane Doe wrote:\n"
+                + "> Sounds good, <b>Adam</b> & all.\n>\n> Thanks,\n> Bob\n> -- \n> Bob Smith\n> *Sales*",
+            "the text part is the same for both kinds of original"
+        )
+    }
+
+    func testAnHTMLOriginalIsQuotedInTheHTMLAsItsRenderedMarkdown() {
+        let body = "Hello *world*\n\n- one\n- two\n\n![Image](cid:logo@example.com)"
+        let draft = reply(to: original(body: body, bodySource: .html))
+
+        XCTAssertEqual(
+            draft.html,
+            "<p>Looks good.</p>\n<p>On 2026-10-24 13:42 CDT, Jane Doe wrote:</p>\n<blockquote type=\"cite\">\n"
+                + "<p>Hello <em>world</em></p>\n<ul>\n<li><p>one</p>\n</li>\n<li><p>two</p>\n</li>\n</ul>\n"
+                + "</blockquote>\n"
+        )
+        XCTAssertTrue(draft.markdown.hasSuffix("> - two\n>\n> ![Image](cid:logo@example.com)"), draft.markdown)
+    }
+
+    func testTheAttributionIsEscapedInTheHTML() {
+        let sender = MailAddress(name: "Jane <JD> & Co", address: "jane@example.com")
+        let draft = reply(to: original(from: [sender]))
+        XCTAssertTrue(
+            draft.html.contains("<p>On 2026-10-24 13:42 CDT, Jane &lt;JD&gt; &amp; Co wrote:</p>\n"), draft.html
+        )
+    }
+
+    func testNoQuoteLeavesTheQuoteOutOfTheHTMLToo() {
+        XCTAssertEqual(reply(to: original(), quote: false).html, "<p>Looks good.</p>\n")
     }
 }
