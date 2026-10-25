@@ -18,7 +18,7 @@ let package = Package(
         // SwiftMail pins swift-nio-imap by revision, so SwiftPM cannot resolve
         // SwiftMail by version. Pin a release's commit and bump it by hand.
         // 88c45cbd is the 1.16.0 tag.
-        .package(url: "https://github.com/Cocoanetics/SwiftMail", revision: "88c45cbd31b347b373f7c87e197be63eb95efbc2"),
+        .package(url: "https://github.com/Cocoanetics/SwiftMail.git", revision: "88c45cbd31b347b373f7c87e197be63eb95efbc2"),
         // The HTML trait gives HTML-to-Markdown without SwiftText's PDF/OCR parts.
         .package(url: "https://github.com/Cocoanetics/SwiftText", from: "2.4.0", traits: ["HTML"]),
         // Markdown-to-HTML for the HTML part of a draft. SwiftText already
