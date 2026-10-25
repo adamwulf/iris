@@ -18,8 +18,10 @@ struct ReadOnly: AsyncParsableCommand {
     ]
 
     /// Everything under `ro`: the shared commands, then the read-only form of
-    /// each group with both kinds (`auth` with only `status`).
-    static let commands: [any ReadOnlyCommand.Type] = sharedCommands + [ReadOnlyAuth.self]
+    /// each group with both kinds (`auth` with only `status`), and of each
+    /// write command whose options that write can be dropped (`download`
+    /// without `-o`).
+    static let commands: [any ReadOnlyCommand.Type] = sharedCommands + [ReadOnlyAuth.self, ReadOnlyDownload.self]
 
     static let configuration = CommandConfiguration(
         commandName: "ro",

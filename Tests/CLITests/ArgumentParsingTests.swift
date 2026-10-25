@@ -326,6 +326,53 @@ final class ArgumentParsingTests: XCTestCase {
         }
     }
 
+    func testDownloadTakesAnIrisIDAndAnAttachmentID() throws {
+        let command = try Download.parse(["personal/[Gmail]/All Mail/7", "1.2"])
+        XCTAssertEqual(command.arguments.irisID, IrisID(account: "personal", mailbox: "[Gmail]/All Mail", uid: 7))
+        XCTAssertEqual(command.arguments.attachmentID.components, [1, 2])
+        XCTAssertNil(command.output, "without -o, the bytes go to stdout")
+    }
+
+    func testDownloadTakesTheOutputPathWithShortAndLongNames() throws {
+        XCTAssertEqual(try Download.parse(["work/INBOX/42", "2", "-o", "report.pdf"]).output, "report.pdf")
+        XCTAssertEqual(try Download.parse(["work/INBOX/42", "2", "--output", "~/Downloads"]).output, "~/Downloads")
+        XCTAssertEqual(try Download.parse(["-o", "x", "work/INBOX/42", "2"]).output, "x")
+    }
+
+    func testReadOnlyDownloadTakesTheSameArgumentsAndNoOutputPath() throws {
+        let command = try ReadOnlyDownload.parse(["work/INBOX/42", "2"])
+        XCTAssertEqual(command.arguments.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+        XCTAssertEqual(command.arguments.attachmentID.components, [2])
+        XCTAssertThrowsError(try ReadOnlyDownload.parse(["work/INBOX/42", "2", "-o", "x"]))
+        XCTAssertThrowsError(try ReadOnlyDownload.parse(["work/INBOX/42", "2", "--output", "x"]))
+    }
+
+    func testDownloadNeedsBothIDsAndHasNoAccountOption() {
+        for parse in [{ try Download.parse($0) }, { try ReadOnlyDownload.parse($0) }] as [([String]) throws -> Any] {
+            XCTAssertThrowsError(try parse([]))
+            XCTAssertThrowsError(try parse(["work/INBOX/42"]), "the attachment ID is required")
+            XCTAssertThrowsError(try parse(["work/INBOX/42", "2", "3"]), "one attachment at a time")
+            XCTAssertThrowsError(try parse(["work/INBOX/42", "2", "--account", "work"]), "the iris ID names the account")
+        }
+    }
+
+    func testDownloadExplainsABadIrisIDAndABadAttachmentID() {
+        XCTAssertThrowsError(try Download.parse(["INBOX/42", "2"])) { error in
+            let message = Download.message(for: error)
+            XCTAssertTrue(message.contains("\"INBOX/42\" is not an iris ID"), message)
+        }
+        for bad in ["0", "1.", "a", "-1"] {
+            XCTAssertThrowsError(try Download.parse(["work/INBOX/42", "--", bad])) { error in
+                let message = Download.message(for: error)
+                XCTAssertTrue(message.contains("\"\(bad)\" is not an attachment ID"), message)
+            }
+        }
+        XCTAssertThrowsError(try ReadOnlyDownload.parse(["work/INBOX/42", "x.2"])) { error in
+            let message = ReadOnlyDownload.message(for: error)
+            XCTAssertTrue(message.contains("\"x.2\" is not an attachment ID"), message)
+        }
+    }
+
     /// ArgumentParser lists an option's values itself, so our help strings no longer list them too.
     func testHelpNoLongerHasTheOldValueLists() {
         let oldPhrases = ["table, json, jsonl, or id", "markdown, json, or raw", "auto (HTML", "text, or html"]
