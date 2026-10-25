@@ -23,12 +23,15 @@ go (stderr).
 ```
 Sources/IrisKit/
   Config/      DotEnv (.env loader, and setValue for the refresh token),
-               AccountResolver (named accounts), Account (+ GoogleClient)
+               AccountResolver (named accounts), Account (+ GoogleClient),
+               RefreshTokenSave (where `iris auth login` put the token, and
+               its stdout line and stderr message)
   Auth/        Google OAuth: HTTPTransport (the HTTP seam, URLSessionTransport,
                FormEncoder), GoogleTokenEndpoint (refresh and code exchange),
                GoogleSignIn (`iris auth login`: consent URL, PKCE, redirect
                checks), LoopbackServer (the 127.0.0.1 redirect listener),
-               GoogleURL (query escaping)
+               GoogleURL (query escaping), GoogleSignInStatus (`iris auth
+               status`: the keys set and one refresh per account)
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
                MailReader (sessions, paging, errors), MailModels (rows, pages),
                MailWriter (the calls that change mail: read and unread),
@@ -145,7 +148,7 @@ for the user to save.
   mailboxes through `IrisID`, not with the typed `--mailbox`.
 - Words: user-facing text says "iris ID" for the `IrisID`. "Message ID"
   means only the `Message-ID` header (`messageID` in `show --format json`).
-- List commands (`accounts`, `mailboxes`, `list`) take `--format
+- List commands (`accounts`, `mailboxes`, `list`, `auth status`) take `--format
   table|json|jsonl|id`, default `table` (`OutputFormat.listDefault`: use it
   for `--format`, never the literal), through `OutputFormatter` and the
   `IrisRow` protocol. `OutputFormatter.render` returns the exact stdout text
@@ -192,28 +195,30 @@ agent `Bash(iris ro:*)` and nothing else. `Sources/iris/Commands/ReadOnlyCommand
 enforces it:
 
 - A **read-only** command (it cannot send, draft, move, flag, or delete) is
-  declared `struct X: ReadOnlyCommand` and added to `ReadOnly.commands`. It
-  then appears both as `iris x` and `iris ro x`.
+  declared `struct X: ReadOnlyCommand` and added to `ReadOnly.sharedCommands`.
+  It then appears both as `iris x` and `iris ro x`.
 - A **write** command (such as `read` and `unread`) is declared
   `struct X: AsyncParsableCommand` and added only to
   `Iris.configuration.subcommands`, after the read-only ones. Never
   mark it `ReadOnlyCommand`: `ReadOnly.commands` is typed
   `[any ReadOnlyCommand.Type]`, so the compiler keeps write commands out of
   `ro`. `iris auth login` is one: it opens a browser and writes `.env`.
-- A **group with both kinds** (for example `iris draft show` and
-  `iris draft new`) cannot be a `ReadOnlyCommand`. Give it two forms: the
-  full group in `Iris` with all children, and a second group, also named
-  `draft`, in `ReadOnly.commands` whose children are typed
-  `[any ReadOnlyCommand.Type]` (only `show`). Both use the same leaf types,
-  so `iris ro draft show` behaves like `iris draft show`, and
-  `iris ro draft new` fails to parse.
+- A **group with both kinds** cannot be a `ReadOnlyCommand`. `auth` is one:
+  `iris auth login` writes `.env`, and `iris auth status` only reads. Give
+  it two forms: the full group (`Auth`, with `login` and `status`) in
+  `Iris.configuration.subcommands` after the shared commands, and a second
+  group, also named `auth` (`ReadOnlyAuth`), in `ReadOnly.commands` (not in
+  `sharedCommands`) whose children are typed `[any ReadOnlyCommand.Type]`
+  (only `Auth.Status`). Both use the same leaf types, so `iris ro auth status`
+  behaves like `iris auth status`, and `iris ro auth login` fails to parse.
+  A future `draft` group (`show` and `new`) works the same way.
 - Keep write calls out of `MailReader` and out of the IMAP calls it uses: put
   them in `MailWriter` and `MailWriteClient` (see "The IMAP seam"), so a
   read-only command cannot reach them.
 
 `ReadOnlyCommandTests` checks that `ro` has only read-only commands, that
-every read-only command is in both places, and that `iris ro <write command>`
-fails.
+every read-only command is in both places (also the read-only children of a
+group with both kinds), and that `iris ro <write command>` fails.
 
 ### Add an error
 

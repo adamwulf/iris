@@ -123,6 +123,17 @@ into the `.env` file that has the client ID. (When the client ID comes from
 the environment, iris writes no file: it prints the line for you to save.)
 Run `iris check --account personal` to test the account.
 
+`iris auth status` checks the Google sign-in of every account that has a
+client ID (or one, with `--account`): which keys are set (never their
+values), and whether Google still gives an access token. It logs in to no
+mail server, and it exits with status 1 when an account is not signed in.
+
+```sh
+$ iris auth status
+NAME      USERNAME      CLIENT ID  CLIENT SECRET  REFRESH TOKEN  STATUS
+personal  me@gmail.com  set        set            set            ok
+```
+
 From then on, each command gets a new access token from Google before it
 logs in. iris only reads mail, but Gmail's IMAP accepts only the
 `https://mail.google.com/` scope, which is full access to the mailbox.
@@ -146,7 +157,8 @@ client ID but no refresh token yet.
 
 - Any number of named accounts in `.env`, picked with `--account`.
 - Gmail without an app password: `iris auth login` signs in with Google
-  (OAuth), and every command then logs in with XOAUTH2.
+  (OAuth), and every command then logs in with XOAUTH2. `iris auth status`
+  shows which Google accounts are still signed in.
 - `iris check`: log in and show the server's capabilities and the INBOX count.
 - `iris mailboxes`: the mailbox names with their special-use attributes
   (`\Drafts`, `\Sent`, `\All`, ...).
@@ -168,6 +180,7 @@ client ID but no refresh token yet.
 iris accounts
 iris check --account work
 iris auth login --account personal  # Gmail with OAuth: sign in, about once a week
+iris auth status                    # which Google accounts are still signed in
 
 iris list                          # newest 25 messages in INBOX
 iris list --page 2 --limit 50
@@ -184,7 +197,8 @@ iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
 ```
 
-List commands take `--format table|json|jsonl|id`. Hints and errors go to
+List commands (`accounts`, `mailboxes`, `list`, `auth status`) take
+`--format table|json|jsonl|id`. Hints and errors go to
 stderr, so stdout is safe to pipe.
 
 `iris list` shows `●` in the `UNREAD` column, just left of the subject (and
@@ -270,9 +284,9 @@ Gmail labels), Mail opens one of the copies.
 
 `iris ro <command>` runs the same command as `iris <command>`, but only the
 read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
-`list`, and `show`. Commands that change mail (`read`, `unread`, and drafts,
-when they come) are not there, so `iris ro read ...` fails. Neither is
-`iris auth login`, which opens a browser and writes `.env`.
+`list`, `show`, and `auth status`. Commands that change mail (`read`,
+`unread`, and drafts, when they come) are not there, so `iris ro read ...`
+fails. Neither is `iris auth login`, which opens a browser and writes `.env`.
 
 To let an agent read your mail but never change it, allow only that prefix.
 For Claude Code, in `.claude/settings.json`:

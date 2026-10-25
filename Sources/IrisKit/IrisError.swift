@@ -53,6 +53,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
 
     // Google sign-in
 
+    /// `iris auth status` found no account with `IRIS_<NAME>_GOOGLE_CLIENT_ID`.
+    case noGoogleAccounts
     /// The account signs in with Google (it has `IRIS_<NAME>_GOOGLE_CLIENT_ID`)
     /// but has no refresh token yet.
     case googleNotSignedIn(account: String)
@@ -149,6 +151,11 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "The server answered \(command) with an error (account \"\(account)\"): \(reason). "
                 + "Run `iris check --account \(MessagePage.shellQuoted(account))` to test the account settings."
         // Google sign-in
+        case .noGoogleAccounts:
+            return "No account signs in with Google. To sign in with Google, add the lines "
+                + "\"\(AccountResolver.key(.googleClientID, account: "NAME"))=...\" and "
+                + "\"\(AccountResolver.key(.googleClientSecret, account: "NAME"))=...\" to a .env file, "
+                + "then run `iris auth login --account <name>`. See \"Gmail with OAuth\" in README.md."
         case .googleNotSignedIn(let account):
             return "The account \"\(account)\" signs in with Google "
                 + "(it has \(AccountResolver.key(.googleClientID, account: account))), but it is not signed in yet: "

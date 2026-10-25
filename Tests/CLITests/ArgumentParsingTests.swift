@@ -185,6 +185,15 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertEqual(try Auth.Login.parse(["-a", "personal"]).accountOptions.account, "personal")
     }
 
+    func testAuthStatusDefaultsToEveryAccountAndTableFormat() throws {
+        let command = try Auth.Status.parse([])
+        XCTAssertNil(command.account, "no --account checks every Google account")
+        XCTAssertEqual(command.format, .table)
+        XCTAssertEqual(try Auth.Status.parse(["-a", "personal"]).account, "personal")
+        XCTAssertEqual(try Auth.Status.parse(["--format", "jsonl"]).format, .jsonl)
+        XCTAssertThrowsError(try Auth.Status.parse(["--format", "csv"]))
+    }
+
     func testAuthLoginTakesNoOtherArguments() {
         XCTAssertThrowsError(try Iris.parseAsRoot(["auth", "login", "personal"]))
         XCTAssertThrowsError(try Iris.parseAsRoot(["auth", "logout"]))
