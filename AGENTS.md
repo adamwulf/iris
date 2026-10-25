@@ -4,8 +4,9 @@ Instructions for agents (Claude, Codex, and others) that work in this repo.
 
 ## What this is
 
-`iris` is a command-line email reader over IMAP. It also marks a message read
-or unread and saves replies as drafts, but it never sends mail. It follows
+`iris` is a command-line email reader over IMAP. It also downloads one
+attachment, marks a message read or unread, and saves replies as drafts,
+but it never sends mail. It follows
 the structure of Adam's other CLIs, `graham` (Google Workspace) and `hunch`
 (Notion): a library with all the logic (`IrisKit`) and a thin executable
 (`iris`) built on swift-argument-parser.
@@ -36,16 +37,18 @@ Sources/IrisKit/
                GoogleURL (query escaping), GoogleSignInStatus (`iris auth
                status`: the keys set and one refresh per account)
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
-               MailReader (sessions, paging, the thread walk, errors),
-               MailModels (rows, pages, ThreadMessage),
+               MailReader (sessions, paging, the thread walk, one attachment, errors),
+               MailModels (rows, pages, ThreadMessage, DownloadedAttachment),
                MailWriter (the calls that change mail: read, unread, and
                saving a draft; SavedDraft),
                MessageFilter (the `list` filter options, sent as UID SEARCH),
                IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>),
+               AttachmentID (a part's MIME section, such as 1.2, inside one message),
                ThreadSubject (the subject rule of `thread`)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw,
-               and a thread), AppleMailURL (the message: URL from the Message-ID header)
+               and a thread), AppleMailURL (the message: URL from the Message-ID header),
+               TransferEncoding (base64 and quoted-printable of one downloaded part)
   Draft/       DraftBody (the reply's one source: argument, -F, stdin),
                DraftAttachment (a file of --attach: name, MIME type, bytes),
                ReplyComposer (MessageDocument -> DraftMessage), DraftMessage
@@ -54,7 +57,8 @@ Sources/IrisKit/
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
                MailAddress (the one address type), DateText, ModifiedUTF7,
                CalendarDay (a YYYY-MM-DD day for --since and --before),
-               Redaction (removes secrets from text that iris shows)
+               Redaction (removes secrets from text that iris shows),
+               AttachmentOutput (`download`: stdout or a new file, safe filenames)
   IrisError.swift   the one error type; each message says what to do next
   IrisLog.swift     the logging seam
 Sources/iris/
@@ -89,7 +93,20 @@ the error mapping (`irisError(for:command:account:accessToken:)`), the TLS choic
 (`transportSecurity(forPort:)`), the SEARCH keys
 (`searchCriteria(for:)`, `subjectSearchCriteria(_:)`, `messageIDSearchCriteria(_:)`),
 the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
-`MessageEnvelope(swiftMail:)`, `ThreadHeaders(swiftMail:)`, and `Email(draft:)`.
+`MessageEnvelope(swiftMail:)`, `ThreadHeaders(swiftMail:)`,
+`PartStructure(swiftMail:)`, and `Email(draft:)`.
+
+`download` (`MailReader.attachment(_:of:)`) is one read-only session:
+EXAMINE, `fetchEnvelopes(uids:)` to check that the message exists (the
+BODYSTRUCTURE of a missing UID gets no answer, which SwiftMail reports as a
+failed FETCH), `fetchStructure(uid:)` (BODYSTRUCTURE, as `[PartStructure]`:
+the section, the filename, and the transfer encoding of each part), then
+`fetchPart(_:uid:)` (`BODY.PEEK[<section>]`) for that one part, never
+`fetchRawMessage` (see "Gotchas"). A section that is not in the structure
+is `unknownAttachment`, which names `iris show`. The bytes come back
+transfer-encoded; `TransferEncoding.decoded(_:encoding:)` decodes base64 and
+quoted-printable with SwiftMail's public `Data.decoded(for:)`. Any section
+in the structure downloads, also one inside a forwarded message (`2.1`).
 
 `MailWriteClient` refines `MailClient` with the calls that change mail:
 `select(mailbox:)` (SELECT, read-write), `setSeen(_:uid:)` (UID STORE
@@ -174,7 +191,10 @@ Tests never touch the network: no test reaches another host. They use
 way Zoho did in the 2026-10-24 probes (`SearchRules.zoho`), or by RFC 3501
 (`.rfc3501`); `refusesNonASCII` models a server that refuses non-ASCII
 SEARCH text, and `rawMessageErrors` a message that does not download (after
-a timeout no mailbox is open, as after SwiftMail's reconnect). The
+a timeout no mailbox is open, as after SwiftMail's reconnect). For
+`download` it holds each UID's `structures` and `parts` (the bytes still
+transfer-encoded), and fails `fetchStructure` for a UID it does not have,
+as SwiftMail does. The
 Google code has its own seams: `HTTPTransport` (tests use `StubTransport`)
 and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
 browser opener). One test opens a socket: `LoopbackServerTests` runs the
@@ -188,7 +208,7 @@ Each account is a group of keys, `IRIS_<NAME>_IMAP_HOST`, `_PORT` (optional,
 underscores because the suffix is fixed. The process environment wins over
 `.env`; the nearest `.env` wins over a parent's. Commands resolve the account
 once, at the start, through `AccountOptions.resolve()`. A command that takes
-an `IrisID` (such as `show`, `thread`, and `read`) has no `--account`: it resolves the account that
+an `IrisID` (such as `show`, `thread`, `read`, and `download`) has no `--account`: it resolves the account that
 the ID names, with `AccountResolver.resolve(name:settings:)`. `auth status`
 has its own `--account`: leaving it out checks every Google account, not the
 default one, through `GoogleSignInStatus.check`. Resolver functions take
@@ -261,6 +281,26 @@ for the user to save.
   Markdown and JSON also show `appleMailURL`, the `message:` URL that opens
   the message in Apple Mail. `MessageDocument` makes it from `messageID` with
   `AppleMailURL`, so it is nil when there is no `Message-ID` header.
+- Every attachment that `show` and `thread` list (`MessageAttachment`) has
+  an attachment ID (`AttachmentID`), the part's MIME section from
+  `MessageDecoder.attachments(of:)`: first on its Markdown line, in code
+  (`` - `2` report.pdf (application/pdf, 120 KB) ``), and `attachmentID`, a
+  string such as `"1.2"`, in JSON. Parse it with `AttachmentID(parsing:)`
+  and take it as an `@Argument` with `transform: AttachmentID.init(parsing:)`.
+  Words: user-facing text says "attachment ID". `show` and `thread` never
+  include attachment bytes.
+- `download` writes the attachment's decoded bytes to stdout, exactly, with
+  nothing else (as `show --format raw` writes a message), or, with `-o`,
+  saves a new file and writes its path and a newline.
+  `AttachmentOutput(path:stdoutIsTerminal:)` picks one before the download:
+  without `-o`, a terminal on stdout is `attachmentStdoutIsTerminal`, so
+  binary never lands in a terminal. The CLI checks `isatty` and passes it
+  in, as `draft` passes `stdinIsTerminal`. `-o` naming a folder saves under
+  `AttachmentOutput.safeFilename(_:attachmentID:)`: the filename comes from
+  the sender, so only its last path component, without control characters,
+  leading dots, or outer white space, else `attachment-<id>`. A file is
+  never overwritten (`.withoutOverwriting`): `attachmentFileExists` says to
+  pass another `-o`.
 - `thread` takes `--format markdown|json|jsonl|id` (`ThreadOutputFormat`),
   default `markdown`. Its `messagesFormat` is the `ThreadMessagesFormat`
   of `MessageFormatter.render(thread:format:body:timeZone:)`, which prints
@@ -309,8 +349,8 @@ enforces it:
 - A **read-only** command (it cannot send, draft, move, flag, or delete) is
   declared `struct X: ReadOnlyCommand` and added to `ReadOnly.sharedCommands`.
   It then appears both as `iris x` and `iris ro x`.
-- A **write** command (such as `read`, `unread`, and `draft`) is declared
-  `struct X: AsyncParsableCommand` and added only to
+- A **write** command (such as `read`, `unread`, `draft`, and `download`)
+  is declared `struct X: AsyncParsableCommand` and added only to
   `Iris.configuration.subcommands`, after the read-only ones. Never
   mark it `ReadOnlyCommand`: `ReadOnly.commands` is typed
   `[any ReadOnlyCommand.Type]`, so the compiler keeps write commands out of
@@ -325,18 +365,35 @@ enforces it:
   behaves like `iris auth status`, and `iris ro auth login` fails to parse.
   `draft` is a write command, not a group; a future `drafts` group (`list`
   and `new`) would work the same way as `auth`.
+- A **write command whose ro form drops the options that write** cannot
+  be a `ReadOnlyCommand` either. `download` is one: `-o` writes a file
+  whose content and name come from the sender, and without `-o` it only
+  writes the bytes to stdout. Give it two types: the full command
+  (`Download`, with `-o`) in `Iris.configuration.subcommands` after the
+  shared commands, and a second type with the same `commandName`
+  (`ReadOnlyDownload`, without `-o`) in `ReadOnly.commands` (not in
+  `sharedCommands`). Both take one `@OptionGroup` (`DownloadArguments`, the
+  iris ID and the attachment ID) and call its one `run(outputPath:)`, so
+  they cannot drift; `iris ro download ... -o x` fails to parse. The reason:
+  under `ro`, iris writes nothing to disk itself. The bytes go to stdout, so
+  any file write is done by the caller's shell, inside the agent's sandbox
+  and permission rules, never by iris at a path the sandbox does not cover.
+  Its IMAP calls stay read calls in `MailReader` (EXAMINE and PEEK):
+  downloading never changes mail.
 - Keep write calls out of `MailReader` and out of the IMAP calls it uses: put
   them in `MailWriter` and `MailWriteClient` (see "The IMAP seam"), so a
   read-only command cannot reach them.
 
 `ReadOnlyCommandTests` checks that `ro` has only read-only commands, that
 every read-only command is in both places (also the read-only children of a
-group with both kinds), and that `iris ro <write command>` fails.
+group with both kinds), that the rest of `ro` is the read-only form of a
+top-level write command (`auth`, `download`), and that
+`iris ro <write command>` and `iris ro download -o` fail.
 
 ### Add an error
 
 Add a case to `IrisError` in its section (`// IMAP`, `// Message rendering`,
-`// Drafts`, `// Google sign-in`) with an `errorDescription` that says what the user can
+`// Drafts`, `// Attachments`, `// Google sign-in`) with an `errorDescription` that says what the user can
 do next. Map library errors to it in one place (for IMAP,
 `SwiftMailClient.irisError(for:command:account:accessToken:)`, with a test in
 `SwiftMailClientTests`; for Google's token endpoint,
@@ -385,6 +442,25 @@ account (`--account <name>`).
   Content-Type. SwiftMail sends a `text/calendar` part with a `method`
   parameter as an invite, not base64; a type from an extension (`.ics` is
   `text/calendar`) never has one.
+- **60 seconds for one part:** `download` fetches only the attachment, with
+  SwiftMail's `fetchPart(section:of:)` (`FetchMessagePartCommand.timeoutSeconds`,
+  fixed at 60, `SwiftMailClient.partTimeoutSeconds`). It never uses
+  `fetchRawMessage`: its 10 seconds fail large messages, and attachments are
+  what make a message large. A part-fetch timeout is
+  `attachmentDownloadTimedOut`; a BODYSTRUCTURE timeout (10 seconds, but a
+  few hundred bytes) is `serverTimedOut`. No chunked or ranged fetch is
+  built, so an attachment that takes more than 60 seconds fails
+  (`plans/roadmap.md`, "Known limits").
+- **message/rfc822 sections:** EMLParser (`show`) keeps a forwarded message
+  as one part and does not open it, so the part after it is `3`, not a
+  section inside it. SwiftMail's BODYSTRUCTURE conversion
+  (`[MessagePart](BodyStructure)`) keeps the message/rfc822 part at its own
+  section and then adds its inner parts (`2`, `2.1`, `2.2`; SwiftMail's
+  `rfc822InsideMultipartMixed` test pins this). So every ID that `show`
+  lists is in the structure, and `BODY[2]` gives the whole forwarded
+  message, an `.eml`. BODYSTRUCTURE also names a message/rfc822 part from
+  its subject (`Plans.eml`) when it has no filename, and falls back to the
+  Content-ID, so `download` may save a name that `show` does not list.
 - **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
   `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
   `MailClient` (and `FakeMailClient`) use wire names only. `MailReader`
@@ -395,11 +471,15 @@ account (`--account <name>`).
 - **Transport security:** iris passes `.startTLS` for port 143 and
   `.implicitTLS` for every other port. SwiftMail's `.automatic` would continue
   in plain text on 143 when the server has no STARTTLS.
-- **Read-only:** `MailReader` uses EXAMINE, never SELECT, and `BODY.PEEK[]`,
-  so reading never sets `\Seen`. Only `MailWriter` SELECTs, for the STORE.
+- **Read-only:** `MailReader` uses EXAMINE, never SELECT, and `BODY.PEEK[]`
+  (`BODY.PEEK[<section>]` for one part), so reading never sets `\Seen`.
+  Only `MailWriter` SELECTs, for the STORE.
 - **UIDs** belong to one mailbox. A missing UID gets an empty answer, not an
   error (FETCH returns nothing, and STORE answers OK); `MailReader` and
-  `MailWriter` turn that into `unknownMessage`.
+  `MailWriter` turn that into `unknownMessage`. SwiftMail's `fetchStructure`
+  throws instead (`fetchFailed`, "No body structure received"), so
+  `MailReader.attachment` fetches the envelope first, as `MailWriter` does
+  before STORE.
 - **SEARCH days:** SwiftMail takes a `Date` for SINCE and BEFORE and turns
   it into a day with the `Calendar` it is given. Its `IMAPCalendarDay`
   holds only the years 1900 to 2500, and SwiftMail stops the program

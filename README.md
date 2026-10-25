@@ -1,17 +1,18 @@
 # iris
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
-at a time, shows a full message, or a whole thread, as Markdown, and saves a
-reply as a draft. Reading changes nothing: iris opens mailboxes read-only and
-never marks a message as read. The only commands that change mail are
-`iris read` and `iris unread`, which mark one message as read or unread, and
-`iris draft`, which adds a new draft to the Drafts mailbox. iris never sends
-mail: you review and send the draft in your mail app.
+at a time, shows a full message, or a whole thread, as Markdown, downloads an
+attachment, and saves a reply as a draft. Reading changes nothing: iris
+opens mailboxes read-only and never marks a message as read. The only
+commands that change mail are `iris read` and `iris unread`, which mark one
+message as read or unread, and `iris draft`, which adds a new draft to the
+Drafts mailbox. iris never sends mail: you review and send the draft in your
+mail app.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. `check`, `mailboxes`, `list`,
 `show`, and `thread` were run against Zoho Mail on 2026-10-24; `read`,
-`unread`, and `draft` have not run against a real server yet, and Gmail and
-iCloud Mail are not checked yet.
+`unread`, `draft`, and `download` have not run against a real server yet,
+and Gmail and iCloud Mail are not checked yet.
 
 ## Install
 
@@ -187,12 +188,17 @@ client ID but no refresh token yet.
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
   source. Markdown and JSON include a `message:` URL that opens the message
-  in Apple Mail.
+  in Apple Mail, and list the attachments, each with its attachment ID.
 - `iris thread`: every message in the thread of one message, oldest first,
   by the iris ID of any message in it. Each message is shown in full, as
   `iris show` shows it, with its own iris ID (a reply you sent shows its
   Sent iris ID). Also as JSON or JSON Lines, or only the iris IDs, which
   downloads no message.
+- `iris download`: one attachment of a message, by its iris ID and the
+  attachment ID that `iris show` lists. It downloads only that part, decodes
+  it, and writes its bytes to stdout, or saves it in a new file with `-o`.
+  A forwarded message downloads as an `.eml` file. `iris ro download` is the
+  same without `-o`.
 - `iris read` and `iris unread`: mark one message, by its iris ID, as read
   or unread (they add or remove the `\Seen` flag). Each one sets the state,
   so running it again changes nothing. They print nothing when they succeed.
@@ -226,6 +232,10 @@ iris thread 'work/INBOX/4821'                 # the whole thread, oldest first
 iris thread 'work/INBOX/4821' --format json   # an array of `iris show --format json` objects
 iris thread 'work/INBOX/4821' --format jsonl  # the same objects, one per line
 iris thread 'work/INBOX/4821' --format id     # only the iris IDs, one per line
+
+iris download 'work/INBOX/4821' 2 > report.pdf     # attachment 2, as `iris show` lists it
+iris download 'work/INBOX/4821' 2 -o ~/Downloads   # saved in a folder, under its filename
+iris download 'work/INBOX/4821' 1.2 -o scan.png    # saved as scan.png
 
 iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
@@ -394,6 +404,45 @@ downloaded, so the URL works only when the account is also set up in Mail.
 When the same message ID is in more than one mailbox (INBOX and Sent, or two
 Gmail labels), Mail opens one of the copies.
 
+### Attachments
+
+`iris show` and `iris thread` list every part of a message that is not its
+body (file attachments, inline images, a forwarded message, the returned
+message of a bounce), each with its **attachment ID** first: the part's
+MIME section number, such as `2` or `1.2`.
+
+```text
+**Attachments:**
+- `2` report.pdf (application/pdf, 120 KB)
+- `3.2` photo.jpg (image/jpeg, 1.2 MB, inline)
+```
+
+In JSON it is the `attachmentID` key of each object in `attachments`. They
+never include the attachment's bytes; `--format raw` is the message source,
+unchanged.
+
+`iris download <iris-id> <attachment-id>` downloads that one attachment.
+It fetches only that part (not the whole message), decodes its base64 or
+quoted-printable, and does not mark the message as read:
+
+- Without `-o`, it writes the bytes to stdout, exactly, with nothing else,
+  so redirect stdout to a file: `iris download 'work/INBOX/4821' 2 >
+  report.pdf`. When stdout is a terminal, iris stops with an error instead
+  of filling the screen with binary.
+- With `-o <path>` (or `--output`), it saves a new file at that path, or,
+  when the path is a folder, in that folder under the attachment's
+  filename, and prints the saved path. It never overwrites a file: when
+  the file exists, it stops and says to pass `-o` with another path.
+
+The filename comes from the sender, so iris uses only its last part (after
+the last `/` or `\`), without control characters and without leading dots
+(so never a hidden file). With no usable filename, the file is
+`attachment-<attachment-id>`, such as `attachment-1.2`. A forwarded message
+(`message/rfc822`) downloads whole, as an `.eml` file.
+
+An attachment that does not download in 60 seconds fails (SwiftMail stops
+every part download then): try again on a faster connection.
+
 ### Drafts
 
 `iris draft <iris-id>` saves a reply to that message as a draft. It never
@@ -473,10 +522,15 @@ stdout and says on stderr where it saved the draft.
 
 `iris ro <command>` runs the same command as `iris <command>`, but only the
 read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
-`list`, `show`, `thread`, and `auth status`. Commands that change mail
-(`read`, `unread`, and `draft`) are not there, so `iris ro read ...` and
-`iris ro draft ...` fail. Neither is `iris auth login`, which opens a browser
-and writes `.env`.
+`list`, `show`, `thread`, `auth status`, and `download` without `-o`.
+Commands that change mail (`read`, `unread`, and `draft`) are not there, so
+`iris ro read ...` and `iris ro draft ...` fail. Neither is `iris auth login`,
+which opens a browser and writes `.env`.
+
+`iris ro download` has no `-o`, so `iris ro download ... -o x` fails: under
+`ro`, iris writes nothing to disk itself. The bytes go to stdout, so any
+file is written by your shell (`> report.pdf`), inside the agent's sandbox
+and permission rules, never by iris at a path the sandbox does not cover.
 
 To let an agent read your mail but never change it, allow only that prefix.
 For Claude Code, in `.claude/settings.json`:

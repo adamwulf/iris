@@ -16,6 +16,12 @@ describes them.
 - Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` once per
   provider (Gmail, iCloud), and once each with a wrong password and a wrong
   host.
+- Run `iris download` once per provider (Gmail, iCloud, Zoho), on a PDF, an
+  inline image, and a forwarded message (`message/rfc822`, which must save
+  as an `.eml`). Check that the filename from BODYSTRUCTURE matches the one
+  `iris show` lists: a name in RFC 2231 form (`filename*=`) may reach
+  SwiftMail undecoded, or not at all, depending on the server, and then the
+  file is `attachment-<id>`.
 - Run `iris read`, `iris unread`, and `iris draft` once per provider (Gmail,
   iCloud, Zoho). They have not run against a real server yet. For
   `iris draft`, check that the draft opens in Apple Mail as its own draft,
@@ -127,6 +133,12 @@ Next:
   revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. Large
   messages may fail. Fix: an upstream SwiftMail change that adds a timeout
   parameter, then a pin bump (ask Adam before opening an upstream PR).
+- `iris download` fetches one part with SwiftMail's `fetchPart`, whose
+  `FetchMessagePartCommand.timeoutSeconds` is hard-coded at 60 at the
+  pinned revision, so an attachment that takes more than 60 seconds to
+  download fails (`attachmentDownloadTimedOut`). A ranged fetch
+  (`BODY.PEEK[<section>]<offset.count>`, which SwiftMail has) would remove
+  the limit; it is not built.
 - A quoted non-Latin charset (`charset="koi8-r"`) is not recognized by
   SwiftMail's `declaredCharset`, so such a body may decode wrong. UTF-8 and
   Latin-1 are correct. Upstream: SwiftMail PR #268.
