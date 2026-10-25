@@ -34,4 +34,5 @@ struct Iris: AsyncParsableCommand {
 // The library cannot import ArgumentParser, so the CLI adds the conformances.
 extension OutputFormat: ExpressibleByArgument {}
 extension MessageOutputFormat: ExpressibleByArgument {}
+extension ThreadOutputFormat: ExpressibleByArgument {}
 extension BodyPreference: ExpressibleByArgument {}

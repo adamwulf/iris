@@ -10,7 +10,7 @@ final class ReadOnlyCommandTests: XCTestCase {
 
     func testRoHasOnlyTheReadOnlyCommands() {
         let roCommands = ReadOnly.configuration.subcommands
-        XCTAssertEqual(names(roCommands), ["accounts", "check", "mailboxes", "list", "show", "auth"])
+        XCTAssertEqual(names(roCommands), ["accounts", "check", "mailboxes", "list", "show", "thread", "auth"])
         for command in roCommands + ReadOnlyAuth.configuration.subcommands {
             XCTAssertTrue(command is any ReadOnlyCommand.Type, "\(command) is under `iris ro` but is not a ReadOnlyCommand")
         }
@@ -48,6 +48,18 @@ final class ReadOnlyCommandTests: XCTestCase {
         for command in [plain, readOnly] {
             XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
             XCTAssertEqual(command.format, .raw)
+        }
+    }
+
+    func testRoThreadParsesTheSameAsThread() throws {
+        let arguments = ["thread", "work/Sent/42", "--format", "json", "--body", "text"]
+        let plain = try XCTUnwrap(try Iris.parseAsRoot(arguments) as? ThreadCommand)
+        let readOnly = try XCTUnwrap(try Iris.parseAsRoot(["ro"] + arguments) as? ThreadCommand)
+
+        for command in [plain, readOnly] {
+            XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "Sent", uid: 42))
+            XCTAssertEqual(command.format, .json)
+            XCTAssertEqual(command.body, .text)
         }
     }
 

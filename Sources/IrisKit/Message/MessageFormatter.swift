@@ -10,6 +10,14 @@ public enum MessageOutputFormat: String, CaseIterable, Sendable {
     case raw
 }
 
+/// How `iris thread` prints the messages of a thread.
+public enum ThreadOutputFormat: String, CaseIterable, Sendable {
+    /// Each message as `iris show` prints it in Markdown, between separators.
+    case markdown
+    /// A JSON array of the objects that `iris show --format json` prints.
+    case json
+}
+
 /// Prints a `MessageDocument` the way `iris show` does.
 public enum MessageFormatter {
     /// The bytes `iris show` writes to stdout for the raw message `data`, read
@@ -35,6 +43,36 @@ public enum MessageFormatter {
             return Data((markdown(try await decoded(), timeZone: timeZone) + "\n").utf8)
         case .json:
             return Data((try json(try await decoded()) + "\n").utf8)
+        }
+    }
+
+    /// The line between two messages in a Markdown thread. A thematic break
+    /// like the `---` lines inside each message, but written differently, so a
+    /// reader of the plain text can tell the two apart.
+    static let threadSeparator = "* * *"
+
+    /// The bytes `iris thread` writes to stdout for `messages`, in their order:
+    /// each message decoded, with its iris ID, as `render(rawMessage:irisID:format:body:timeZone:)`
+    /// makes it. Markdown puts `threadSeparator` between the messages; JSON is
+    /// one array. Both end with a newline.
+    public static func render(
+        thread messages: [ThreadMessage],
+        format: ThreadOutputFormat,
+        body preference: BodyPreference = .auto,
+        timeZone: TimeZone = .current
+    ) async throws -> Data {
+        var documents: [MessageDocument] = []
+        for message in messages {
+            var document = try await MessageDecoder.decode(message.rawMessage, body: preference)
+            document.irisID = message.irisID
+            documents.append(document)
+        }
+        switch format {
+        case .markdown:
+            let markdowns = documents.map { markdown($0, timeZone: timeZone) }
+            return Data((markdowns.joined(separator: "\n\n\(threadSeparator)\n\n") + "\n").utf8)
+        case .json:
+            return Data((try OutputFormatter.json(documents, pretty: true) + "\n").utf8)
         }
     }
 

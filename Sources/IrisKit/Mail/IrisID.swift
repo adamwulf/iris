@@ -23,8 +23,14 @@ public struct IrisID: Sendable, Hashable, CustomStringConvertible {
     /// so both are stored in one form: one message always gets the same ID.
     public init(account: String, mailbox: String, uid: UInt32) {
         self.account = account.lowercased()
-        self.mailbox = mailbox.lowercased() == "inbox" ? MailReader.defaultMailbox : mailbox
+        self.mailbox = Self.canonicalMailbox(mailbox)
         self.uid = uid
+    }
+
+    /// `mailbox` as an iris ID holds it: INBOX in any case is `INBOX`, and
+    /// other names stay as they are.
+    static func canonicalMailbox(_ mailbox: String) -> String {
+        mailbox.lowercased() == "inbox" ? MailReader.defaultMailbox : mailbox
     }
 
     /// Reads `<account>/<mailbox>/<UID>`. Throws `invalidIrisID` when the

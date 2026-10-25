@@ -10,8 +10,10 @@ actor FakeMailClient: MailWriteClient {
         case listMailboxes
         case examine(String)
         case searchUIDs(MessageFilter)
+        case searchHeaders(fields: [String], values: [String])
         case fetchEnvelopes(ClosedRange<Int>)
         case fetchEnvelopesByUID([UInt32])
+        case fetchThreadHeaders([UInt32])
         case fetchRawMessage(UInt32)
         case select(String)
         case setSeen(Bool, UInt32)
@@ -20,7 +22,68 @@ actor FakeMailClient: MailWriteClient {
 
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
-        case login, capabilities, listMailboxes, examine, searchUIDs, fetchEnvelopes, fetchRawMessage, select, setSeen
+        case login, capabilities, listMailboxes, examine, searchUIDs, searchHeaders, fetchEnvelopes, fetchThreadHeaders,
+             fetchRawMessage, select, setSeen
+    }
+
+    /// One message in a fake mailbox, for `thread`: the headers that the header
+    /// search matches and `fetchThreadHeaders` returns, and the raw message
+    /// that `fetchRawMessage` returns.
+    struct Message {
+        var messageID: String?
+        var inReplyTo: String?
+        var references: [String] = []
+        var subject: String?
+        var date: Date?
+        var internalDate: Date?
+
+        /// The message as RFC 822 text with these headers and a one-line body.
+        var raw: Data {
+            var lines = ["From: Jane Doe <jane@example.com>", "To: me@example.com"]
+            if let subject {
+                lines.append("Subject: \(subject)")
+            }
+            if let date {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.timeZone = TimeZone(secondsFromGMT: 0)
+                formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
+                lines.append("Date: \(formatter.string(from: date))")
+            }
+            if let messageID {
+                lines.append("Message-ID: \(messageID)")
+            }
+            if let inReplyTo {
+                lines.append("In-Reply-To: \(inReplyTo)")
+            }
+            if !references.isEmpty {
+                lines.append("References: \(references.joined(separator: " "))")
+            }
+            lines += ["Content-Type: text/plain; charset=utf-8", "", "Body of \(messageID ?? "a message").", ""]
+            return Data(lines.joined(separator: "\r\n").utf8)
+        }
+
+        /// The text of a header field, as the header search reads it.
+        func header(_ field: String) -> String? {
+            switch field.lowercased() {
+            case "message-id": return messageID
+            case "in-reply-to": return inReplyTo
+            case "references": return references.isEmpty ? nil : references.joined(separator: " ")
+            default: return nil
+            }
+        }
+
+        func threadHeaders(uid: UInt32) -> ThreadHeaders {
+            ThreadHeaders(
+                uid: uid,
+                messageID: messageID,
+                inReplyTo: inReplyTo,
+                references: references,
+                subject: subject,
+                date: date,
+                internalDate: internalDate
+            )
+        }
     }
 
     private(set) var calls: [Call] = []
@@ -32,7 +95,10 @@ actor FakeMailClient: MailWriteClient {
     private let searchResult: [UInt32]
     private let envelopes: [MessageEnvelope]
     private let rawMessages: [UInt32: Data]
+    private let mailboxMessages: [String: [UInt32: Message]]
     private let errors: [Method: any Error]
+    /// The wire name of the mailbox that the last EXAMINE opened.
+    private var openMailbox: String?
 
     /// Mailbox names are wire names (modified UTF-7), as in `MailClient`:
     /// `mailboxes` holds them, `statuses` is keyed by them, and `examine` and
@@ -43,6 +109,12 @@ actor FakeMailClient: MailWriteClient {
     /// is asked for, in the order given. `fetchRawMessage` returns empty data
     /// for a UID that is not in `rawMessages`, as SwiftMail does. `accountName`
     /// goes in the errors the fake throws itself.
+    ///
+    /// `mailboxMessages` holds whole mailboxes for `thread`, by wire name and
+    /// UID. A mailbox in it can be examined without a status. In such a
+    /// mailbox the header search matches like a server (the text inside the
+    /// field, ignoring case), `fetchThreadHeaders` returns the messages' headers,
+    /// and `fetchRawMessage` returns their raw text.
     init(
         accountName: String = "work",
         capabilities: [String] = [],
@@ -51,6 +123,7 @@ actor FakeMailClient: MailWriteClient {
         searchResult: [UInt32] = [],
         envelopes: [MessageEnvelope] = [],
         rawMessages: [UInt32: Data] = [:],
+        mailboxMessages: [String: [UInt32: Message]] = [:],
         errors: [Method: any Error] = [:]
     ) {
         self.accountName = accountName
@@ -60,6 +133,7 @@ actor FakeMailClient: MailWriteClient {
         self.searchResult = searchResult
         self.envelopes = envelopes
         self.rawMessages = rawMessages
+        self.mailboxMessages = mailboxMessages
         self.errors = errors
     }
 
@@ -108,12 +182,40 @@ actor FakeMailClient: MailWriteClient {
 
     func examine(mailbox: String) async throws -> MailboxStatus {
         try record(.examine(mailbox), .examine)
-        return try status(of: mailbox)
+        if let messages = mailboxMessages[mailbox] {
+            openMailbox = mailbox
+            return statuses[mailbox] ?? MailboxStatus(
+                messageCount: messages.count, uidValidity: 7, uidNext: (messages.keys.max() ?? 0) + 1
+            )
+        }
+        let status = try status(of: mailbox)
+        openMailbox = mailbox
+        return status
     }
 
     func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32] {
         try record(.searchUIDs(filter), .searchUIDs)
         return searchResult
+    }
+
+    func searchUIDs(headers fields: [String], containingAny values: [String]) async throws -> [UInt32] {
+        try record(.searchHeaders(fields: fields, values: values), .searchHeaders)
+        return openMessages.filter { _, message in
+            fields.contains { field in
+                guard let text = message.header(field) else { return false }
+                return values.contains { text.range(of: $0, options: .caseInsensitive) != nil }
+            }
+        }.map(\.key)
+    }
+
+    func fetchThreadHeaders(uids: [UInt32]) async throws -> [ThreadHeaders] {
+        try record(.fetchThreadHeaders(uids), .fetchThreadHeaders)
+        return uids.compactMap { uid in openMessages[uid]?.threadHeaders(uid: uid) }
+    }
+
+    /// The messages of the open mailbox in `mailboxMessages`.
+    private var openMessages: [UInt32: Message] {
+        openMailbox.flatMap { mailboxMessages[$0] } ?? [:]
     }
 
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope] {
@@ -128,6 +230,9 @@ actor FakeMailClient: MailWriteClient {
 
     func fetchRawMessage(uid: UInt32) async throws -> Data {
         try record(.fetchRawMessage(uid), .fetchRawMessage)
+        if let message = openMessages[uid] {
+            return message.raw
+        }
         return rawMessages[uid] ?? Data()
     }
 

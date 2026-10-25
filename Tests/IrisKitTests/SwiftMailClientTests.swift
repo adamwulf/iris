@@ -294,10 +294,22 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.Command.list.name, "LIST")
         XCTAssertEqual(SwiftMailClient.Command.examine(mailbox: "INBOX").name, "EXAMINE")
         XCTAssertEqual(SwiftMailClient.Command.search.name, "SEARCH")
+        XCTAssertEqual(SwiftMailClient.Command.headerSearch.name, "SEARCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchEnvelopes.name, "FETCH")
+        XCTAssertEqual(SwiftMailClient.Command.fetchThreadHeaders.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchRawMessage.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.select(mailbox: "INBOX").name, "SELECT")
         XCTAssertEqual(SwiftMailClient.Command.store.name, "STORE")
+    }
+
+    func testRefusedHeaderSearchIsAServerErrorNotAFilterError() {
+        // The thread search has no filter options, so the filter advice in searchFailed does not apply.
+        XCTAssertEqual(
+            irisError(IMAPError.commandFailed("BAD Could not parse command secret"), .headerSearch),
+            .serverError(account: "work", command: "SEARCH", reason: "Command failed: BAD Could not parse command <password>")
+        )
+        XCTAssertEqual(irisError(IMAPError.timeout, .headerSearch), .serverTimedOut(account: "work", command: "SEARCH"))
+        XCTAssertEqual(irisError(IMAPError.timeout, .fetchThreadHeaders), .serverTimedOut(account: "work", command: "FETCH"))
     }
 
     // MARK: - Search
@@ -329,6 +341,39 @@ final class SwiftMailClientTests: XCTestCase {
         assertCriteria(MessageFilter(from: "Jürgen"), [.from("Jürgen")])
         let since = try CalendarDay(parsing: "2026-10-01")
         assertCriteria(MessageFilter(since: since), [.since(since.start)])
+    }
+
+    func testHeaderSearchForOneFieldAndOneValueIsOneHeaderKey() {
+        XCTAssertEqual(
+            "\(SwiftMailClient.headerSearchCriteria(fields: ["Message-ID"], values: ["<a@x>"]))",
+            "\([SearchCriteria.header("Message-ID", "<a@x>")])"
+        )
+    }
+
+    func testHeaderSearchJoinsEveryFieldAndValueWithABalancedOr() {
+        let criteria = SwiftMailClient.headerSearchCriteria(fields: ["Message-ID", "References"], values: ["<a@x>", "<b@x>"])
+        let expected: SearchCriteria = .or(
+            .or(.header("Message-ID", "<a@x>"), .header("References", "<a@x>")),
+            .or(.header("Message-ID", "<b@x>"), .header("References", "<b@x>"))
+        )
+        XCTAssertEqual("\(criteria)", "\([expected])")
+    }
+
+    func testHeaderSearchSplitsTheValuesIntoChunks() {
+        let size = SwiftMailClient.headerSearchChunkSize
+        let values = (1...(2 * size + 1)).map { "<\($0)@x>" }
+
+        let criteria = SwiftMailClient.headerSearchCriteria(fields: ["Message-ID"], values: values)
+
+        XCTAssertEqual(criteria.count, 3, "one SEARCH per chunk of \(size) values")
+        XCTAssertEqual("\(criteria[2])", "\(SearchCriteria.header("Message-ID", values[2 * size]))")
+        for (index, chunk) in criteria.enumerated() {
+            let described = "\(chunk)"
+            let chunkValues = values[(index * size)..<min((index + 1) * size, values.count)]
+            for value in chunkValues {
+                XCTAssertTrue(described.contains("\"\(value)\""), "\(value) in chunk \(index)")
+            }
+        }
     }
 
     // MARK: - Store
@@ -399,5 +444,44 @@ final class SwiftMailClientTests: XCTestCase {
         let sender = try XCTUnwrap(MessageEnvelope(swiftMail: info)?.from)
         XCTAssertEqual(sender.name, "Doe, Jane")
         XCTAssertEqual(sender.address, "jane@example.com")
+    }
+
+    // MARK: - Thread headers
+
+    func testThreadHeadersKeepTheMessageIDsWithAngleBrackets() throws {
+        let date = Date(timeIntervalSince1970: 1_000_000)
+        let received = Date(timeIntervalSince1970: 1_000_060)
+        let info = MessageInfo(
+            sequenceNumber: SequenceNumber(3),
+            uid: UID(103),
+            subject: "Re: Budget",
+            date: date,
+            internalDate: received,
+            messageId: MessageID("<c@example.com>"),
+            inReplyTo: MessageID("<b@example.com>"),
+            references: [MessageID("<a@example.com>"), MessageID("<b@example.com>")].compactMap { $0 }
+        )
+
+        XCTAssertEqual(ThreadHeaders(swiftMail: info), ThreadHeaders(
+            uid: 103,
+            messageID: "<c@example.com>",
+            inReplyTo: "<b@example.com>",
+            references: ["<a@example.com>", "<b@example.com>"],
+            subject: "Re: Budget",
+            date: date,
+            internalDate: received
+        ))
+    }
+
+    func testThreadHeadersWithoutTheHeadersAreEmpty() throws {
+        let headers = try XCTUnwrap(ThreadHeaders(swiftMail: MessageInfo(sequenceNumber: SequenceNumber(3), uid: UID(103))))
+        XCTAssertNil(headers.messageID)
+        XCTAssertNil(headers.inReplyTo)
+        XCTAssertEqual(headers.references, [])
+        XCTAssertNil(headers.subject)
+    }
+
+    func testThreadHeadersWithoutAUIDAreLeftOut() {
+        XCTAssertNil(ThreadHeaders(swiftMail: MessageInfo(sequenceNumber: SequenceNumber(3))))
     }
 }

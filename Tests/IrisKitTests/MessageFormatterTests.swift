@@ -142,6 +142,79 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertTrue(String(decoding: html, as: UTF8.self).contains(#""body" : "html **text**""#))
     }
 
+    // MARK: - Threads
+
+    private let thread = [
+        ThreadMessage(
+            irisID: IrisID(account: "work", mailbox: "INBOX", uid: 7),
+            rawMessage: Data("Subject: Budget\r\nMessage-ID: <a@example.com>\r\n\r\nFirst\r\n".utf8)
+        ),
+        ThreadMessage(
+            irisID: IrisID(account: "work", mailbox: "Sent", uid: 3),
+            rawMessage: Data("Subject: Re: Budget\r\nMessage-ID: <b@example.com>\r\n\r\nSecond\r\n".utf8)
+        ),
+    ]
+
+    private func documents(_ messages: [ThreadMessage], body: BodyPreference = .auto) async throws -> [MessageDocument] {
+        var documents: [MessageDocument] = []
+        for message in messages {
+            var document = try await MessageDecoder.decode(message.rawMessage, body: body)
+            document.irisID = message.irisID
+            documents.append(document)
+        }
+        return documents
+    }
+
+    func testRenderThreadMarkdownShowsEachMessageInOrderBetweenSeparators() async throws {
+        let output = try await MessageFormatter.render(thread: thread, format: .markdown, timeZone: chicago)
+
+        let expected = try await documents(thread).map { MessageFormatter.markdown($0, timeZone: chicago) }
+        XCTAssertEqual(String(decoding: output, as: UTF8.self), expected.joined(separator: "\n\n* * *\n\n") + "\n")
+        let text = String(decoding: output, as: UTF8.self)
+        let first = try XCTUnwrap(text.range(of: "**Iris ID:** `work/INBOX/7`"))
+        let second = try XCTUnwrap(text.range(of: "**Iris ID:** `work/Sent/3`"))
+        XCTAssertLessThan(first.lowerBound, second.lowerBound)
+    }
+
+    func testRenderThreadMarkdownForOneMessageHasNoSeparator() async throws {
+        let output = try await MessageFormatter.render(thread: [thread[0]], format: .markdown, timeZone: chicago)
+
+        let expected = try await documents([thread[0]]).map { MessageFormatter.markdown($0, timeZone: chicago) }
+        XCTAssertEqual(String(decoding: output, as: UTF8.self), expected[0] + "\n")
+    }
+
+    func testRenderThreadJSONIsAnArrayOfTheShowObjectsInOrder() async throws {
+        let output = try await MessageFormatter.render(thread: thread, format: .json)
+
+        let expected = try OutputFormatter.json(try await documents(thread), pretty: true) + "\n"
+        XCTAssertEqual(String(decoding: output, as: UTF8.self), expected)
+        let decoded = try JSONSerialization.jsonObject(with: output) as? [[String: Any]]
+        XCTAssertEqual(decoded?.compactMap { $0["irisID"] as? String }, ["work/INBOX/7", "work/Sent/3"])
+        XCTAssertEqual(decoded?.compactMap { $0["messageID"] as? String }, ["<a@example.com>", "<b@example.com>"])
+    }
+
+    func testRenderThreadPassesTheBodyPreference() async throws {
+        let alternative = ThreadMessage(irisID: irisID, rawMessage: Data("""
+        Subject: Both\r
+        Content-Type: multipart/alternative; boundary="b"\r
+        \r
+        --b\r
+        Content-Type: text/plain\r
+        \r
+        plain *text*\r
+        --b\r
+        Content-Type: text/html\r
+        \r
+        <p>html <b>text</b></p>\r
+        --b--\r
+
+        """.utf8))
+        let text = try await MessageFormatter.render(thread: [alternative], format: .json, body: .text)
+        let html = try await MessageFormatter.render(thread: [alternative], format: .json, body: .html)
+        XCTAssertTrue(String(decoding: text, as: UTF8.self).contains(#""body" : "plain *text*""#))
+        XCTAssertTrue(String(decoding: html, as: UTF8.self).contains(#""body" : "html **text**""#))
+    }
+
     func testJSONIsDeterministicAndHasNoAttachmentBytes() throws {
         XCTAssertEqual(try MessageFormatter.json(document), """
         {

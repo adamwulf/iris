@@ -23,10 +23,20 @@ protocol MailClient: Sendable {
     /// The UIDs of the messages in the open mailbox that match every condition
     /// of `filter` (UID SEARCH), in any order. `filter` is not empty.
     func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32]
+    /// The UIDs of the messages in the open mailbox that have any of `values`
+    /// in any of the header `fields` (UID SEARCH with HEADER keys joined by
+    /// OR), in any order. The server matches text inside the header and ignores
+    /// case. `fields` and `values` are not empty.
+    func searchUIDs(headers fields: [String], containingAny values: [String]) async throws -> [UInt32]
     /// UID, flags, envelope, and internal date of the messages with these sequence numbers.
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope]
     /// The same for the messages with these UIDs (UID FETCH). `uids` is not empty.
     func fetchEnvelopes(uids: [UInt32]) async throws -> [MessageEnvelope]
+    /// The headers that tie the messages with these UIDs to their threads,
+    /// fetched with `BODY.PEEK[HEADER.FIELDS (...)]` so `\Seen` is never set,
+    /// without the bodies. A UID that the open mailbox does not have is left
+    /// out. `uids` is not empty.
+    func fetchThreadHeaders(uids: [UInt32]) async throws -> [ThreadHeaders]
     /// The raw RFC 822 bytes of one message, fetched with `BODY.PEEK[]` so `\Seen`
     /// is never set. Empty when the open mailbox has no message with this UID.
     func fetchRawMessage(uid: UInt32) async throws -> Data
@@ -83,4 +93,32 @@ struct MessageEnvelope: Sendable, Equatable {
     let date: Date?
     /// When the server received the message (INTERNALDATE).
     let internalDate: Date?
+}
+
+/// The headers of one message that `iris thread` follows, as FETCH (UID
+/// INTERNALDATE and the header fields) reports them. Message IDs have angle
+/// brackets, for example `<abc@example.com>`.
+struct ThreadHeaders: Sendable, Equatable {
+    let uid: UInt32
+    /// The `Message-ID` header. Nil when the message has none.
+    let messageID: String?
+    /// The first message ID in `In-Reply-To`.
+    let inReplyTo: String?
+    /// The message IDs in `References`, oldest first.
+    let references: [String]
+    let subject: String?
+    /// The `Date:` header, set by the sender.
+    let date: Date?
+    /// When the server received the message (INTERNALDATE).
+    let internalDate: Date?
+
+    /// Every message ID that this message names: its own, the one it replies
+    /// to, and its references, each once, in that order.
+    var linkedMessageIDs: [String] {
+        var ids: [String] = []
+        for id in [messageID, inReplyTo].compactMap({ $0 }) + references where !ids.contains(id) {
+            ids.append(id)
+        }
+        return ids
+    }
 }

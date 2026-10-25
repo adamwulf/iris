@@ -14,7 +14,7 @@ struct ReadOnly: AsyncParsableCommand {
     /// `ro`. The type makes the compiler reject a command that does not
     /// conform to `ReadOnlyCommand`.
     static let sharedCommands: [any ReadOnlyCommand.Type] = [
-        Accounts.self, Check.self, Mailboxes.self, List.self, Show.self,
+        Accounts.self, Check.self, Mailboxes.self, List.self, Show.self, ThreadCommand.self,
     ]
 
     /// Everything under `ro`: the shared commands, then the read-only form of

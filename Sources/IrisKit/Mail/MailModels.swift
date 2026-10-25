@@ -199,6 +199,17 @@ public struct MessagePage: Sendable, Equatable {
     }
 }
 
+/// One message of `iris thread`: its iris ID and its raw RFC 822 bytes.
+public struct ThreadMessage: Sendable, Equatable {
+    public let irisID: IrisID
+    public let rawMessage: Data
+
+    init(irisID: IrisID, rawMessage: Data) {
+        self.irisID = irisID
+        self.rawMessage = rawMessage
+    }
+}
+
 /// What `iris check` reports. It never holds the password.
 public struct AccountCheck: Sendable, Equatable {
     public let account: String
