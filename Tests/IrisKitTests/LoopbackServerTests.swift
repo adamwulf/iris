@@ -8,6 +8,8 @@ final class LoopbackServerTests: XCTestCase {
     func testTheRealListenerAnswersOn127001AndDeliversOnlyTheRedirect() async throws {
         let server = LoopbackServer()
         let port = try await server.start()
+        // An early failure must not leave the listener open.
+        defer { server.stop() }
         XCTAssertNotEqual(port, 0)
 
         let configuration = URLSessionConfiguration.ephemeral
@@ -44,6 +46,7 @@ final class LoopbackServerTests: XCTestCase {
             XCTAssertEqual(error as? LoopbackError, .timedOut(seconds: 2))
         }
 
+        // stop() is safe to call more than once (the defer calls it a third time).
         server.stop()
         server.stop()
     }
