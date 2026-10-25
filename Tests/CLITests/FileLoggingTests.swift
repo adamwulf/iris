@@ -29,6 +29,7 @@ final class FileLoggingTests: XCTestCase {
         XCTAssertEqual(CLI.commandPath(for: Auth.Status.self), "auth status")
         XCTAssertEqual(CLI.commandPath(for: Auth.Login.self), "auth login")
         XCTAssertEqual(CLI.commandPath(for: Draft.Reply.self), "draft reply")
+        XCTAssertEqual(CLI.commandPath(for: Draft.New.self), "draft new")
         XCTAssertEqual(CLI.commandPath(for: Draft.Update.self), "draft update")
         XCTAssertEqual(CLI.commandPath(for: ThreadCommand.self), "thread")
     }

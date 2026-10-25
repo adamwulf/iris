@@ -24,6 +24,7 @@ final class FileLogPolicyTests: XCTestCase {
             (.htmlNotConverted(reason: sensitive, hasTextPart: true), "html_not_converted"),
             (.draftRefused(account: sensitive, mailbox: sensitive, reason: sensitive), "draft_refused"),
             (.draftNotPreserved(reason: sensitive), "draft_not_preserved"),
+            (.draftRecipientInvalid(option: sensitive, value: sensitive), "draft_recipient_invalid"),
             (.draftBodyNotRead(source: sensitive, reason: sensitive), "draft_body_not_read"),
             (.attachmentNotSaved(path: sensitive, reason: sensitive), "attachment_not_saved"),
             (.invalidIrisID(sensitive), "invalid_iris_id"),
