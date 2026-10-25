@@ -1,0 +1,68 @@
+import Foundation
+
+/// Reads the reply of `iris draft`, in Markdown, from its one source: the
+/// argument, a file (`-F <path>`), or stdin (`-F -`, or no argument and no
+/// `-F` while stdin is not a terminal).
+public enum DraftBody {
+    /// The `-F` value that reads stdin, as in `git commit -F -`.
+    public static let stdinPath = "-"
+
+    /// The reply from `argument`, else from the file at `path` (stdin for `-`),
+    /// else from stdin when it is not a terminal. Throws when both `argument`
+    /// and `path` are given, when there is no source, and when the reply cannot
+    /// be read, is not UTF-8, or is empty or only whitespace.
+    ///
+    /// - Parameters:
+    ///   - stdinIsTerminal: Whether stdin is a terminal. Without an argument or
+    ///     `-F`, a terminal is an error, so iris never waits silently for typing.
+    ///     `-F -` reads a terminal too, after a log line that says how to end the text.
+    ///   - readStdin: Reads all of stdin. Tests pass a stub.
+    ///   - readFile: Reads the file at a path. Tests pass a stub.
+    public static func read(
+        argument: String?,
+        file path: String?,
+        stdinIsTerminal: Bool,
+        readStdin: () throws -> Data = { try FileHandle.standardInput.readToEnd() ?? Data() },
+        readFile: (String) throws -> Data = { try Data(contentsOf: URL(fileURLWithPath: $0)) }
+    ) throws -> String {
+        switch (argument, path) {
+        case (_?, _?):
+            throw IrisError.draftBodyGivenTwice
+        case (let argument?, nil):
+            return try nonEmpty(argument, source: "the argument")
+        case (nil, let path?) where path == stdinPath:
+            if stdinIsTerminal {
+                IrisLog.log("Reading the reply from stdin; end it with Ctrl-D.")
+            }
+            return try text(of: readStdin, source: "stdin")
+        case (nil, let path?):
+            return try text(of: { try readFile(path) }, source: "the file \"\(path)\"")
+        case (nil, nil):
+            guard !stdinIsTerminal else {
+                throw IrisError.draftBodyMissing
+            }
+            return try text(of: readStdin, source: "stdin")
+        }
+    }
+
+    /// The UTF-8 text that `read` gives, checked by `nonEmpty(_:source:)`.
+    private static func text(of read: () throws -> Data, source: String) throws -> String {
+        let data: Data
+        do {
+            data = try read()
+        } catch {
+            throw IrisError.draftBodyNotRead(source: source, reason: error.localizedDescription)
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw IrisError.draftBodyNotUTF8(source: source)
+        }
+        return try nonEmpty(text, source: source)
+    }
+
+    private static func nonEmpty(_ text: String, source: String) throws -> String {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw IrisError.draftBodyEmpty(source: source)
+        }
+        return text
+    }
+}
