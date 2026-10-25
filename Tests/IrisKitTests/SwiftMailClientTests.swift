@@ -736,6 +736,27 @@ final class SwiftMailClientTests: XCTestCase {
         ])
     }
 
+    /// A CONDSTORE server (Zoho advertises it) can send `* n FETCH (UID x
+    /// MODSEQ (...) FLAGS (...))` for the same message before the answer.
+    func testPartStructuresSkipAnUnsolicitedFetchForTheSameMessage() {
+        let flagChange = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), flags: [.seen])
+        let answer = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), parts: [
+            MessagePart(sectionString: "1", contentType: "text/plain", encoding: "7BIT", size: 10),
+            MessagePart(sectionString: "2", contentType: "application/pdf", encoding: "BASE64", size: 400),
+        ])
+
+        let expected = [
+            PartStructure(id: AttachmentID(components: [1]), encoding: "7BIT", size: 10),
+            PartStructure(id: AttachmentID(components: [2]), encoding: "BASE64", size: 400),
+        ]
+        XCTAssertEqual(SwiftMailClient.partStructures(in: [flagChange, answer], uid: 150), expected)
+        XCTAssertEqual(SwiftMailClient.partStructures(in: [answer, flagChange], uid: 150), expected)
+        XCTAssertEqual(
+            SwiftMailClient.partStructures(in: [flagChange], uid: 150), [],
+            "answers without a BODYSTRUCTURE fall back to the first: the message exists, its parts are unknown"
+        )
+    }
+
     func testPartStructuresOfAMissingUIDAreNil() {
         let other = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(151), parts: [
             MessagePart(sectionString: "1", contentType: "text/plain"),

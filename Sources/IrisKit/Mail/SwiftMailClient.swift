@@ -289,13 +289,17 @@ struct SwiftMailClient: MailWriteClient {
         return Self.partStructures(in: infos, uid: uid)
     }
 
-    /// The parts that FETCH (UID BODYSTRUCTURE) gave for `uid`, from the one
-    /// answer with that UID: an unsolicited FETCH for another message (such as
-    /// a flag change) is skipped. Nil when no answer has the UID, so the open
-    /// mailbox has no such message. Empty when the answer has no BODYSTRUCTURE
-    /// that SwiftMail could read.
+    /// The parts that FETCH (UID BODYSTRUCTURE) gave for `uid`, from the
+    /// first answer with that UID that has parts, else the first answer with
+    /// that UID. An unsolicited FETCH for another message (such as a flag
+    /// change) is skipped, and so is one for this message without a
+    /// BODYSTRUCTURE, such as a CONDSTORE server's `* n FETCH (UID x MODSEQ
+    /// (...) FLAGS (...))` before the answer. Nil when no answer has the UID,
+    /// so the open mailbox has no such message. Empty when no answer with the
+    /// UID has a BODYSTRUCTURE that SwiftMail could read.
     static func partStructures(in infos: [MessageInfo], uid: UInt32) -> [PartStructure]? {
-        infos.first { $0.uid?.value == uid }.map { info in
+        let answers = infos.filter { $0.uid?.value == uid }
+        return (answers.first { !$0.parts.isEmpty } ?? answers.first).map { info in
             info.parts.map(PartStructure.init(swiftMail:))
         }
     }

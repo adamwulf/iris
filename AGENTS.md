@@ -104,8 +104,10 @@ SwiftMail's `fetchMessageInfosBulk(using:options: [.bodyStructure])`, not
 its `fetchStructure`, which fails for a missing UID and sends a second
 FETCH for filenames. It gives `[PartStructure]?` (the section, the
 transfer encoding, and the transfer-encoded size of each part;
-`SwiftMailClient.partStructures(in:uid:)` takes them from the answer with
-that UID, skipping an unsolicited FETCH): nil for a missing message, which
+`SwiftMailClient.partStructures(in:uid:)` takes them from the first answer
+with that UID that has parts, so an unsolicited FETCH for another message,
+or for this one without a BODYSTRUCTURE (a CONDSTORE `MODSEQ`/`FLAGS`
+answer), is skipped): nil for a missing message, which
 is `unknownMessage`, so it is also the existence check. Empty parts mean
 the answer had no BODYSTRUCTURE that SwiftMail could read (every message
 has a part): `attachmentStructureMissing`, not a wrong attachment ID. A
