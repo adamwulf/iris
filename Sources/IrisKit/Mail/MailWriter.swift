@@ -72,9 +72,10 @@ public struct MailWriter: Sendable {
         timeZone: TimeZone = .current
     ) async throws -> SavedDraft {
         let reader = MailReader(account: account, makeClient: { makeClient($0) })
-        // Downloaded and decoded as `show` and `thread` do it.
+        // Downloaded and decoded as `show` and `thread` do it, but whole
+        // (`--full`): a reply quotes the original with its history, as mail apps do.
         let original = try await MessageFormatter.document(
-            message: try await reader.message(id), irisID: id, body: .auto
+            message: try await reader.message(id), irisID: id, body: .auto, full: true
         )
         let draft = ReplyComposer.reply(
             to: original,

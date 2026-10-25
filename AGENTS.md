@@ -50,10 +50,12 @@ Sources/IrisKit/
                ThreadSubject (the subject rule of `thread`)
   Message/     MessageDecoder (raw RFC 822, or a large message's outline and
                body parts -> MessageDocument), FlowedText,
-               BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON of a
-               DownloadedMessage, and a thread; `--format raw` is the bytes
-               of `MailReader.rawMessage` unchanged), AppleMailURL (the
-               message: URL from the Message-ID header),
+               BodyCleanup, QuotedHistory (cuts the quoted history and the
+               signature at the end of a body), HeaderDate, MessageFormatter
+               (Markdown/JSON of a DownloadedMessage, and a thread;
+               `--format raw` is the bytes of `MailReader.rawMessage`
+               unchanged), AppleMailURL (the message: URL from the
+               Message-ID header),
                TransferEncoding (base64 and quoted-printable of one downloaded part)
   Draft/       DraftBody (the reply's one source: argument, -F, stdin),
                DraftAttachment (a file of --attach: name, MIME type, bytes),
@@ -337,7 +339,7 @@ for the user to save.
   the message in Apple Mail. `MessageDocument` makes it from `messageID` with
   `AppleMailURL`, so it is nil when there is no `Message-ID` header.
   Markdown and JSON download a large message in parts
-  (`MessageFormatter.render(message:irisID:format:body:timeZone:)` takes the
+  (`MessageFormatter.render(message:irisID:format:body:full:timeZone:)` takes the
   `DownloadedMessage`); `raw` is always the whole message, so a large one can
   still time out.
 - Every attachment that `show` and `thread` list (`MessageAttachment`) has
@@ -372,9 +374,41 @@ for the user to save.
   `.withoutOverwriting` (O_EXCL, which also refuses a symbolic link) is the
   real guard when the file is created. Both give `attachmentFileExists`,
   which says to pass another `-o`.
+- `show` and `thread` hide the quoted history and the signature at the end
+  of each body; `--full` (the `full` parameter of `MessageDecoder.decode`
+  and both `MessageFormatter.render`s) keeps them. `QuotedHistory` holds the
+  rules: first the HTML elements that mail apps mark (in the DOM, before the
+  Markdown conversion, so `MessageDecoder`'s test seam is the HTML parser,
+  `parsingHTMLWith`), then the text markers in the text or Markdown. It cuts
+  only the end of a body, and never a forward: a `Fwd:`/`Fw:` subject
+  (`QuotedHistory.isForward`, checked by `MessageDecoder.decode`), an HTML
+  quote that starts with a forward marker (unless the subject is a reply's,
+  `QuotedHistory.isReply`: then it is the quoted forward the reply
+  answers), or a forward marker line above the text's history
+  (`TextTrim.forward`). The HTML rule holds only for the DOM pass: the text
+  pass still cuts a quoted forward under an English attribution, which
+  marks a reply. Two more facts go from the DOM pass to the text pass:
+  `Removal.keptAnswers`, set where the walk stops at the sender's text
+  inside a quote container (not at a forward, `keptForward`, or a quote it
+  does not know), after which a signature does not start the cut; and
+  `zohoHeaderBlocks`, read after the DOM pass: the Zoho headers left there
+  (which may have the sender's text under them) read as Outlook's header
+  block in English, so the text pass ignores that many of the last header
+  blocks (`zohoHeaders`). They are the last ones, because what follows a
+  Zoho container is quoted or a footer; an Outlook header above them
+  still cuts. The text pass's signature rule also keeps a quoted
+  forward under the signature, which the DOM pass kept on purpose. It keeps a body that would be
+  left empty, and the decoder parses the HTML again when the DOM pass cut
+  something that the text pass then calls a forward or all history.
+  `MessageDocument.bodyTrimmed` says
+  whether it cut (JSON `bodyTrimmed`), and Markdown then prints
+  `MessageFormatter.trimmedNote` under the body. The trimming is in the
+  decoder's shared document step, so a message downloaded in parts is
+  trimmed too. `draft` decodes the original with `full: true`: a reply
+  quotes the original with its history, as mail apps do.
 - `thread` takes `--format markdown|json|jsonl|id` (`ThreadOutputFormat`),
   default `markdown`. Its `messagesFormat` is the `ThreadMessagesFormat`
-  of `MessageFormatter.render(thread:format:body:timeZone:)`, which prints
+  of `MessageFormatter.render(thread:format:body:full:timeZone:)`, which prints
   the downloaded messages: each message as `show` prints it, oldest first,
   with a `* * *` line between messages, a JSON array of the
   `show --format json` objects, or those objects one per line (compact,
@@ -669,6 +703,27 @@ account (`--account <name>`).
   escaped line by line (`MarkdownHTML.html(fromPlainText:)`), because as
   Markdown a `-- ` signature line makes the line above it a heading. The
   text part quotes both kinds with `> `.
+- **Quote marks in real mail** (checked 2026-10-25): Gmail's Quote button
+  writes the same `blockquote.gmail_quote` as a reply's quote, so only one
+  inside `div.gmail_quote` (or Zoho's `div.zmail_extra`) is history.
+  Superhuman writes Gmail's classes but no `gmail_attr`: like Gmail's
+  older markup, it puts the attribution as bare text in `div.gmail_quote`,
+  so a container with no `gmail_attr` (or Zoho header) that is left with
+  one line (and no image) after its quote is removed. Superhuman also ends with a hidden tracking image
+  (`display: none`). Zoho on the web puts a `From:` / `Date:` / `Subject:`
+  block (id `Zm-_Id_-Sgn1`) above `blockquote#blockquote_zmail`, not an
+  "On ... wrote:" line, and a Zoho forward starts `div.zmail_extra` with
+  `============ Forwarded message ============`. iPhone plain text quotes
+  its attribution (`> On ... wrote:`). Outlook's quoted HTML inside another
+  app's quote keeps its ids with an `x_` prefix.
+- **SwiftText's DOM:** `DOMElement.children` is a public `var`, so
+  `QuotedHistory` removes nodes in place before `HTMLDocument.markdown()`;
+  `DOMText` is internal, so a text node is read with `DOMNode.text()`.
+  `markdown()` converts only the `<html>` element when there is one (it
+  drops a footer after `</html>`), and `QuotedHistory.contentRoot(of:)`
+  walks the same element. Only the parse throws, which is why it is the
+  test seam. The test target does not import SwiftText: tests pass
+  `MessageDecoder.htmlDocument(fromHTML:)` or a generic failing function.
 - **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the

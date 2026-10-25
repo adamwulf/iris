@@ -80,6 +80,64 @@ final class MessageFormatterTests: XCTestCase {
         """)
     }
 
+    func testMarkdownSaysWhenTheEndOfTheBodyIsHidden() {
+        let trimmed = MessageDocument(
+            messageID: nil, subject: "Re: Lunch", from: [], to: [], cc: [], replyTo: [], date: nil,
+            inReplyTo: nil, references: [], body: "Sounds good.", bodySource: .text, bodyTrimmed: true,
+            attachments: [MessageAttachment(
+                attachmentID: AttachmentID(components: [2]), filename: "menu.pdf", contentType: "application/pdf",
+                size: 512, inline: false
+            )]
+        )
+
+        XCTAssertEqual(MessageFormatter.markdown(trimmed, timeZone: chicago), """
+        # Re: Lunch
+
+        **From:** (unknown)\u{20}\u{20}
+        **To:** (none)\u{20}\u{20}
+        **Date:** (unknown)
+
+        ---
+
+        Sounds good.
+
+        (Quoted text or signature hidden: --full shows it.)
+
+        ---
+
+        **Attachments:**
+        - `2` menu.pdf (application/pdf, 512 bytes)
+        """)
+        XCTAssertTrue(try MessageFormatter.json(trimmed).contains(#""bodyTrimmed" : true"#))
+    }
+
+    /// A text reply with a quote under it.
+    private let reply = Data("""
+    Subject: Re: Lunch\r
+    Content-Type: text/plain\r
+    \r
+    Sounds good.\r
+    \r
+    On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:\r
+    > Lunch on Tuesday?\r
+
+    """.utf8)
+
+    func testRenderPassesFull() async throws {
+        let message = DownloadedMessage.whole(reply)
+        let trimmed = String(decoding: try await MessageFormatter.render(message: message, irisID: irisID, format: .markdown), as: UTF8.self)
+        XCTAssertFalse(trimmed.contains("Lunch on Tuesday?"))
+        XCTAssertTrue(trimmed.contains(MessageFormatter.trimmedNote))
+
+        let full = String(decoding: try await MessageFormatter.render(message: message, irisID: irisID, format: .markdown, full: true), as: UTF8.self)
+        XCTAssertTrue(full.contains("> Lunch on Tuesday?"))
+        XCTAssertFalse(full.contains(MessageFormatter.trimmedNote))
+
+        let json = String(decoding: try await MessageFormatter.render(message: message, irisID: irisID, format: .json), as: UTF8.self)
+        XCTAssertTrue(json.contains(#""body" : "Sounds good.""#))
+        XCTAssertTrue(json.contains(#""bodyTrimmed" : true"#))
+    }
+
     func testDateUsesTheGivenTimeZone() throws {
         let winter = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-01-15T09:05:00Z"))
         XCTAssertEqual(DateText.string(from: winter, timeZone: chicago, showingZone: true), "2026-01-15 03:05 CST")
@@ -324,6 +382,20 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertTrue(String(decoding: html, as: UTF8.self).contains(#""body" : "html **text**""#))
     }
 
+    func testRenderThreadShowsOnlyEachMessagesOwnTextUnlessFull() async throws {
+        let messages = [thread[0], ThreadMessage(irisID: irisID, rawMessage: .success(reply))]
+
+        let trimmed = try await MessageFormatter.render(thread: messages, format: .json)
+        let objects = try XCTUnwrap(try JSONSerialization.jsonObject(with: trimmed) as? [[String: Any]])
+        XCTAssertEqual(objects.compactMap { $0["body"] as? String }, ["First", "Sounds good."])
+        XCTAssertEqual(objects.compactMap { $0["bodyTrimmed"] as? Bool }, [false, true])
+
+        let full = try await MessageFormatter.render(thread: messages, format: .json, full: true)
+        let fullObjects = try XCTUnwrap(try JSONSerialization.jsonObject(with: full) as? [[String: Any]])
+        XCTAssertEqual(fullObjects.compactMap { $0["bodyTrimmed"] as? Bool }, [false, false])
+        XCTAssertTrue((fullObjects[1]["body"] as? String)?.hasSuffix("> Lunch on Tuesday?") == true)
+    }
+
     func testRenderThreadLeavesOutAMessageThatCannotBeShownAndSaysWhy() async throws {
         let recorder = LogRecorder()
         IrisLog.handler = { recorder.record($0) }
@@ -439,7 +511,7 @@ final class MessageFormatterTests: XCTestCase {
 
         _ = try await MessageFormatter.render(
             thread: [thread[0], both, htmlOnly], format: .json, body: .html, timeZone: chicago,
-            convertingHTMLWith: { _ in throw ConversionFailure() }
+            parsingHTMLWith: { _ in throw ConversionFailure() }
         )
 
         XCTAssertEqual(recorder.lines, [
@@ -521,6 +593,7 @@ final class MessageFormatterTests: XCTestCase {
           ],
           "body" : "Can we meet **Tuesday**?\\n\\n> Quoted line",
           "bodySource" : "html",
+          "bodyTrimmed" : false,
           "cc" : [
             {
               "address" : "lead@example.com",

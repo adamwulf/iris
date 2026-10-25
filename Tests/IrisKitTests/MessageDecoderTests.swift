@@ -103,7 +103,8 @@ final class MessageDecoderTests: XCTestCase {
         let description = "broken"
     }
 
-    private func failingConverter(_ html: String) async throws -> String {
+    /// An HTML parser that always fails. It is generic so that this file need not import SwiftText.
+    private func failingParser<Document>(_ html: String) async throws -> Document {
         throw ConversionFailure()
     }
 
@@ -112,7 +113,7 @@ final class MessageDecoderTests: XCTestCase {
         IrisLog.handler = { recorder.record($0) }
         defer { IrisLog.handler = nil }
 
-        let document = try await MessageDecoder.decode(eml(alternative), body: .auto, convertingHTMLWith: failingConverter)
+        let document = try await MessageDecoder.decode(eml(alternative), body: .auto, parsingHTMLWith: failingParser)
 
         XCTAssertEqual(document.body, "Hello *world*")
         XCTAssertEqual(document.bodySource, .text)
@@ -121,7 +122,7 @@ final class MessageDecoderTests: XCTestCase {
 
     func testExplicitHTMLThrowsWhenHTMLConversionFails() async {
         do {
-            _ = try await MessageDecoder.decode(eml(alternative), body: .html, convertingHTMLWith: failingConverter)
+            _ = try await MessageDecoder.decode(eml(alternative), body: .html, parsingHTMLWith: failingParser)
             XCTFail("Expected an error")
         } catch {
             XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken", hasTextPart: true))
@@ -141,7 +142,7 @@ final class MessageDecoderTests: XCTestCase {
         """)
         for preference in BodyPreference.allCases {
             do {
-                _ = try await MessageDecoder.decode(htmlOnly, body: preference, convertingHTMLWith: failingConverter)
+                _ = try await MessageDecoder.decode(htmlOnly, body: preference, parsingHTMLWith: failingParser)
                 XCTFail("Expected an error for --body \(preference)")
             } catch {
                 XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken", hasTextPart: false))
@@ -231,7 +232,7 @@ final class MessageDecoderTests: XCTestCase {
         // back to, so the error does not tell the user to try --body text.
         for preference in [BodyPreference.auto, .html] {
             do {
-                _ = try await MessageDecoder.decode(withHTML, body: preference, convertingHTMLWith: failingConverter)
+                _ = try await MessageDecoder.decode(withHTML, body: preference, parsingHTMLWith: failingParser)
                 XCTFail("Expected an error for --body \(preference)")
             } catch {
                 XCTAssertEqual(error as? IrisError, .htmlNotConverted(reason: "broken", hasTextPart: false))
@@ -857,7 +858,7 @@ final class MessageDecoderTests: XCTestCase {
     }
 
     func testGmailQuoteBecomesMarkdownQuote() async throws {
-        let document = try await MessageDecoder.decode(eml("""
+        let message = eml("""
         From: Adam <adam@example.com>
         Subject: Re: Meeting
         Content-Type: multipart/alternative; boundary="000000000000abc"
@@ -876,8 +877,9 @@ final class MessageDecoderTests: XCTestCase {
 
         <div dir="ltr">Sounds good, see you then.<br><br>-- Adam</div><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">On Mon, Oct 20, 2026 at 9:14 AM Jane Doe &lt;jane@example.com&gt; wrote:<br></div><blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex"><div>Can we meet <b>Tuesday</b> at <a href="https://example.com/cal">the usual place</a>?</div><ul><li>Agenda item one</li><li>Agenda item two</li></ul></blockquote></div>
         --000000000000abc--
-        """))
+        """)
 
+        let document = try await MessageDecoder.decode(message, full: true)
         XCTAssertEqual(document.bodySource, .html)
         XCTAssertEqual(document.body, """
         Sounds good, see you then.
@@ -891,6 +893,122 @@ final class MessageDecoderTests: XCTestCase {
         > - Agenda item one
         > - Agenda item two
         """)
+        XCTAssertFalse(document.bodyTrimmed)
+
+        // Without --full, the quote is hidden.
+        let trimmed = try await MessageDecoder.decode(message)
+        XCTAssertEqual(trimmed.body, "Sounds good, see you then.\n\n-- Adam")
+        XCTAssertTrue(trimmed.bodyTrimmed)
+    }
+
+    private let plainReply = """
+    From: Adam <adam@example.com>
+    Subject: Re: Lunch
+    Content-Type: text/plain; charset=utf-8
+
+    Sounds good.
+
+    --\u{20}
+    Adam
+
+    On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
+    > Lunch on Tuesday?
+
+    """
+
+    func testATextReplyLosesItsSignatureAndQuoteUnlessFull() async throws {
+        let trimmed = try await MessageDecoder.decode(eml(plainReply))
+        XCTAssertEqual(trimmed.body, "Sounds good.")
+        XCTAssertEqual(trimmed.bodySource, .text)
+        XCTAssertTrue(trimmed.bodyTrimmed)
+
+        let full = try await MessageDecoder.decode(eml(plainReply), full: true)
+        XCTAssertEqual(full.body, """
+        Sounds good.
+
+        --\u{20}
+        Adam
+
+        On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
+        > Lunch on Tuesday?
+        """)
+        XCTAssertFalse(full.bodyTrimmed)
+    }
+
+    func testAForwardIsNeverTrimmed() async throws {
+        let forward = plainReply.replacingOccurrences(of: "Subject: Re: Lunch", with: "Subject: Fwd: Lunch")
+        let document = try await MessageDecoder.decode(eml(forward))
+        XCTAssertFalse(document.bodyTrimmed)
+        XCTAssertTrue(document.body.hasSuffix("> Lunch on Tuesday?"))
+
+        let html = try await MessageDecoder.decode(eml("""
+        Subject: FW: Lunch
+        Content-Type: text/html; charset=utf-8
+
+        <p>FYI</p><div class="gmail_quote"><div class="gmail_attr">On Fri, Jane wrote:<br></div><blockquote class="gmail_quote">Lunch?</blockquote></div>
+        """))
+        XCTAssertFalse(html.bodyTrimmed)
+        XCTAssertTrue(html.body.hasSuffix("> Lunch?"))
+    }
+
+    func testTheSubjectSaysWhetherAQuotedForwardIsTheMessageOrWhatItAnswers() async throws {
+        func message(subject: String) -> Data {
+            eml("""
+            Subject: \(subject)
+            Content-Type: text/html; charset=utf-8
+
+            <div>Thanks!</div><blockquote type="cite"><div>Begin forwarded message:</div><div>Lunch on Tuesday?</div></blockquote>
+            """)
+        }
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+
+        // Every choice, so that both places that convert the HTML (--body
+        // text with no text part is the second) know that it is a reply.
+        for preference in BodyPreference.allCases {
+            let reply = try await MessageDecoder.decode(message(subject: "Re: Fwd: Lunch"), body: preference)
+            XCTAssertEqual(reply.body, "Thanks!", "--body \(preference)")
+            XCTAssertTrue(reply.bodyTrimmed, "--body \(preference)")
+
+            // A forward with an edited subject.
+            let forward = try await MessageDecoder.decode(message(subject: "Lunch"), body: preference)
+            XCTAssertFalse(forward.bodyTrimmed, "--body \(preference)")
+            XCTAssertTrue(forward.body.contains("Lunch on Tuesday?"), "--body \(preference)")
+        }
+        XCTAssertEqual(recorder.lines, Array(repeating: "The message has no text part, so the html part is shown.", count: 2))
+    }
+
+    func testTheQuoteInTheLastOfSeveralTextPartsIsTrimmed() async throws {
+        // Apple Mail splits the body around an attachment.
+        let document = try await MessageDecoder.decode(eml("""
+        Subject: Re: Lunch
+        Content-Type: multipart/mixed; boundary="m"
+
+        --m
+        Content-Type: text/plain; charset=utf-8
+
+        Here is the menu.
+        --m
+        Content-Type: application/pdf; name="menu.pdf"
+        Content-Disposition: inline; filename="menu.pdf"
+        Content-Transfer-Encoding: base64
+
+        JVBERi0=
+        --m
+        Content-Type: text/plain; charset=utf-8
+
+        See you then.
+
+        On Oct 24, 2026, at 9:41 AM, Jane Doe <jane@example.com> wrote:
+
+        > Lunch on Tuesday?
+        --m--
+        """))
+
+        XCTAssertEqual(document.body, "Here is the menu.\n\nSee you then.")
+        XCTAssertTrue(document.bodyTrimmed)
+        XCTAssertEqual(document.attachments.map(\.filename), ["menu.pdf"])
     }
 
     func testFormatFlowedIsUnwrapped() async throws {

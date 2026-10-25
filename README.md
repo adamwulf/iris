@@ -1,7 +1,7 @@
 # iris
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
-at a time, shows a full message, or a whole thread, as Markdown, downloads an
+at a time, shows a message, or a whole thread, as Markdown, downloads an
 attachment, and saves a reply as a draft. Reading changes nothing: iris
 opens mailboxes read-only and never marks a message as read. The only
 commands that change mail are `iris read` and `iris unread`, which mark one
@@ -188,18 +188,19 @@ client ID but no refresh token yet.
   (iris ID, date, sender, unread, subject). Filters: `--unread`,
   `--flagged`, `--from`, `--to`, `--subject`, `--search` (headers and
   body), `--since`, `--before`.
-- `iris show`: one full message, by its iris ID, as Markdown. HTML mail is converted to
+- `iris show`: one message, by its iris ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
-  and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
-  source. Markdown and JSON include a `message:` URL that opens the message
-  in Apple Mail, and list the attachments, each with its attachment ID. A
-  message over 1 MiB is shown from its text and HTML parts alone (see
-  "Large messages"), so its attachments stay on the server.
+  and `format=flowed` text are decoded. The quoted history and the signature
+  at the end of the body are hidden; `--full` shows them. Also as JSON, or
+  as the raw `.eml` source. Markdown and JSON include a `message:` URL that
+  opens the message in Apple Mail, and list the attachments, each with its
+  attachment ID. A message over 1 MiB is shown from its text and HTML parts
+  alone (see "Large messages"), so its attachments stay on the server.
 - `iris thread`: every message in the thread of one message, oldest first,
-  by the iris ID of any message in it. Each message is shown in full, as
-  `iris show` shows it, with its own iris ID (a reply you sent shows its
-  Sent iris ID). Also as JSON or JSON Lines, or only the iris IDs, which
-  downloads no message.
+  by the iris ID of any message in it. Each message is shown as `iris show`
+  shows it, with only its own text and its own iris ID (a reply you sent
+  shows its Sent iris ID). Also as JSON or JSON Lines, or only the iris IDs,
+  which downloads no message.
 - `iris download`: one attachment of a message, by its iris ID and the
   attachment ID that `iris show` lists. It downloads only that part, decodes
   it, and writes its bytes to stdout, or saves it in a new file with `-o`.
@@ -231,10 +232,12 @@ iris list --search invoice         # the text anywhere: From, To, Subject, the b
 
 iris show 'work/INBOX/4821'                # one message, as Markdown
 iris show 'work/INBOX/4821' --body text    # the plain-text part instead of the HTML
+iris show 'work/INBOX/4821' --full         # with the quoted history and the signature
 iris show 'work/INBOX/4821' --format raw > message.eml
 iris show 'personal/[Gmail]/Sent Mail/77'
 
 iris thread 'work/INBOX/4821'                 # the whole thread, oldest first
+iris thread 'work/INBOX/4821' --full          # each message with its quoted history
 iris thread 'work/INBOX/4821' --format json   # an array of `iris show --format json` objects
 iris thread 'work/INBOX/4821' --format jsonl  # the same objects, one per line
 iris thread 'work/INBOX/4821' --format id     # only the iris IDs, one per line
@@ -291,7 +294,9 @@ and ignores the time and the time zone. That day can be different from the
 `iris thread <iris-id>` shows every message of the thread that the message
 is in: the messages before it and the replies after it, oldest first (by
 the `Date:` header, else the date the server received the message). It
-takes `--body` like `iris show`, and `--format`:
+takes `--body` and `--full` like `iris show` (see "Quoted history and
+signatures" below: without `--full`, each message shows only its own text),
+and `--format`:
 
 - `markdown` (the default): each message as `iris show` prints it, with a
   `* * *` line between messages.
@@ -358,8 +363,91 @@ Limits:
 - A reply filed only in another folder (not INBOX, Sent, Drafts, Archive,
   or All Mail, and not the folder of the message you named) is not found.
   Zoho has no All Mail.
-- Each message is shown in full, with the quoted history of the messages
-  before it.
+
+### Quoted history and signatures
+
+A reply usually quotes the whole conversation under its own text. `iris show`
+and `iris thread` hide that quoted history, and the signature, at the end of
+each body, and print a line under the body that says so:
+`(Quoted text or signature hidden: --full shows it.)`. In JSON,
+`bodyTrimmed` is `true` for such a body. `--full` shows the whole body, and
+`--format raw` is always the whole message.
+
+iris cuts only at the marks that mail apps leave:
+
+- HTML: Gmail's reply quote and signature (`gmail_quote`, `gmail_attr`,
+  `gmail_signature`; Superhuman writes them too), Zoho's reply quote
+  (`zmail_extra`, `blockquote_zmail`), Apple Mail's and Thunderbird's
+  `<blockquote type="cite">` (and Thunderbird's attribution and
+  signature), and Outlook's reply header (`divRplyFwdMsg`), with
+  everything under it (but not when it is inside another app's quote: then
+  it is part of that quote). A quote that the sender made with Gmail's
+  Quote button is part of the new text, so it is kept (unless the sender
+  put an `On ... wrote:` line above it). Hidden elements at the end (a
+  tracking image) are dropped too; nobody sees them.
+- Text (also the Markdown from HTML): an `On <date>, <name> wrote:` line
+  (or Zoho's `---- On <date> <name> wrote ----`) with only `>` lines under
+  it, the same line quoted as the first line of a quote (iPhone writes
+  `> On ... wrote:`), the `From:` / `Sent:` (or `Date:`) / `Subject:`
+  header block of Outlook (and of Zoho's plain-text part), and a `-- `
+  signature line, which cuts everything under it, an unmarked quote in
+  any language too, but not when an answer (text under a quoted line) or a
+  quoted forward follows it.
+
+Only the end of a body is cut. When someone answers between the quoted
+lines, the answers and the quoted lines above them are kept; only quoted
+lines after the last answer are hidden. A body with no mark is shown whole.
+A forward (a subject that starts with `Fwd:` or `Fw:`, or a "Forwarded
+message" or "Begin forwarded message:" line above any quoted history) is
+never cut, because the message it forwards is new to the reader. A body
+that is nothing but history is shown whole.
+
+Limits:
+
+- An Outlook reply with answers written inside the quoted message (under
+  its `From:` / `Sent:` header) loses those answers; `--full` shows them.
+  So does the plain-text part of a Zoho reply (`--body text`), which does
+  not quote the message under its header either. Zoho's HTML part, shown
+  by default, keeps them.
+- A footer that a mailing list or a mail server adds under the quote
+  stops the HTML marks from being used, since the quote is no longer at
+  the end. Outlook's reply header is the exception: it cuts everything
+  under it, the footer too. Otherwise a `-- ` footer (Google Groups) is
+  cut, and the quote above it too when a text mark finds it (an English
+  `On ... wrote:` line, or a `-- ` signature above it); otherwise the quote
+  is kept. A footer without a `-- ` line (Mailman's, a company disclaimer)
+  reads as new text after the quote, so the quote is kept.
+- Outlook writes the same header for a forward. A forward is known only by
+  `Fwd:` or `Fw:`, so a forward from an Outlook in another language
+  (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.
+- The text marks are in English. A plain-text reply with
+  `Am ... schrieb ...:` is shown whole (unless a `-- ` signature is above
+  the quote); in older Apple Mail HTML, whose
+  attribution line sits above the quote with no class, a non-English one
+  stays at the end; and a reply from classic desktop Outlook in another
+  language (`Von:` / `Gesendet:` / `Betreff:`) is shown whole. The classes
+  and ids that Gmail, Zoho, Apple Mail, Thunderbird, and Outlook on the web
+  write do not depend on the language.
+- A reply that quotes a forward with no note of its own: the quoted
+  forward is hidden when the subject starts with `Re:`, when an English
+  `On ... wrote:` line (quoted or not) is above it, or when the quote
+  starts with its attribution (Apple Mail on the Mac). It is kept when the
+  quote starts with the forward line and nothing marks the reply, for
+  example a Gmail reply in another language with an edited subject. A
+  forward whose subject was changed to start with `Re:` loses the message
+  it forwards when the "Begin forwarded message:" line is inside the quote
+  too (Apple Mail on the Mac); `--full` shows it.
+- A quote that an Apple Mail sender adds to the end of their own text
+  (with "Increase Quote Level") looks like a reply's quote, so it is hidden.
+- A signature without the `-- ` line (most signatures that people type) is
+  kept, and so is "Sent from my iPhone".
+
+The marks were checked on 2026-10-25 against real replies from Gmail,
+Superhuman, Zoho Mail on the web, Apple Mail on the Mac and iPhone (HTML
+and plain text), Outlook on the web, and classic Outlook, and on forwards.
+Thunderbird, new Outlook, and a Gmail reply with answers between the
+quoted lines were not in those mailboxes; their marks come from what
+those apps are known to write.
 
 ### Iris IDs
 

@@ -330,6 +330,27 @@ final class MailWriterTests: XCTestCase {
         ])
     }
 
+    func testSaveReplyQuotesTheOriginalWithItsHistory() async throws {
+        // `iris show` hides the original's own quote and signature; a reply
+        // quotes them, as mail apps do.
+        let withHistory = original.replacingOccurrences(
+            of: "Can you look at the plan?",
+            with: "Can you look at the plan?\n\n-- \nJane\n\nOn Fri, Oct 23, 2026 at 9:00 AM Bob <bob@example.com> wrote:\n> Here is the plan."
+        )
+        let fake = server(holding: withHistory, uid: 9)
+
+        _ = try await writer(fake).saveReply(to: id(9), body: "Looks good.", from: me, replyAll: false, quote: true)
+
+        let calls = await fake.calls
+        let drafts = calls.compactMap { call -> DraftMessage? in
+            if case .appendDraft(let draft, _) = call { return draft }
+            return nil
+        }
+        let markdown = try XCTUnwrap(drafts.first).markdown
+        XCTAssertTrue(markdown.contains("> -- "), markdown)
+        XCTAssertTrue(markdown.contains("> > Here is the plan."), markdown)
+    }
+
     func testSaveReplyAppendsTheDraftWithItsAttachments() async throws {
         let fake = server(holding: original, uid: 9)
         let files = [

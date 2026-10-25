@@ -8,20 +8,26 @@ import SwiftTextHTML
 public enum MessageDecoder {
     /// Decodes `data`, the full message as the server sends it for `BODY[]`.
     ///
-    /// - Parameter preference: Which part becomes the body. When that part is
-    ///   missing, the other one is used. With `.auto`, the text part is also
-    ///   used when the HTML part cannot be converted.
-    public static func decode(_ data: Data, body preference: BodyPreference = .auto) async throws -> MessageDocument {
-        try await decode(data, body: preference, convertingHTMLWith: markdown(fromHTML:))
+    /// - Parameters:
+    ///   - preference: Which part becomes the body. When that part is
+    ///     missing, the other one is used. With `.auto`, the text part is also
+    ///     used when the HTML part cannot be converted.
+    ///   - full: Whether the body keeps the quoted history and signature at
+    ///     its end. When false, they are left out (see `QuotedHistory`), and
+    ///     `MessageDocument.bodyTrimmed` says whether any were. A forward is
+    ///     never trimmed.
+    public static func decode(_ data: Data, body preference: BodyPreference = .auto, full: Bool = false) async throws -> MessageDocument {
+        try await decode(data, body: preference, full: full, parsingHTMLWith: htmlDocument(fromHTML:))
     }
 
-    /// `decode(_:body:)` with the HTML converter as a parameter, so that tests
-    /// can make it fail, and with the function that logs a note about the
-    /// part shown, so that a thread can name the message in it.
+    /// `decode(_:body:full:)` with the HTML parser as a parameter, so that
+    /// tests can make it fail, and with the function that logs a note about
+    /// the part shown, so that a thread can name the message in it.
     static func decode(
         _ data: Data,
         body preference: BodyPreference,
-        convertingHTMLWith htmlToMarkdown: (String) async throws -> String,
+        full: Bool = false,
+        parsingHTMLWith parseHTML: (String) async throws -> HTMLDocument,
         log: (String) -> Void = IrisLog.log
     ) async throws -> MessageDocument {
         let message: Message
@@ -32,7 +38,7 @@ public enum MessageDecoder {
         }
         return try await document(
             of: message, headers: headers(of: message, rawMessage: data),
-            preference: preference, htmlToMarkdown: htmlToMarkdown, log: log
+            preference: preference, full: full, parseHTML: parseHTML, log: log
         )
     }
 
@@ -47,12 +53,13 @@ public enum MessageDecoder {
     static func decode(
         _ parts: MessageParts,
         body preference: BodyPreference,
-        convertingHTMLWith htmlToMarkdown: (String) async throws -> String,
+        full: Bool = false,
+        parsingHTMLWith parseHTML: (String) async throws -> HTMLDocument,
         log: (String) -> Void = IrisLog.log
     ) async throws -> MessageDocument {
         try await document(
             of: message(of: parts.outline.parts, bodies: parts.bodies), headers: parts.outline.headers,
-            preference: preference, htmlToMarkdown: htmlToMarkdown, log: log
+            preference: preference, full: full, parseHTML: parseHTML, log: log
         )
     }
 
@@ -62,11 +69,17 @@ public enum MessageDecoder {
         of message: Message,
         headers: MessageHeaders,
         preference: BodyPreference,
-        htmlToMarkdown: (String) async throws -> String,
+        full: Bool,
+        parseHTML: (String) async throws -> HTMLDocument,
         log: (String) -> Void
     ) async throws -> MessageDocument {
-        let (body, bodySource) = try await body(
-            of: message, preference: preference, htmlToMarkdown: htmlToMarkdown, log: log
+        // A forward is never trimmed: the message it forwards is new to the
+        // reader. The subject is in `headers`: a message downloaded in parts
+        // has an empty SwiftMail header.
+        let trimming = !full && !QuotedHistory.isForward(subject: headers.subject)
+        let body = try await body(
+            of: message, preference: preference, trimming: trimming,
+            inReply: QuotedHistory.isReply(subject: headers.subject), parseHTML: parseHTML, log: log
         )
         return MessageDocument(
             messageID: headers.messageID,
@@ -78,8 +91,9 @@ public enum MessageDecoder {
             date: headers.date,
             inReplyTo: headers.inReplyTo,
             references: headers.references,
-            body: body,
-            bodySource: bodySource,
+            body: body.text,
+            bodySource: body.source,
+            bodyTrimmed: body.trimmed,
             attachments: attachments(of: message)
         )
     }
@@ -226,15 +240,24 @@ public enum MessageDecoder {
         Array(section.components.dropLast())
     }
 
-    /// The body as Markdown, and the part it came from. When the message has
+    /// The body as Markdown, the part it came from, and whether quoted
+    /// history or a signature was left out of it. When the message has
     /// several parts of the chosen type, the body joins all of them. A note
     /// about which part is shown goes to `log`.
+    ///
+    /// - Parameters:
+    ///   - trimming: Whether to leave out the quoted history and signature at
+    ///     the end of the body (see `QuotedHistory`).
+    ///   - inReply: Whether the message is a reply (`QuotedHistory.isReply`),
+    ///     from its header fields.
     static func body(
         of message: Message,
         preference: BodyPreference,
-        htmlToMarkdown: (String) async throws -> String,
+        trimming: Bool,
+        inReply: Bool,
+        parseHTML: (String) async throws -> HTMLDocument,
         log: (String) -> Void
-    ) async throws -> (String, BodySource?) {
+    ) async throws -> (text: String, source: BodySource?, trimmed: Bool) {
         let parts = bodyParts(of: message)
         let texts = parts.filter { isPlainText($0) }.compactMap { part in
             part.textContent.map { plainText($0, contentType: part.contentType) }
@@ -254,9 +277,9 @@ public enum MessageDecoder {
         if preference != .text, let html {
             do {
                 let converted = try await markdown(
-                    fromHTMLParts: html, hasTextPart: text != nil, htmlToMarkdown: htmlToMarkdown
+                    fromHTMLParts: html, hasTextPart: text != nil, trimming: trimming, inReply: inReply, parseHTML: parseHTML
                 )
-                return (converted, .html)
+                return (converted.text, .html, converted.trimmed)
             } catch IrisError.htmlNotConverted(let reason, _) where preference == .auto && text != nil {
                 log("The HTML part could not be converted to Markdown (\(reason)), so the text part is shown.")
             }
@@ -265,15 +288,21 @@ public enum MessageDecoder {
             if preference == .html && html == nil {
                 log("The message has no html part, so the text part is shown.")
             }
-            return (text, .text)
+            // The joined text, so that only the end of the whole body is cut.
+            if trimming, case .trimmed(let kept) = QuotedHistory.trim(text) {
+                return (kept, .text, true)
+            }
+            return (text, .text, false)
         }
         guard let html else {
-            return ("", nil)
+            return ("", nil, false)
         }
         // Only `.text` gets here with an HTML part: the other choices returned or threw above.
         log("The message has no text part, so the html part is shown.")
-        let converted = try await markdown(fromHTMLParts: html, hasTextPart: false, htmlToMarkdown: htmlToMarkdown)
-        return (converted, .html)
+        let converted = try await markdown(
+            fromHTMLParts: html, hasTextPart: false, trimming: trimming, inReply: inReply, parseHTML: parseHTML
+        )
+        return (converted.text, .html, converted.trimmed)
     }
 
     /// The parts that make up the body, in section order: the text/plain and
@@ -292,25 +321,73 @@ public enum MessageDecoder {
         part.contentType.lowercased().hasPrefix("text/plain")
     }
 
-    /// Each HTML part converted to Markdown, joined in order.
+    /// Each HTML part converted to Markdown, joined in order, and whether
+    /// quoted history or a signature was left out.
     ///
-    /// - Parameter hasTextPart: Whether the message has a text part, so that
-    ///   the error can say what to do next.
-    /// - Throws: `IrisError.htmlNotConverted` when a part cannot be converted.
+    /// - Parameters:
+    ///   - hasTextPart: Whether the message has a text part, so that the
+    ///     error can say what to do next.
+    ///   - trimming: Whether to leave out the quoted history and signature at
+    ///     the end: first the HTML elements that mark them, then the text
+    ///     markers in the Markdown (see `QuotedHistory`). When that leaves
+    ///     nothing, or the Markdown has an unquoted forward marker above its
+    ///     history (`QuotedHistory.TextTrim.forward`), the whole body is kept.
+    ///   - inReply: Whether the message is a reply, so that a quoted forward
+    ///     at its end is the forward it answers (see
+    ///     `QuotedHistory.removeHistory(fromHTMLParts:inReply:)`).
+    /// - Throws: `IrisError.htmlNotConverted` when a part cannot be parsed.
     static func markdown(
         fromHTMLParts htmls: [String],
         hasTextPart: Bool,
-        htmlToMarkdown: (String) async throws -> String
-    ) async throws -> String {
-        var pieces: [String] = []
+        trimming: Bool,
+        inReply: Bool = false,
+        parseHTML: (String) async throws -> HTMLDocument
+    ) async throws -> (text: String, trimmed: Bool) {
+        let documents = try await htmlDocuments(htmls, hasTextPart: hasTextPart, parseHTML: parseHTML)
+        guard trimming else {
+            return (markdown(of: documents), false)
+        }
+        let removal = QuotedHistory.removeHistory(fromHTMLParts: documents, inReply: inReply)
+        let zohoHeaders = QuotedHistory.zohoHeaderBlocks(in: documents)
+        let converted = markdown(of: documents)
+        let trim = QuotedHistory.trim(
+            converted, fromHTML: true, afterRemovedQuote: removal.quote, zohoHeaders: zohoHeaders,
+            keptAnswers: removal.keptAnswers
+        )
+        if case .trimmed(let kept) = trim {
+            return (kept, true)
+        }
+        if removal.any && (converted.isEmpty || trim != .noMarker) {
+            // The body was all history, or it is a forward, so it is shown
+            // whole. The elements are gone from these documents, so the
+            // parts are parsed again.
+            return (markdown(of: try await htmlDocuments(htmls, hasTextPart: hasTextPart, parseHTML: parseHTML)), false)
+        }
+        return (converted, removal.any)
+    }
+
+    /// Each HTML part parsed.
+    ///
+    /// - Throws: `IrisError.htmlNotConverted` when a part cannot be parsed.
+    static func htmlDocuments(
+        _ htmls: [String],
+        hasTextPart: Bool,
+        parseHTML: (String) async throws -> HTMLDocument
+    ) async throws -> [HTMLDocument] {
+        var documents: [HTMLDocument] = []
         for html in htmls {
             do {
-                pieces.append(try await htmlToMarkdown(html))
+                documents.append(try await parseHTML(html))
             } catch {
                 throw IrisError.htmlNotConverted(reason: String(describing: error), hasTextPart: hasTextPart)
             }
         }
-        return joinedPieces(pieces)
+        return documents
+    }
+
+    /// The parsed HTML parts as Markdown, joined in order.
+    static func markdown(of documents: [HTMLDocument]) -> String {
+        joinedPieces(documents.map { BodyCleanup.clean($0.markdown()) })
     }
 
     /// The pieces of a body that was split into several parts, with a blank
@@ -330,11 +407,10 @@ public enum MessageDecoder {
         return BodyCleanup.clean(text)
     }
 
-    /// A text/html body converted to Markdown. It throws SwiftText's error;
-    /// `markdown(fromHTMLParts:hasTextPart:htmlToMarkdown:)` turns it into an `IrisError`.
-    static func markdown(fromHTML html: String) async throws -> String {
-        let document = try await HTMLDocument(data: Data(declaringUTF8(html).utf8), encoding: .utf8)
-        return BodyCleanup.clean(document.markdown())
+    /// A text/html body parsed into SwiftText's DOM. It throws SwiftText's
+    /// error; `htmlDocuments(_:hasTextPart:parseHTML:)` turns it into an `IrisError`.
+    static func htmlDocument(fromHTML html: String) async throws -> HTMLDocument {
+        try await HTMLDocument(data: Data(declaringUTF8(html).utf8), encoding: .utf8)
     }
 
     /// SwiftMail has already decoded the HTML with the part's charset, so it is

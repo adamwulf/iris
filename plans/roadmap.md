@@ -63,8 +63,9 @@ describes them.
 
 ## Milestone 2: threads
 
-`iris thread` (step 1) is done; README.md describes it, and AGENTS.md
-describes the walk. Why it works the way it does:
+`iris thread` (step 1) and the trimming of quoted history (step 2) are
+done; README.md describes them, and AGENTS.md describes the walk and
+`QuotedHistory`. Why the walk works the way it does:
 
 - The shortcuts are not available, so every server gets the same walk:
   - Gmail `X-GM-THRID`: SwiftMail can FETCH it but not SEARCH by it. The
@@ -114,16 +115,11 @@ Next:
 - Check `iris thread` on Gmail and iCloud. Gmail's SEARCH is also
   index-based: confirm that SUBJECT finds the replies there, and how it
   matches words.
-- Trim repeated history. Each reply usually quotes the whole chain under it,
-  so the thread view shows only the new text of each message, with a
-  `--full` flag to turn trimming off. This is a heuristic, but the common
-  clients leave markers we can find:
-  - HTML: Gmail `div.gmail_quote`, Apple Mail `blockquote type="cite"`,
-    Outlook `div#divRplyFwdMsg` / `"From: ... Sent: ..."` header blocks.
-  - Plain text: an `On <date>, <name> wrote:` line followed by `>` lines.
-  - Signatures after a `-- ` line.
-  When no marker is found, show the whole message (never drop text we are
-  not sure about).
+- Check the quoted-history trimming on a real Thunderbird reply, a new
+  Outlook reply, and a Gmail reply with answers between the quoted lines.
+  Gmail, Superhuman, Zoho on the web, Apple Mail (Mac and iPhone, HTML and
+  plain text), Outlook on the web, classic Outlook, and forwards were
+  checked on 2026-10-25 (README.md, "Quoted history and signatures").
 
 ## Later, maybe
 
@@ -212,6 +208,13 @@ Next:
   candidates; each costs a few hundred header bytes, but a large `\All`
   mailbox could take a while. A reply filed only in a folder that is not
   searched is not found.
+- The quoted-history trimming is a heuristic (README.md, "Quoted history
+  and signatures", lists its limits). It loses answers written inside an
+  Outlook quote and the forwarded message of a forward from an Outlook in
+  another language (`WG:`, `TR:`), finds only English attribution lines in
+  text, and keeps a signature without a `-- ` line. A fix that would cover more: compare
+  each quote with the earlier messages of the thread, and cut only what
+  they already show.
 - A server that sends a mailbox name that is not valid modified UTF-7 (raw
   `R&D` instead of `R&-D`) shows it unchanged, but typing it sends `R&-D`,
   so that mailbox cannot be opened. RFC 3501 servers do not do this.
