@@ -224,14 +224,10 @@ enum QuotedHistory {
     /// The most label lines read under a `From:` line.
     static let maxHeaderLabels = 6
 
-    /// The first line of the first Outlook header block (with the separator
-    /// line above it), or nil when there is none.
-    static func outlookHeaderStart(in lines: [Substring]) -> Int? {
-        outlookHeaderStarts(in: lines).first
-    }
-
     /// The first line of each Outlook header block (with the separator line
-    /// above it), in order.
+    /// above it), in order. A block ends at the next `From:` line, so a
+    /// header right under another (a Zoho reply's under Outlook's) is a
+    /// block of its own.
     static func outlookHeaderStarts(in lines: [Substring]) -> [Int] {
         var starts: [Int] = []
         var index = 0
@@ -245,7 +241,7 @@ enum QuotedHistory {
                     next += 1
                     continue
                 }
-                guard let label = headerLabel(lines[next]) else { break }
+                guard let label = headerLabel(lines[next]), label != "from" else { break }
                 labels.insert(label)
                 next += 1
             }

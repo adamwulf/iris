@@ -552,6 +552,12 @@ final class QuotedHistoryTests: XCTestCase {
             let answered = zoho.replacingOccurrences(of: #"<div><br></div><blockquote"#, with: #"<div>Noon works.</div><blockquote"#)
             let under = try await trimmed("<div><p>Great, see you then.</p>" + header + "<div>" + answered + "</div></div>")
             XCTAssertEqual(under.text, "Great, see you then.", header)
+
+            // With nothing above Zoho's header, its lines come right under
+            // Outlook's: they are still two header blocks.
+            let bare = answered.replacingOccurrences(of: "<div>Sounds good, Tuesday it is.<br></div>", with: "<div><br></div>")
+            let merged = try await trimmed("<div><p>Great, see you then.</p>" + header + "<div>" + bare + "</div></div>")
+            XCTAssertEqual(merged.text, "Great, see you then.", header)
         }
 
         // New Outlook wraps the history in its container; with a disclaimer
