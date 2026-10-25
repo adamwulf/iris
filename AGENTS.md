@@ -103,6 +103,8 @@ Never put a password in an error message, a log line, or JSON output.
   header line, and `jsonl`/`id` are empty), and the CLI writes it unchanged
   with `CLI.printRows`. Output is deterministic: sorted JSON keys, no trailing
   whitespace in tables, and cells padded by `Character` (emoji are safe).
+  Table columns line up on the left, except those a row names in
+  `rightAlignedColumns` (such as `list`'s `UNREAD`).
 - The next-page hint keeps `--account`, `--mailbox`, the filter options
   (`MessageFilter.options`), `--limit`, and `--format`, and is written to
   stderr for every format.

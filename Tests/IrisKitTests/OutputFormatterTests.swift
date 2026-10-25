@@ -40,6 +40,27 @@ final class OutputFormatterTests: XCTestCase {
         )
     }
 
+    private struct CountRow: IrisRow {
+        let name: String
+        let count: String
+
+        static var tableColumns: [String] { ["NAME", "COUNT"] }
+        static var rightAlignedColumns: Set<String> { ["COUNT"] }
+        var tableValues: [String] { [name, count] }
+        var idValue: String { name }
+    }
+
+    func testTableRightAlignsTheNamedColumnsHeaderAndValues() throws {
+        let rows = [CountRow(name: "first", count: "1"), CountRow(name: "x", count: "123456"), CountRow(name: "y", count: "")]
+        XCTAssertEqual(try OutputFormatter.render(rows, format: .table), """
+        NAME    COUNT
+        first       1
+        x      123456
+        y
+
+        """)
+    }
+
     func testJSONIsPrettyAndSorted() throws {
         XCTAssertEqual(try OutputFormatter.render([rows[0]], format: .json), """
         [

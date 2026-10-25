@@ -37,14 +37,20 @@ public struct MessageSummary: Sendable, Equatable, Encodable {
 }
 
 extension MessageSummary: IrisRow {
-    public static var tableColumns: [String] { ["IRIS ID", "UNREAD", "DATE", "FROM", "SUBJECT"] }
+    public static var tableColumns: [String] { ["IRIS ID", "DATE", "FROM", "UNREAD", "SUBJECT"] }
+
+    /// So the unread mark sits just left of the subject.
+    public static var rightAlignedColumns: Set<String> { ["UNREAD"] }
+
+    /// What the `UNREAD` column shows for an unread message. A read one shows nothing.
+    static let unreadMark = "●"
 
     public var tableValues: [String] {
         [
             irisID.description,
-            unread ? "yes" : "",
             date.map { DateText.string(from: $0, timeZone: .current) } ?? "",
             Self.oneLine(from?.displayName ?? ""),
+            unread ? Self.unreadMark : "",
             Self.oneLine(subject),
         ]
     }
