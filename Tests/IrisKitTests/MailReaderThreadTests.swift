@@ -828,4 +828,97 @@ final class MailReaderThreadTests: XCTestCase {
         XCTAssertEqual(calls.filter { $0 == .login }.count, 1)
         XCTAssertEqual(calls.filter { $0 == .logout }.count, 1)
     }
+
+    // MARK: - Iris IDs only
+
+    func testTheIrisIDsAreTheSameWalkWithoutAnyDownload() async throws {
+        // `threadIDs` makes the calls of `thread` up to the first download, and
+        // none after them, and names the same copies in the same order: also a
+        // message that would not download.
+        func chain(_ subject: String) -> [String: [UInt32: Message]] {
+            [
+                "INBOX": [
+                    10: message("a", subject: subject, day: 1),
+                    12: message("c", subject: "Re: \(subject)", day: 3, replyTo: "b", references: ["b"]),
+                ],
+                "Sent": [
+                    20: message("b", subject: "Re: \(subject)", day: 2, replyTo: "a", references: ["a"]),
+                    21: message("d", subject: "Re: \(subject)", day: 4, replyTo: "c", references: ["c"]),
+                ],
+            ]
+        }
+        let a = message("a", subject: "Budget", day: 1)
+        let b = message("b", day: 2, replyTo: "a", references: ["a"])
+        let copies: [String: [UInt32: Message]] = [
+            "INBOX": [5: a],
+            "[Gmail]/Sent Mail": [7: b],
+            "[Gmail]/All Mail": [50: a, 51: b, 52: message("c", day: 3, replyTo: "b", references: ["a", "b"])],
+        ]
+        let noMessageID: [String: [UInt32: Message]] = ["INBOX": [1: message(nil, day: 2, replyTo: "a", references: ["a"])]]
+        let failures: [UInt32: any Error] = [
+            10: IrisError.messageDownloadTimedOut(seconds: 10),
+            20: IrisError.unknownMessage(IrisID(account: "work", mailbox: "Sent", uid: 20)),
+        ]
+        let cases: [(start: String, server: () -> FakeMailClient)] = [
+            ("work/Sent/21", { self.server(chain("Budget")) }),
+            ("work/INBOX/10", { self.server(chain("Budget"), rules: .rfc3501) }),
+            ("work/[Gmail]/All Mail/51", { self.server(copies, mailboxes: self.gmailMailboxes) }),
+            ("work/Sent/21", { self.server(chain("Café"), refusesNonASCII: true) }),
+            ("work/INBOX/1", { self.server(noMessageID) }),
+            ("work/INBOX/12", { self.server(chain("Budget"), rawMessageErrors: failures) }),
+        ]
+        IrisLog.handler = { _ in }
+        defer { IrisLog.handler = nil }
+
+        for test in cases {
+            let walkOnly = test.server()
+            let downloading = test.server()
+            let start = try IrisID(parsing: test.start)
+
+            let ids = try await reader(walkOnly).threadIDs(start)
+            let messages = try await reader(downloading).thread(start)
+
+            XCTAssertEqual(ids, messages.map(\.irisID), test.start)
+            let walkCalls = await walkOnly.calls
+            let threadCalls = await downloading.calls
+            XCTAssertFalse(walkCalls.contains { if case .fetchRawMessage = $0 { return true } else { return false } }, test.start)
+            XCTAssertEqual(walkCalls.last, .logout, test.start)
+            XCTAssertEqual(Array(walkCalls.dropLast()), Array(threadCalls.prefix(walkCalls.count - 1)), test.start)
+        }
+    }
+
+    func testTheIrisIDsKeepTheLinesThatTheWalkLogs() async throws {
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+        let noSubject = server([
+            "INBOX": [1: message("a", subject: "", day: 1)],
+            "Sent": [2: message("b", subject: "Re:", day: 2, replyTo: "a", references: ["a"])],
+        ])
+        let refused = server(["INBOX": [1: message("a", subject: "Café", day: 1)]], refusesNonASCII: true)
+
+        let fromNoSubject = try await reader(noSubject).threadIDs(IrisID(parsing: "work/Sent/2"))
+        let fromRefused = try await reader(refused).threadIDs(IrisID(parsing: "work/INBOX/1"))
+
+        XCTAssertEqual(fromNoSubject.map(\.description), ["work/INBOX/1", "work/Sent/2"])
+        XCTAssertEqual(fromRefused.map(\.description), ["work/INBOX/1"])
+        XCTAssertEqual(recorder.lines, [
+            "The message has no subject to search for, so iris followed only the message IDs that the messages name, "
+                + "and the thread may miss replies.",
+            "The server could not search by subject (NO [BADCHARSET (US-ASCII)] Unsupported charset), so iris followed "
+                + "only the message IDs that the messages name, and the thread may miss replies.",
+        ])
+    }
+
+    func testTheIrisIDsOfAnUnknownMessageFailAsTheThreadDoes() async {
+        let fake = server(["INBOX": [1: message("a", subject: "Budget", day: 1)]])
+        let missing = IrisID(account: "work", mailbox: "INBOX", uid: 99)
+        let zero = IrisID(account: "work", mailbox: "INBOX", uid: 0)
+
+        await assertThrows(.unknownMessage(missing)) { try await self.reader(fake).threadIDs(missing) }
+        await assertThrows(.unknownMessage(zero)) { try await self.reader(fake).threadIDs(zero) }
+
+        let calls = await fake.calls
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchThreadHeaders([99]), .logout], "UID 0 never connects")
+    }
 }

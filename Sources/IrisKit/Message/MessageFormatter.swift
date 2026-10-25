@@ -16,6 +16,12 @@ public enum ThreadOutputFormat: String, CaseIterable, Sendable {
     case markdown
     /// A JSON array of the objects that `iris show --format json` prints.
     case json
+    /// The objects of `json`, one compact object per line, as the list commands print `jsonl`.
+    case jsonl
+    /// The iris ID of each message, one per line, as `iris list --format id`
+    /// prints them. The walk finds them from headers alone, so `iris thread`
+    /// downloads no message for it (`MailReader.threadIDs(_:)`).
+    case id
 }
 
 /// Prints a `MessageDocument` the way `iris show` does.
@@ -91,17 +97,29 @@ public enum MessageFormatter {
     /// reader of the plain text can tell the two apart.
     static let threadSeparator = "* * *"
 
+    /// The bytes `iris thread --format id` writes to stdout for `ids`: one
+    /// iris ID per line, each line ending with a newline, as `iris list --format id`
+    /// writes them.
+    public static func render(threadIDs ids: [IrisID]) -> Data {
+        Data(ids.map { "\($0)\n" }.joined().utf8)
+    }
+
     /// The bytes `iris thread` writes to stdout for `messages`, in their order:
     /// each message decoded, with its iris ID, as `render(rawMessage:irisID:format:body:timeZone:)`
     /// makes it. Markdown puts `threadSeparator` between the messages; JSON is
-    /// one array. Both end with a newline. A note about the part shown of a
-    /// message is logged with the message's iris ID.
+    /// one array; JSON Lines is one compact object per line. Each ends with a
+    /// newline. A note about the part shown of a message is logged with the
+    /// message's iris ID.
     ///
     /// A message that did not download, cannot be read as an email, or whose
     /// HTML cannot be converted is left out, and a `leftOutLine` is logged for
     /// it, so the rest of the thread is still shown. When no message is left
     /// to show, the error of the input message (`ThreadMessage.isInput`) is
     /// thrown, as `iris show` would throw it. Every other error throws.
+    ///
+    /// `id` decodes nothing, so it leaves nothing out: it is `render(threadIDs:)`
+    /// of every message. `iris thread` gets those IDs from
+    /// `MailReader.threadIDs(_:)` instead, which downloads nothing.
     public static func render(
         thread messages: [ThreadMessage],
         format: ThreadOutputFormat,
@@ -122,6 +140,31 @@ public enum MessageFormatter {
         timeZone: TimeZone,
         convertingHTMLWith htmlToMarkdown: (String) async throws -> String
     ) async throws -> Data {
+        switch format {
+        case .markdown:
+            let documents = try await shownDocuments(messages, body: preference, convertingHTMLWith: htmlToMarkdown)
+            let markdowns = documents.map { markdown($0, timeZone: timeZone) }
+            return Data((markdowns.joined(separator: "\n\n\(threadSeparator)\n\n") + "\n").utf8)
+        case .json:
+            let documents = try await shownDocuments(messages, body: preference, convertingHTMLWith: htmlToMarkdown)
+            return Data((try OutputFormatter.json(documents, pretty: true) + "\n").utf8)
+        case .jsonl:
+            let documents = try await shownDocuments(messages, body: preference, convertingHTMLWith: htmlToMarkdown)
+            return Data(try documents.map { try OutputFormatter.json($0, pretty: false) + "\n" }.joined().utf8)
+        case .id:
+            return render(threadIDs: messages.map(\.irisID))
+        }
+    }
+
+    /// The documents of `messages` that can be shown, in their order, for
+    /// `render(thread:format:body:timeZone:)`: it logs a `leftOutLine` for
+    /// each of the others, and throws the error of the input message when none
+    /// can be shown.
+    private static func shownDocuments(
+        _ messages: [ThreadMessage],
+        body preference: BodyPreference,
+        convertingHTMLWith htmlToMarkdown: (String) async throws -> String
+    ) async throws -> [MessageDocument] {
         var documents: [MessageDocument] = []
         var leftOut: [(message: ThreadMessage, error: IrisError, line: String)] = []
         for message in messages {
@@ -159,13 +202,7 @@ public enum MessageFormatter {
         for item in leftOut {
             IrisLog.log(item.line)
         }
-        switch format {
-        case .markdown:
-            let markdowns = documents.map { markdown($0, timeZone: timeZone) }
-            return Data((markdowns.joined(separator: "\n\n\(threadSeparator)\n\n") + "\n").utf8)
-        case .json:
-            return Data((try OutputFormatter.json(documents, pretty: true) + "\n").utf8)
-        }
+        return documents
     }
 
     /// The message as Markdown: a subject heading, the From/To/Cc/Date lines,

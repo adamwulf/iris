@@ -163,6 +163,9 @@ final class MessageFormatterTests: XCTestCase {
         ),
     ]
 
+    /// The thread formats that decode the messages: `id` decodes nothing.
+    private let decodingFormats = ThreadOutputFormat.allCases.filter { $0 != .id }
+
     private func documents(_ messages: [ThreadMessage], body: BodyPreference = .auto) async throws -> [MessageDocument] {
         var documents: [MessageDocument] = []
         for message in messages {
@@ -200,6 +203,53 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(decoded?.compactMap { $0["messageID"] as? String }, ["<a@example.com>", "<b@example.com>"])
     }
 
+    func testRenderThreadJSONLinesIsTheJSONObjectsOneCompactLineEach() async throws {
+        let output = try await MessageFormatter.render(thread: thread, format: .jsonl)
+        let json = try await MessageFormatter.render(thread: thread, format: .json)
+
+        let text = String(decoding: output, as: UTF8.self)
+        let expected = try await documents(thread).map { try OutputFormatter.json($0, pretty: false) + "\n" }.joined()
+        XCTAssertEqual(text, expected)
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        XCTAssertEqual(lines.count, 3, "one line per message, each ending with a newline")
+        XCTAssertEqual(lines.last, "")
+        for line in lines.dropLast() {
+            XCTAssertTrue(line.hasPrefix(#"{"appleMailURL":"#), "sorted keys, no spaces: \(line)")
+        }
+        let objects = try lines.dropLast().map { line in
+            try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? NSDictionary)
+        }
+        let array = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [NSDictionary])
+        XCTAssertEqual(objects, array, "the objects of --format json, in the same order")
+    }
+
+    func testRenderThreadIDsIsOneIrisIDPerLineAsListWritesThem() throws {
+        let ids = [IrisID(account: "work", mailbox: "INBOX", uid: 7), IrisID(account: "work", mailbox: "[Gmail]/Sent Mail", uid: 3)]
+
+        let output = String(decoding: MessageFormatter.render(threadIDs: ids), as: UTF8.self)
+
+        XCTAssertEqual(output, "work/INBOX/7\nwork/[Gmail]/Sent Mail/3\n")
+        let rows = ids.map { MessageSummary(irisID: $0, from: nil, subject: "", date: nil, unread: false) }
+        XCTAssertEqual(output, try OutputFormatter.render(rows, format: .id))
+    }
+
+    func testRenderThreadAsIDsNamesEveryMessageAndDecodesNone() async throws {
+        // `iris thread --format id` downloads nothing, so it never gets here,
+        // but the format means the same for downloaded messages: nothing is left out.
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+        let timedOut = ThreadMessage(
+            irisID: IrisID(account: "work", mailbox: "Sent Mail", uid: 5), rawMessage: .failure(.timedOut(seconds: 10)), isInput: true
+        )
+        let notAnEmail = ThreadMessage(irisID: IrisID(account: "work", mailbox: "INBOX", uid: 9), rawMessage: .success(Data()))
+
+        let output = try await MessageFormatter.render(thread: [timedOut, notAnEmail, thread[1]], format: .id)
+
+        XCTAssertEqual(String(decoding: output, as: UTF8.self), "work/Sent Mail/5\nwork/INBOX/9\nwork/Sent/3\n")
+        XCTAssertEqual(recorder.lines, [])
+    }
+
     func testRenderThreadPassesTheBodyPreference() async throws {
         let alternative = ThreadMessage(irisID: irisID, rawMessage: .success(Data("""
         Subject: Both\r
@@ -231,14 +281,14 @@ final class MessageFormatterTests: XCTestCase {
         )
         let notAnEmail = ThreadMessage(irisID: IrisID(account: "work", mailbox: "INBOX", uid: 9), rawMessage: .success(Data()))
 
-        for format in ThreadOutputFormat.allCases {
+        for format in decodingFormats {
             let output = try await MessageFormatter.render(
                 thread: [thread[0], timedOut, notAnEmail, thread[1]], format: format, timeZone: chicago
             )
             let expected = try await MessageFormatter.render(thread: thread, format: format, timeZone: chicago)
             XCTAssertEqual(output, expected, "\(format): the others are shown as if the two were not there")
         }
-        XCTAssertEqual(recorder.lines.count, 4, "one line per left-out message, in each of the two formats")
+        XCTAssertEqual(recorder.lines.count, 2 * decodingFormats.count, "one line per left-out message, in each format")
         XCTAssertEqual(
             recorder.lines[0],
             "Left work/Sent Mail/5 out of the thread: it did not download in 10 seconds. "
@@ -263,7 +313,7 @@ final class MessageFormatterTests: XCTestCase {
              .unknownMessage(irisID), 1),
         ]
         for (index, test) in cases.enumerated() {
-            for format in ThreadOutputFormat.allCases {
+            for format in decodingFormats {
                 let before = recorder.lines.count
                 do {
                     _ = try await MessageFormatter.render(thread: test.messages, format: format)

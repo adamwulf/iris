@@ -165,6 +165,12 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertEqual(command.format, .json)
     }
 
+    func testThreadParsesTheJSONLinesAndIDFormats() throws {
+        XCTAssertEqual(try ThreadCommand.parse(["work/INBOX/42", "--format", "jsonl"]).format, .jsonl)
+        XCTAssertEqual(try ThreadCommand.parse(["work/INBOX/42", "--format", "id"]).format, .id)
+        XCTAssertThrowsError(try ThreadCommand.parse(["work/INBOX/42", "--format", "table"]), "no table: a thread is not rows")
+    }
+
     func testThreadHasNoRawFormat() {
         // A thread is several messages, so there is no single message source to print.
         XCTAssertThrowsError(try ThreadCommand.parse(["work/INBOX/42", "--format", "raw"]))
