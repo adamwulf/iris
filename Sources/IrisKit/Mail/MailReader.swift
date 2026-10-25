@@ -35,8 +35,13 @@ public struct MailReader: Sendable {
         let listed = try await withClient { client in
             try await client.listMailboxes()
         }
-        let decoded = listed.map { MailboxInfo(name: ModifiedUTF7.decode($0.name), attributes: $0.attributes) }
-        return MailboxInfo.merged(decoded).sorted(by: MailboxInfo.areInNameOrder)
+        return Self.decoded(listed).sorted(by: MailboxInfo.areInNameOrder)
+    }
+
+    /// `listed`, as `listMailboxes` gives it, with decoded names, merged by
+    /// name, in the order the server listed them.
+    private static func decoded(_ listed: [MailboxInfo]) -> [MailboxInfo] {
+        MailboxInfo.merged(listed.map { MailboxInfo(name: ModifiedUTF7.decode($0.name), attributes: $0.attributes) })
     }
 
     /// One page of the messages in `mailbox` that match `filter` (all of them
@@ -103,12 +108,337 @@ public struct MailReader: Sendable {
         }
         return try await withClient { client in
             _ = try await examine(id.mailbox, with: client)
-            let data = try await client.fetchRawMessage(uid: id.uid)
-            guard !data.isEmpty else {
-                throw IrisError.unknownMessage(id)
-            }
-            return data
+            return try await fetchRawMessage(id, with: client)
         }
+    }
+
+    /// The most message IDs in one Message-ID SEARCH of `thread`. Zoho gave
+    /// wrong answers for large OR trees of HEADER keys, so each search stays small.
+    static let messageIDSearchChunkSize = 10
+
+    /// The special-use attributes of the mailboxes that `thread` searches, next
+    /// to INBOX and the input message's mailbox, in the order that picks the
+    /// copy of a message that is in several mailboxes.
+    static let threadMailboxAttributes = [#"\Sent"#, #"\Drafts"#, #"\Archive"#, #"\All"#]
+
+    /// Every message in the thread of the message `id`, each once, oldest first.
+    /// `id` must name this reader's account, as for `rawMessage(_:)`.
+    ///
+    /// A message is in the thread when it has `id`'s subject (see
+    /// `ThreadSubject`: a subject change starts a new thread) and names a
+    /// message ID of the thread in its Message-ID, In-Reply-To, or References.
+    /// iris searches INBOX, each `\Sent`, `\Drafts`, `\Archive`, and `\All`
+    /// mailbox, and `id`'s mailbox, and reads only the headers of what it finds:
+    ///
+    /// 1. One SUBJECT search per mailbox, `id`'s first, for `id`'s subject.
+    ///    Servers such as Zoho never match a HEADER search on In-Reply-To or
+    ///    References, so the subject is the only way to find the replies, and
+    ///    every member has it. When the server refuses the whole subject, iris
+    ///    searches for its ASCII words instead (`subjectSearches(for:)`). A
+    ///    search that is refused, or that does not find `id` in its own
+    ///    mailbox, is not used again in this walk; when none is left, iris
+    ///    logs one line and searches the rest of the mailboxes by Message-ID.
+    /// 2. Every message read with the subject that names a known ID joins
+    ///    the thread and adds the IDs it names, until none joins: iPhone Mail
+    ///    puts only the parent in References, so the links go one step at a time.
+    /// 3. Only in the mailboxes with no SUBJECT search: HEADER Message-ID
+    ///    searches, first for the IDs that `id` names, then, round after round,
+    ///    for the known IDs that no message read so far has. These find only
+    ///    the messages that a known message names, so from one branch of a
+    ///    thread they never reach another.
+    ///
+    /// A message in several mailboxes is shown once, by its Message-ID, from
+    /// the first mailbox in the order of `threadMailboxes(listed:inputMailbox:)`
+    /// (the lowest UID, when a mailbox has two copies). When the SUBJECT
+    /// searches run, every message of a thread that lies in the usual
+    /// mailboxes gives the same thread, with the same iris IDs; a start in
+    /// another mailbox adds that mailbox to the search. The order is the
+    /// `Date:` header, else the date the server received the message, as in
+    /// `list`. Other messages cannot name a message that has no Message-ID
+    /// header, so its thread is that message alone.
+    ///
+    /// Only EXAMINE, SEARCH, and `BODY.PEEK` fetches: no message is marked as read.
+    public func thread(_ id: IrisID) async throws -> [ThreadMessage] {
+        try await withThreadWalk(id) { walk, client in
+            try await threadDownloads(walk, with: client)
+        }
+    }
+
+    /// The iris IDs of `thread(_:)`, in the same order, from the same walk,
+    /// without downloading any message: the walk reads only headers. The
+    /// walk logs what `thread(_:)` logs about it.
+    public func threadIDs(_ id: IrisID) async throws -> [IrisID] {
+        try await withThreadWalk(id) { walk, _ in
+            walk.messages
+        }
+    }
+
+    /// What the walk of `thread(_:)` found.
+    private struct ThreadWalk {
+        /// The copy shown of each message of the thread, oldest first.
+        let messages: [IrisID]
+        /// The copy shown of the message that the thread was asked for.
+        let inputCopy: IrisID?
+        /// The mailbox that the walk's last EXAMINE opened.
+        let openMailbox: String?
+    }
+
+    /// Runs the walk of `thread(_:)` for `id` in one session, then `body` with
+    /// what it found, in the same session. `id` must name this reader's account.
+    private func withThreadWalk<T>(
+        _ id: IrisID, _ body: (ThreadWalk, any MailClient) async throws -> T
+    ) async throws -> T {
+        precondition(id.account == account.name, "\(id) is not in the account \(account.name)")
+        guard id.uid >= 1 else {
+            throw IrisError.unknownMessage(id)
+        }
+        return try await withClient { client in
+            try await body(try await threadWalk(id, with: client), client)
+        }
+    }
+
+    /// The walk of `thread(_:)`, from the headers alone: it downloads no message.
+    private func threadWalk(_ id: IrisID, with client: any MailClient) async throws -> ThreadWalk {
+        // The downloads skip the EXAMINE of the mailbox that the walk's last
+        // EXAMINE left open, so every EXAMINE of the walk goes through `open`.
+        var openMailbox: String?
+        func open(_ mailbox: String) async throws {
+            _ = try await examine(mailbox, with: client)
+            openMailbox = mailbox
+        }
+
+        try await open(id.mailbox)
+        guard let input = try await client.fetchThreadHeaders(uids: [id.uid]).first(where: { $0.uid == id.uid }) else {
+            throw IrisError.unknownMessage(id)
+        }
+        guard let inputMessageID = input.messageID else {
+            return ThreadWalk(messages: [id], inputCopy: id, openMailbox: openMailbox)
+        }
+
+        let mailboxes = Self.threadMailboxes(listed: Self.decoded(try await client.listMailboxes()), inputMailbox: id.mailbox)
+        let subject = ThreadSubject.normalized(input.subject)
+        // Every message whose headers were read, in the thread or not, so none is read twice.
+        var fetched: [IrisID: ThreadHeaders] = [id: input]
+
+        /// Reads the headers of the messages `uids` in the open mailbox, `mailbox`, that are not read yet.
+        func readHeaders(_ uids: [UInt32], in mailbox: String) async throws {
+            let unread = Set(uids.filter { fetched[threadCopy(mailbox, $0)] == nil })
+            guard !unread.isEmpty else {
+                return
+            }
+            // A UID that was not asked for, such as from an unsolicited FETCH, is skipped.
+            for headers in try await client.fetchThreadHeaders(uids: unread.sorted()) where unread.contains(headers.uid) {
+                fetched[threadCopy(mailbox, headers.uid)] = headers
+            }
+        }
+
+        /// The messages in the open mailbox whose Message-ID is one of `ids`, a few IDs per SEARCH.
+        func messageIDMatches(_ ids: [String]) async throws -> [UInt32] {
+            var matches: [UInt32] = []
+            for start in stride(from: 0, to: ids.count, by: Self.messageIDSearchChunkSize) {
+                let chunk = Array(ids[start..<min(start + Self.messageIDSearchChunkSize, ids.count)])
+                matches += try await client.searchUIDs(messageIDs: chunk)
+            }
+            return matches
+        }
+
+        // The SUBJECT searches still to try. One that is refused, or that
+        // misses `id` in its own mailbox, is dropped for the rest of the walk.
+        var subjectSearches = Self.subjectSearches(for: subject)
+        if subjectSearches.isEmpty {
+            IrisLog.log(
+                "The message has no subject to search for, so iris followed only the message IDs "
+                    + "that the messages name, and the thread may miss replies."
+            )
+        }
+
+        /// The messages in the open mailbox, `mailbox`, that the first
+        /// SUBJECT search left finds. Nil when none is left.
+        func subjectMatches(in mailbox: String) async throws -> [UInt32]? {
+            while let texts = subjectSearches.first {
+                let failure: String
+                do {
+                    let matches = try await client.searchUIDs(subjectContainingAll: texts)
+                    if mailbox != id.mailbox || matches.contains(id.uid) {
+                        return matches
+                    }
+                    failure = "the search did not find the message itself"
+                } catch IrisError.searchFailed(_, let reason) {
+                    failure = reason
+                }
+                subjectSearches.removeFirst()
+                if subjectSearches.isEmpty {
+                    IrisLog.log(
+                        "The server could not search by subject (\(failure)), so iris followed only the message IDs "
+                            + "that the messages name, and the thread may miss replies."
+                    )
+                }
+            }
+            return nil
+        }
+
+        // 1. One SUBJECT search per mailbox, `id`'s mailbox first: it is open,
+        // and its answer must have `id`. A mailbox with no SUBJECT search is
+        // searched by the Message-IDs that `id` names instead.
+        let firstIDs = input.linkedMessageIDs
+        var messageIDMailboxes: [String] = []
+        for mailbox in [id.mailbox] + mailboxes.filter({ $0 != id.mailbox }) {
+            if mailbox != id.mailbox {
+                try await open(mailbox)
+            }
+            if let matches = try await subjectMatches(in: mailbox) {
+                try await readHeaders(matches, in: mailbox)
+            } else {
+                messageIDMailboxes.append(mailbox)
+                try await readHeaders(try await messageIDMatches(firstIDs), in: mailbox)
+            }
+        }
+
+        // 2. Every message with the subject that names a known ID joins, until
+        // none joins. In the mailboxes with no SUBJECT search, each round
+        // searches the known IDs that no message read so far has.
+        var members: Set<IrisID> = [id]
+        var knownIDs = Set(firstIDs)
+        var searchedIDs = Set(firstIDs)
+        while true {
+            var joined = true
+            while joined {
+                joined = false
+                for (copy, headers) in fetched where !members.contains(copy)
+                    && ThreadSubject.normalized(headers.subject) == subject
+                    && !knownIDs.isDisjoint(with: headers.linkedMessageIDs) {
+                    members.insert(copy)
+                    knownIDs.formUnion(headers.linkedMessageIDs)
+                    joined = true
+                }
+            }
+            let readIDs = Set(fetched.values.compactMap(\.messageID))
+            let newIDs = knownIDs.subtracting(searchedIDs).subtracting(readIDs).sorted()
+            guard !messageIDMailboxes.isEmpty, !newIDs.isEmpty else {
+                break
+            }
+            searchedIDs.formUnion(newIDs)
+            for mailbox in messageIDMailboxes {
+                try await open(mailbox)
+                try await readHeaders(try await messageIDMatches(newIDs), in: mailbox)
+            }
+        }
+
+        // One copy per Message-ID: the first in mailbox order, then the lowest UID.
+        let rank = Dictionary(uniqueKeysWithValues: mailboxes.enumerated().map { ($0.element, $0.offset) })
+        func precedes(_ lhs: IrisID, _ rhs: IrisID) -> Bool {
+            (rank[lhs.mailbox] ?? rank.count, lhs.uid) < (rank[rhs.mailbox] ?? rank.count, rhs.uid)
+        }
+        // A reply without a Message-ID has nothing to match its copies by, so each copy is kept.
+        var chosen: [String: IrisID] = [:]
+        for copy in members {
+            let key = fetched[copy]?.messageID ?? copy.description
+            if let current = chosen[key], precedes(current, copy) {
+                continue
+            }
+            chosen[key] = copy
+        }
+
+        func date(_ copy: IrisID) -> Date {
+            let headers = fetched[copy]
+            return headers?.date ?? headers?.internalDate ?? .distantPast
+        }
+        let messages = chosen.values.sorted { lhs, rhs in
+            date(lhs) == date(rhs) ? precedes(lhs, rhs) : date(lhs) < date(rhs)
+        }
+        return ThreadWalk(messages: messages, inputCopy: chosen[inputMessageID], openMailbox: openMailbox)
+    }
+
+    /// The messages of `walk`, downloaded in the session of the walk, in the
+    /// walk's order. A message that does not download is kept with its failure.
+    private func threadDownloads(_ walk: ThreadWalk, with client: any MailClient) async throws -> [ThreadMessage] {
+        // Downloaded mailbox by mailbox, in name order, so each mailbox is
+        // opened once (and not at all when the walk left it open), then put
+        // back in the walk's order.
+        let byMailbox = walk.messages.enumerated().sorted { lhs, rhs in
+            (lhs.element.mailbox, lhs.offset) < (rhs.element.mailbox, rhs.offset)
+        }
+        var downloaded: [(position: Int, message: ThreadMessage)] = []
+        var openMailbox = walk.openMailbox
+        for (position, copy) in byMailbox {
+            if copy.mailbox != openMailbox {
+                _ = try await examine(copy.mailbox, with: client)
+                openMailbox = copy.mailbox
+            }
+            let rawMessage = try await threadDownload(copy, with: client)
+            if case .failure = rawMessage {
+                // After any failed download, open the mailbox again: after a
+                // timeout SwiftMail opens a new connection, where no mailbox is
+                // open, and for a message that is gone it costs one EXAMINE.
+                openMailbox = nil
+            }
+            downloaded.append((position, ThreadMessage(irisID: copy, rawMessage: rawMessage, isInput: copy == walk.inputCopy)))
+        }
+        return downloaded.sorted { $0.position < $1.position }.map(\.message)
+    }
+
+    /// The SUBJECT searches that `thread` tries for `subject`, a normalized
+    /// subject, in order: the whole subject, then its ASCII words (see
+    /// `ThreadSubject.asciiWords(_:)`), for a server that refuses the whole
+    /// subject. None for an empty subject, which every message would match.
+    static func subjectSearches(for subject: String) -> [[String]] {
+        guard !subject.isEmpty else {
+            return []
+        }
+        let words = ThreadSubject.asciiWords(subject)
+        return words.isEmpty || words == [subject] ? [[subject]] : [[subject], words]
+    }
+
+    /// The raw bytes of `id` from the open mailbox, which must be `id`'s
+    /// mailbox, or the error of this one message: it did not download in time,
+    /// or it is gone. Every other error, such as a lost connection, throws.
+    private func threadDownload(
+        _ id: IrisID, with client: any MailClient
+    ) async throws -> Result<Data, ThreadMessage.DownloadFailure> {
+        do {
+            return .success(try await fetchRawMessage(id, with: client))
+        } catch IrisError.messageDownloadTimedOut(let seconds) {
+            return .failure(.timedOut(seconds: seconds))
+        } catch IrisError.unknownMessage {
+            return .failure(.gone)
+        }
+    }
+
+    /// The iris ID of `uid` in `mailbox` of this account.
+    private func threadCopy(_ mailbox: String, _ uid: UInt32) -> IrisID {
+        IrisID(account: account.name, mailbox: mailbox, uid: uid)
+    }
+
+    /// The mailboxes that `thread` searches, each once, in this order: INBOX,
+    /// the `\Sent`, `\Drafts`, `\Archive`, and `\All` mailboxes (each kind in
+    /// the order of `listed`), then `inputMailbox`. Besides `inputMailbox`,
+    /// only names in `listed` are searched. The names are in the form that an
+    /// `IrisID` holds, so they compare with `IrisID.mailbox`.
+    ///
+    /// - Parameter listed: The mailboxes with decoded names, merged, in the order the server listed them.
+    private static func threadMailboxes(listed: [MailboxInfo], inputMailbox: String) -> [String] {
+        let inbox = listed.filter { IrisID.canonicalMailbox($0.name) == defaultMailbox }
+        let special = threadMailboxAttributes.flatMap { attribute in
+            listed.filter { $0.attributes.contains(attribute) }
+        }
+        var names: [String] = []
+        for name in (inbox + special).map(\.name) + [inputMailbox] {
+            let name = IrisID.canonicalMailbox(name)
+            if !names.contains(name) {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    /// The raw bytes of `id` from the open mailbox, which must be `id`'s
+    /// mailbox. A missing message throws `unknownMessage`.
+    private func fetchRawMessage(_ id: IrisID, with client: any MailClient) async throws -> Data {
+        let data = try await client.fetchRawMessage(uid: id.uid)
+        guard !data.isEmpty else {
+            throw IrisError.unknownMessage(id)
+        }
+        return data
     }
 
     /// Opens `mailbox`, a name as `mailboxes()` shows it, by its wire name in

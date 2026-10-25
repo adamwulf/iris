@@ -151,6 +151,47 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertThrowsError(try Show.parse(["work/INBOX/42", "--mailbox", "INBOX"]))
     }
 
+    func testThreadDefaults() throws {
+        let command = try ThreadCommand.parse(["work/INBOX/42"])
+        XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+        XCTAssertEqual(command.body, .auto)
+        XCTAssertEqual(command.format, .markdown)
+    }
+
+    func testThreadParsesEveryOption() throws {
+        let command = try ThreadCommand.parse(["personal/[Gmail]/Sent Mail/7", "--body", "html", "--format", "json"])
+        XCTAssertEqual(command.irisID, IrisID(account: "personal", mailbox: "[Gmail]/Sent Mail", uid: 7))
+        XCTAssertEqual(command.body, .html)
+        XCTAssertEqual(command.format, .json)
+    }
+
+    func testThreadParsesTheJSONLinesAndIDFormats() throws {
+        XCTAssertEqual(try ThreadCommand.parse(["work/INBOX/42", "--format", "jsonl"]).format, .jsonl)
+        XCTAssertEqual(try ThreadCommand.parse(["work/INBOX/42", "--format", "id"]).format, .id)
+        XCTAssertThrowsError(try ThreadCommand.parse(["work/INBOX/42", "--format", "table"]), "no table: a thread is not rows")
+    }
+
+    func testThreadHasNoRawFormat() {
+        // A thread is several messages, so there is no single message source to print.
+        XCTAssertThrowsError(try ThreadCommand.parse(["work/INBOX/42", "--format", "raw"]))
+    }
+
+    func testThreadNeedsAFullIrisIDAndExplainsABadOne() {
+        XCTAssertThrowsError(try ThreadCommand.parse([]))
+        XCTAssertThrowsError(try ThreadCommand.parse(["INBOX/42"]))
+        XCTAssertThrowsError(try ThreadCommand.parse(["42"])) { error in
+            let message = ThreadCommand.message(for: error)
+            XCTAssertTrue(message.contains("\"42\" is not an iris ID"), message)
+            XCTAssertTrue(message.contains("<account>/<mailbox>/<UID>"), message)
+        }
+    }
+
+    func testThreadHasNoAccountOrMailboxOption() {
+        // The iris ID names both.
+        XCTAssertThrowsError(try ThreadCommand.parse(["work/INBOX/42", "--account", "work"]))
+        XCTAssertThrowsError(try ThreadCommand.parse(["work/INBOX/42", "--mailbox", "INBOX"]))
+    }
+
     func testReadAndUnreadTakeOneIrisID() throws {
         XCTAssertEqual(
             try Read.parse(["personal/[Gmail]/All Mail/7"]).irisID,
@@ -207,6 +248,7 @@ final class ArgumentParsingTests: XCTestCase {
             Mailboxes.helpMessage(columns: 1000),
             List.helpMessage(columns: 1000),
             Show.helpMessage(columns: 1000),
+            ThreadCommand.helpMessage(columns: 1000),
         ]
         for help in helps {
             for phrase in oldPhrases {

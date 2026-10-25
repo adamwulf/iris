@@ -9,10 +9,15 @@ struct SwiftMailClient: MailWriteClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
 
-    /// The most envelopes one FETCH asks for. SwiftMail gives every FETCH 10
-    /// seconds (`FetchMessageInfoCommand.timeoutSeconds`), so a page is fetched
-    /// in chunks. 100 envelopes are tens of kilobytes, which a slow link moves in time.
+    /// The most messages one FETCH of `fetchEnvelopes` or `fetchThreadHeaders`
+    /// asks for. SwiftMail gives every FETCH 10 seconds
+    /// (`FetchMessageInfoCommand.timeoutSeconds`), so a page is fetched in
+    /// chunks. 100 envelopes, or the thread headers of 100 messages, are tens
+    /// of kilobytes, which a slow link moves in time.
     static let envelopeChunkSize = 100
+
+    /// The header fields that `fetchThreadHeaders` asks for.
+    static let threadHeaderFields = ["Message-ID", "In-Reply-To", "References", "Subject", "Date"]
 
     /// The IMAP commands iris sends. The command decides how its errors read.
     enum Command: Equatable {
@@ -24,8 +29,12 @@ struct SwiftMailClient: MailWriteClient {
         case list
         /// `mailbox` is the wire name, in modified UTF-7.
         case examine(mailbox: String)
+        /// The SEARCH for the `list` filter options, and the SUBJECT search of `thread`.
         case search
+        /// The Message-ID SEARCH of `thread`.
+        case headerSearch
         case fetchEnvelopes
+        case fetchThreadHeaders
         case fetchRawMessage
         /// `mailbox` is the wire name, in modified UTF-7.
         case select(mailbox: String)
@@ -39,8 +48,8 @@ struct SwiftMailClient: MailWriteClient {
             case .capability: return "CAPABILITY"
             case .list: return "LIST"
             case .examine: return "EXAMINE"
-            case .search: return "SEARCH"
-            case .fetchEnvelopes, .fetchRawMessage: return "FETCH"
+            case .search, .headerSearch: return "SEARCH"
+            case .fetchEnvelopes, .fetchThreadHeaders, .fetchRawMessage: return "FETCH"
             case .select: return "SELECT"
             case .store: return "STORE"
             }
@@ -163,6 +172,42 @@ struct SwiftMailClient: MailWriteClient {
         return criteria
     }
 
+    func searchUIDs(subjectContainingAll texts: [String]) async throws -> [UInt32] {
+        // .search, so a refusal is searchFailed, which thread catches.
+        let result: ExtendedSearchResult<UID> = try await run(.search) {
+            try await server.extendedSearch(criteria: Self.subjectSearchCriteria(texts))
+        }
+        return result.all?.toArray().map(\.value) ?? []
+    }
+
+    /// The SEARCH keys for `texts`: a SUBJECT key per text. SEARCH needs all of them to match.
+    static func subjectSearchCriteria(_ texts: [String]) -> [SearchCriteria] {
+        texts.map { .subject($0) }
+    }
+
+    func searchUIDs(messageIDs: [String]) async throws -> [UInt32] {
+        let result: ExtendedSearchResult<UID> = try await run(.headerSearch) {
+            try await server.extendedSearch(criteria: [Self.messageIDSearchCriteria(messageIDs)])
+        }
+        return result.all?.toArray().map(\.value) ?? []
+    }
+
+    /// The SEARCH key for `messageIDs`: a HEADER Message-ID key per ID, joined
+    /// by OR. The ORs make a balanced tree, so the nesting stays shallow.
+    /// `messageIDs` is not empty.
+    static func messageIDSearchCriteria(_ messageIDs: [String]) -> SearchCriteria {
+        anyOf(messageIDs.map { SearchCriteria.header("Message-ID", $0) }[...])
+    }
+
+    /// The key that matches when any of `keys` matches. `keys` is not empty.
+    private static func anyOf(_ keys: ArraySlice<SearchCriteria>) -> SearchCriteria {
+        guard keys.count > 1 else {
+            return keys[keys.startIndex]
+        }
+        let middle = keys.startIndex + keys.count / 2
+        return .or(anyOf(keys[..<middle]), anyOf(keys[middle...]))
+    }
+
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope] {
         try await fetchEnvelopes(using: SequenceNumberSet(sequenceNumbers))
     }
@@ -187,6 +232,27 @@ struct SwiftMailClient: MailWriteClient {
                 }
             }
             return envelopes
+        }
+    }
+
+    func fetchThreadHeaders(uids: [UInt32]) async throws -> [ThreadHeaders] {
+        // No ENVELOPE: SwiftMail reads the header fields with the parser that
+        // `iris show` uses, and the fields are a few hundred bytes a message.
+        let infos = server.fetchMessageInfos(
+            using: UIDSet(uids.map(UID.init)),
+            options: [.internalDate],
+            headerFields: Self.threadHeaderFields,
+            chunkSize: Self.envelopeChunkSize
+        )
+        return try await run(.fetchThreadHeaders) {
+            var headers: [ThreadHeaders] = []
+            for try await info in infos {
+                // FETCH always asks for the UID, so a message without one is a server bug. Skip it.
+                if let header = ThreadHeaders(swiftMail: info) {
+                    headers.append(header)
+                }
+            }
+            return headers
         }
     }
 
@@ -390,6 +456,24 @@ extension MessageEnvelope {
             uid: uid.value,
             seen: info.flags.contains(.seen),
             from: sender.map { MailAddress(name: $0.name, address: $0.address) },
+            subject: info.subject,
+            date: info.date,
+            internalDate: info.internalDate
+        )
+    }
+}
+
+extension ThreadHeaders {
+    /// `info` from FETCH (UID INTERNALDATE and the `threadHeaderFields`). Nil when it has no UID.
+    init?(swiftMail info: MessageInfo) {
+        guard let uid = info.uid else {
+            return nil
+        }
+        self.init(
+            uid: uid.value,
+            messageID: info.messageId?.description,
+            inReplyTo: info.inReplyTo?.description,
+            references: info.references?.map(\.description) ?? [],
             subject: info.subject,
             date: info.date,
             internalDate: info.internalDate

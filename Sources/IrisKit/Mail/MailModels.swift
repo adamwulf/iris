@@ -184,18 +184,56 @@ public struct MessagePage: Sendable, Equatable {
         return words.joined(separator: " ")
     }
 
-    /// `text` as one shell word: unchanged when it is safe, else in single quotes.
+    /// `text` as one shell word: unchanged when it is safe, else `singleQuoted`.
     static func shellQuoted(_ text: String) -> String {
         let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./@%+=:,")
         if !text.isEmpty, text.unicodeScalars.allSatisfy(safe.contains) {
             return text
         }
-        return "'" + text.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+        return singleQuoted(text)
+    }
+
+    /// `text` in single quotes, as one shell word, with each `'` in it written as `'\''`.
+    static func singleQuoted(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 
     /// "1 message", "2 messages".
     static func messageCount(_ count: Int) -> String {
         count == 1 ? "1 message" : "\(count) messages"
+    }
+}
+
+/// One message of `iris thread`: its iris ID and its raw RFC 822 bytes, or
+/// why iris could not download them, so that one bad message does not cost
+/// the rest of the thread.
+public struct ThreadMessage: Sendable, Equatable {
+    /// Why iris could not download one message of a thread.
+    public enum DownloadFailure: Error, Sendable, Equatable {
+        /// It did not download in SwiftMail's fixed time limit.
+        case timedOut(seconds: Int)
+        /// It left its mailbox after iris found it.
+        case gone
+
+        /// The error that `iris show` gives for the message `id` in this case.
+        func irisError(for id: IrisID) -> IrisError {
+            switch self {
+            case .timedOut(let seconds): return .messageDownloadTimedOut(seconds: seconds)
+            case .gone: return .unknownMessage(id)
+            }
+        }
+    }
+
+    public let irisID: IrisID
+    public let rawMessage: Result<Data, DownloadFailure>
+    /// Whether this is the message that the thread was asked for (the copy
+    /// shown of it, which can be in another mailbox).
+    public let isInput: Bool
+
+    init(irisID: IrisID, rawMessage: Result<Data, DownloadFailure>, isInput: Bool = false) {
+        self.irisID = irisID
+        self.rawMessage = rawMessage
+        self.isInput = isInput
     }
 }
 

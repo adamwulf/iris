@@ -12,10 +12,18 @@ done; README.md describes it.
 
 ## Next: live check against real accounts
 
-- Run `iris check`, `iris mailboxes`, `iris list`, `iris show`, `iris read`,
-  and `iris unread` once per provider (Gmail, iCloud, Zoho), and once each
-  with a wrong password and a wrong host. Nothing has run against a real
-  server yet.
+- Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` once per
+  provider (Gmail, iCloud), and once each with a wrong password and a wrong
+  host.
+- Run `iris read` and `iris unread` once per provider (Gmail, iCloud,
+  Zoho). They have not run against a real server yet.
+- Zoho (`imappro.zoho.com`) was checked on 2026-10-24: `check`,
+  `mailboxes`, `list`, `show`, and `thread` work. Post-login CAPABILITY: `IMAP4rev1
+  UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR
+  AUTH=XOAUTH2 UIDPLUS ESEARCH LIST-EXTENDED LIST-STATUS WITHIN LITERAL- ACL
+  CONDSTORE` (no SPECIAL-USE, no THREAD, no MULTISEARCH). Special-use
+  mailboxes: `Drafts`, two `\Sent` (`Sent` and `Sent Messages`), `Archive`,
+  `Junk` and `Spam`, `Trash` and `Deleted Messages`; no `\All`.
 - Gmail with Google OAuth, with Adam's Google Cloud app (External,
   Testing): run `iris auth login`, then `iris auth status` and
   `iris check`. Check the console steps in README.md ("Gmail with OAuth")
@@ -24,23 +32,62 @@ done; README.md describes it.
   at myaccount.google.com/permissions), `iris auth status` and `iris check`
   should both show the expired sign-in (`invalid_grant`). None of it has
   run against Google yet.
-- Record the post-login CAPABILITY and the Drafts/Sent names per provider
-  (open in `plans/research/imap-libraries.md`, section 5).
+- Record the post-login CAPABILITY and the Drafts/Sent names for Gmail and
+  iCloud (open in `plans/research/imap-libraries.md`, section 5).
 
 ## Milestone 2: threads
 
-- `iris thread <iris-id>`: every message in the thread, oldest first, as
-  Markdown. Each message shows its own iris ID, so a reply in Sent shows a
-  Sent iris ID.
-- How to find the thread depends on the server:
-  - Gmail: `X-GM-THRID` (search `[Gmail]/All Mail`, so sent replies appear).
-    Blocked at the current pin: SwiftMail can FETCH `X-GM-THRID`, but the
+`iris thread` (step 1) is done; README.md describes it, and AGENTS.md
+describes the walk. Why it works the way it does:
+
+- The shortcuts are not available, so every server gets the same walk:
+  - Gmail `X-GM-THRID`: SwiftMail can FETCH it but not SEARCH by it. The
     swift-nio-imap revision it pins has no Gmail SEARCH keys (they came in
-    swift-nio-imap PR #853). Bump SwiftMail first, or use the References
-    walk below on Gmail too.
-  - Servers that advertise `THREAD=REFERENCES`: use it.
-  - Otherwise: walk `Message-ID` / `In-Reply-To` / `References` with header
-    searches in INBOX and the special-use `\Sent` mailbox.
+    swift-nio-imap PR #853), and 1.16.0 is SwiftMail's latest release.
+  - `THREAD=REFERENCES`: swift-nio-imap has no THREAD command, and Zoho
+    does not advertise it.
+  - One search over the whole account: MULTISEARCH (RFC 7377) is not
+    advertised by Zoho or Gmail, and SwiftMail has no API for it.
+- The first plan, HEADER searches on `In-Reply-To` and `References`, cannot
+  find replies on Zoho. Probes on 2026-10-24 (read-only): HEADER
+  `Message-ID` matches the whole ID, with or without `< >`; HEADER
+  `In-Reply-To` and `References` never match, in any form, even when the
+  header holds the ID; TEXT with an ID matches nothing; SUBJECT matches
+  whole words ("Champ" does not find "Champion"), and an AND of SUBJECT
+  word keys gave exactly the right messages; and an OR tree that mixed in
+  the dead keys gave wrong answers (the same matching key found the message
+  with 3, 6, and 12 keys, but not with 9 or 15 to 18). So replies are found
+  through the subject, which every member must share. HEADER `Message-ID`
+  searches (at most 10 IDs each) run only where no SUBJECT search ran.
+- A server may refuse a subject that is not ASCII (Zoho did not, for a
+  curly apostrophe, emoji, em dash, arrows, or "café"), so iris then
+  searches for the subject's ASCII words. More probes for those words: a
+  word ends at punctuation, `-`, `.`, `@`, `_`, and the curly apostrophe,
+  but not at an ASCII apostrophe ("don" does not find "don't"), and "ai"
+  (two letters) finds nothing. So words with an ASCII apostrophe and words
+  shorter than 3 are left out, and at most the 5 longest are sent.
+- Apple Mail on iPhone puts only the parent in `References`, so the walk
+  links messages round after round (seen live on Zoho).
+- A subject change starts a new thread, as in Gmail: subjects are compared
+  without leading `Re:`/`Fwd:`/`Fw:` and `[tags]` (Mailman 3 writes
+  "[list] Re: x", gateways add "[EXTERNAL]"). Outlook users reply to an old
+  email and change the subject, so `References` links the new conversation
+  to the old one (seen live on Zoho).
+- Each `Message-ID` is shown once, from a fixed mailbox order, so every
+  message of a thread gives the same thread with the same iris IDs (when
+  the SUBJECT search runs and the thread is in the searched mailboxes).
+  Zoho's Sent held two copies of one sent message, and on Gmail one message
+  is in many mailboxes.
+- One message that does not download or cannot be read is left out with a
+  line on stderr; the rest of the thread is still shown. When nothing is
+  left to show, the command fails as `iris show` would for the message
+  named.
+
+Next:
+
+- Check `iris thread` on Gmail and iCloud. Gmail's SEARCH is also
+  index-based: confirm that SUBJECT finds the replies there, and how it
+  matches words.
 - Trim repeated history. Each reply usually quotes the whole chain under it,
   so the thread view shows only the new text of each message, with a
   `--full` flag to turn trimming off. This is a heuristic, but the common
@@ -65,7 +112,6 @@ done; README.md describes it.
 - `draft` is a write command: it is never under `iris ro` (see AGENTS.md,
   "Read-only and write commands"), and its APPEND call lives outside
   `MailReader` (in `MailWriter` and `MailWriteClient`, as for `iris read`).
-  `iris thread` (milestone 2) is read-only and goes in both.
 - Probably needs a new optional key for the From address and display name
   (for example `IRIS_<NAME>_FROM`), because the username is not always the
   address.
@@ -108,6 +154,18 @@ done; README.md describes it.
 - Table columns are padded by `Character`, so emoji and CJK text are never
   cut, but a value with 2-column-wide characters (for example an emoji in a
   subject or a CJK sender name) pushes the columns after it out of line.
+- `iris thread` finds replies only through the SUBJECT search. When none
+  runs (an empty subject, a subject with no ASCII word of 3 or more letters
+  on a server that refuses non-ASCII text, or a server that refuses both
+  searches or misses the named message), only the messages that the named
+  message leads back to are found, round after round, through the
+  `Message-ID`s they name: never a reply to them. On a thread that never
+  branched the newest message gives the whole thread; on one that branched
+  (A has replies B and C), naming C gives A and C, not B, and the oldest
+  message gives only itself. A generic subject ("Hi") makes many
+  candidates; each costs a few hundred header bytes, but a large `\All`
+  mailbox could take a while. A reply filed only in a folder that is not
+  searched is not found.
 - A server that sends a mailbox name that is not valid modified UTF-7 (raw
   `R&D` instead of `R&-D`) shows it unchanged, but typing it sends `R&-D`,
   so that mailbox cannot be opened. RFC 3501 servers do not do this.

@@ -1,13 +1,15 @@
 # iris
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
-at a time and shows a full message as Markdown. Reading changes nothing: iris
-opens mailboxes read-only and never marks a message as read. The only
-commands that change mail are `iris read` and `iris unread`, which mark one
-message as read or unread.
+at a time and shows a full message, or a whole thread, as Markdown. Reading
+changes nothing: iris opens mailboxes read-only and never marks a message as
+read. The only commands that change mail are `iris read` and `iris unread`,
+which mark one message as read or unread.
 
-Made for Gmail, iCloud Mail, and Zoho Mail. It has not yet been tested
-against a live server.
+Made for Gmail, iCloud Mail, and Zoho Mail. `check`, `mailboxes`, `list`,
+`show`, and `thread` were run against Zoho Mail on 2026-10-24; `read` and
+`unread` have not run against a real server yet, and Gmail and iCloud Mail
+are not checked yet.
 
 ## Install
 
@@ -170,6 +172,11 @@ client ID but no refresh token yet.
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
   source. Markdown and JSON include a `message:` URL that opens the message
   in Apple Mail.
+- `iris thread`: every message in the thread of one message, oldest first,
+  by the iris ID of any message in it. Each message is shown in full, as
+  `iris show` shows it, with its own iris ID (a reply you sent shows its
+  Sent iris ID). Also as JSON or JSON Lines, or only the iris IDs, which
+  downloads no message.
 - `iris read` and `iris unread`: mark one message, by its iris ID, as read
   or unread (they add or remove the `\Seen` flag). Each one sets the state,
   so running it again changes nothing. They print nothing when they succeed.
@@ -192,6 +199,11 @@ iris show 'work/INBOX/4821'                # one message, as Markdown
 iris show 'work/INBOX/4821' --body text    # the plain-text part instead of the HTML
 iris show 'work/INBOX/4821' --format raw > message.eml
 iris show 'personal/[Gmail]/Sent Mail/77'
+
+iris thread 'work/INBOX/4821'                 # the whole thread, oldest first
+iris thread 'work/INBOX/4821' --format json   # an array of `iris show --format json` objects
+iris thread 'work/INBOX/4821' --format jsonl  # the same objects, one per line
+iris thread 'work/INBOX/4821' --format id     # only the iris IDs, one per line
 
 iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
@@ -228,6 +240,78 @@ case, but some servers match only whole words, and some refuse `--from` or
 compare days, not times: the server uses the day it received the message
 and ignores the time and the time zone. That day can be different from the
 `DATE` column, which shows the sender's `Date:` header.
+
+### Threads
+
+`iris thread <iris-id>` shows every message of the thread that the message
+is in: the messages before it and the replies after it, oldest first (by
+the `Date:` header, else the date the server received the message). It
+takes `--body` like `iris show`, and `--format`:
+
+- `markdown` (the default): each message as `iris show` prints it, with a
+  `* * *` line between messages.
+- `json`: an array of the objects that `iris show --format json` prints.
+- `jsonl`: the same objects, one per line, as the list commands print
+  `jsonl`.
+- `id`: only the iris ID of each message, one per line, as
+  `iris list --format id` prints them. iris finds the thread from the
+  headers alone, so this downloads no message: it saves the download time
+  (the most for large messages), and it leaves no message out.
+
+iris looks in INBOX, the Sent, Drafts, Archive, and All Mail mailboxes,
+and the message's own mailbox. A message is in the thread when it has the
+same subject and its `Message-ID`, `In-Reply-To`, or `References` header
+links it to another message of the thread. Subjects are compared without
+leading `Re:`, `Fwd:`, and `Fw:` and bracketed tags such as `[list]`
+(mailing lists) or `[EXTERNAL]` (company mail gateways), in any order,
+and without case. So a subject change starts a new thread, as in Gmail,
+even when the reply's `References` names the old conversation. A message
+in several mailboxes (on Gmail, INBOX and All Mail; on Zoho, two copies in
+Sent) is shown once, from INBOX, else Sent, Drafts, Archive, All Mail, then
+the message's own mailbox. So when iris can search by the subject (below),
+every message of a thread in those mailboxes gives the same thread and the
+same iris IDs; naming a message in another folder adds that folder.
+
+iris finds the replies by searching each mailbox for the subject, because
+servers such as Zoho cannot search the `In-Reply-To` and `References`
+headers. When a server refuses a subject (some refuse text that is not
+ASCII, such as "Adam’s plan" with a curly apostrophe), iris searches for
+its ASCII words instead ("adam", "plan"). When there is nothing it can
+search for (an empty subject, or one with no ASCII word of three or more
+letters, such as "Café"), it says so on stderr and follows only the
+`Message-ID`s that the messages name: then it finds only the messages that
+the named message leads back to, not the replies to them. The newest
+message of a thread that never branched gives the whole thread; on a
+thread that branched (A has replies B and C), naming C gives A and C, not
+B.
+
+When one message cannot be shown (in every format but `id`), iris leaves
+it out, shows the others, and writes a line to stderr with its iris ID,
+why, and what to do next:
+
+- It did not download in time (SwiftMail stops every download after 10
+  seconds): it may be large, or the connection slow, so try again on a
+  faster connection. `iris show` has the same limit.
+- It cannot be read as an email, or its HTML cannot be converted:
+  `iris show '<iris-id>' --format raw` shows its source. With
+  `--body html`, a message that also has a text part says to use
+  `iris show '<iris-id>' --body text`.
+- It is gone (deleted or moved after iris found it, before the download):
+  run the command again.
+
+When no message of the thread can be shown (in practice, a thread of one
+large message), the command fails with the error `iris show` would give
+for the message you named. Notes about which part of a message is shown
+(such as "The message has no text part") start with that message's iris
+ID.
+
+Limits:
+
+- A reply filed only in another folder (not INBOX, Sent, Drafts, Archive,
+  or All Mail, and not the folder of the message you named) is not found.
+  Zoho has no All Mail.
+- Each message is shown in full, with the quoted history of the messages
+  before it.
 
 ### Iris IDs
 
@@ -284,9 +368,10 @@ Gmail labels), Mail opens one of the copies.
 
 `iris ro <command>` runs the same command as `iris <command>`, but only the
 read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
-`list`, `show`, and `auth status`. Commands that change mail (`read`,
-`unread`, and drafts, when they come) are not there, so `iris ro read ...`
-fails. Neither is `iris auth login`, which opens a browser and writes `.env`.
+`list`, `show`, `thread`, and `auth status`. Commands that change mail
+(`read`, `unread`, and drafts, when they come) are not there, so
+`iris ro read ...` fails. Neither is `iris auth login`, which opens a browser
+and writes `.env`.
 
 To let an agent read your mail but never change it, allow only that prefix.
 For Claude Code, in `.claude/settings.json`:
