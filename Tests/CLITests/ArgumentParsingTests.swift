@@ -65,9 +65,9 @@ final class ArgumentParsingTests: XCTestCase {
         ))
     }
 
-    /// The next-page hint writes the filter options as text, so they must parse back to the same filter.
+    /// The next-page hint writes every option as text, so the command must parse back to the same options.
     /// The values need no shell quoting: `parse` gets the words with no shell to remove the quotes.
-    func testFilterOptionsInTheNextPageHintParseBackToTheSameFilter() throws {
+    func testTheNextPageCommandParsesBackToTheSameOptions() throws {
         let filter = MessageFilter(
             unread: true,
             flagged: true,
@@ -76,7 +76,20 @@ final class ArgumentParsingTests: XCTestCase {
             since: try CalendarDay(parsing: "2026-10-01"),
             before: try CalendarDay(parsing: "2026-11-01")
         )
-        XCTAssertEqual(try List.parse(filter.options).filter, filter)
+        let command = MessagePage.listCommand(
+            account: "work", mailbox: "Archive", filter: filter, page: 3, limit: 10, format: .jsonl
+        )
+        let words = command.split(separator: " ").map(String.init)
+        XCTAssertEqual(Array(words.prefix(2)), ["iris", "list"])
+
+        let list = try List.parse(Array(words.dropFirst(2)))
+
+        XCTAssertEqual(list.accountOptions.account, "work")
+        XCTAssertEqual(list.mailbox, "Archive")
+        XCTAssertEqual(list.filter, filter)
+        XCTAssertEqual(list.page, 3)
+        XCTAssertEqual(list.limit, 10)
+        XCTAssertEqual(list.format, .jsonl)
     }
 
     func testListFilterFlagsTakeNoValue() throws {
