@@ -261,10 +261,6 @@ final class MessageFormatterTests: XCTestCase {
             ([ThreadMessage(irisID: other, rawMessage: .success(Data())),
               ThreadMessage(irisID: irisID, rawMessage: .failure(.gone), isInput: true)],
              .unknownMessage(irisID), 1),
-            // With no input marked, the first message stands for it.
-            ([ThreadMessage(irisID: irisID, rawMessage: .failure(.gone)),
-              ThreadMessage(irisID: other, rawMessage: .failure(.timedOut(seconds: 10)))],
-             .unknownMessage(irisID), 1),
         ]
         for (index, test) in cases.enumerated() {
             for format in ThreadOutputFormat.allCases {
@@ -278,16 +274,6 @@ final class MessageFormatterTests: XCTestCase {
                 XCTAssertEqual(recorder.lines.count - before, test.lines, "case \(index), \(format): lines for the others")
             }
         }
-    }
-
-    func testRenderThreadOfNoMessagesIsEmptyAsInOutputFormatter() async throws {
-        let markdown = try await MessageFormatter.render(thread: [], format: .markdown)
-        let json = try await MessageFormatter.render(thread: [], format: .json)
-
-        XCTAssertEqual(markdown, Data())
-        XCTAssertEqual(String(decoding: json, as: UTF8.self), "[]\n")
-        let rows: [MessageSummary] = []
-        XCTAssertEqual(try OutputFormatter.render(rows, format: .json), "[]\n")
     }
 
     func testRenderThreadNamesTheMessageInEachNoteAboutThePartShown() async throws {

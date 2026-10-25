@@ -307,7 +307,9 @@ public struct MailReader: Sendable {
                 }
                 let rawMessage = try await threadDownload(copy, with: client)
                 if case .failure = rawMessage {
-                    // After a timeout SwiftMail opens a new connection, where no mailbox is open.
+                    // After any failed download, open the mailbox again: after a
+                    // timeout SwiftMail opens a new connection, where no mailbox is
+                    // open, and for a message that is gone it costs one EXAMINE.
                     openMailbox = nil
                 }
                 messages.append(ThreadMessage(irisID: copy, rawMessage: rawMessage, isInput: copy == inputCopy))

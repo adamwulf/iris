@@ -110,7 +110,7 @@ public enum MessageDecoder {
         of message: Message,
         preference: BodyPreference,
         htmlToMarkdown: (String) async throws -> String,
-        log: (String) -> Void = IrisLog.log
+        log: (String) -> Void
     ) async throws -> (String, BodySource?) {
         let parts = bodyParts(of: message)
         let texts = parts.filter { isPlainText($0) }.compactMap { part in

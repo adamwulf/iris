@@ -6,8 +6,8 @@ import IrisKit
 struct ThreadCommand: ReadOnlyCommand {
     static let configuration = CommandConfiguration(
         commandName: "thread",
-        abstract: "Show every message in the thread of one message, oldest first, as Markdown. No message is marked as read.",
-        discussion: "iris searches INBOX, the Sent, Archive, Drafts, and All Mail mailboxes, and the message's own mailbox for the messages that reply to the message, or that it replies to, again and again until no new message turns up. A message with a different subject (ignoring Re:, Fwd:, Fw:, and tags such as [list]) starts a new thread and is left out. A message in several mailboxes is shown once. A message that cannot be shown is left out, with a line on stderr."
+        abstract: "Show every message in the thread of one message, oldest first, as Markdown or JSON. No message is marked as read.",
+        discussion: "iris searches INBOX, the Sent, Archive, Drafts, and All Mail mailboxes, and the message's own mailbox for the messages that reply to the message, or that it replies to, again and again until no new message turns up. A message with a different subject (ignoring Re:, Fwd:, Fw:, and tags such as [list]) starts a new thread and is left out. A message in several mailboxes is shown once. A message that cannot be shown is left out, with a line on stderr. When no message can be shown, the command fails as `iris show` would for the message you named."
     )
 
     // The iris ID names the account and the mailbox, so `thread` has no --account or --mailbox.

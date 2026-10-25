@@ -150,7 +150,7 @@ public enum MessageFormatter {
                 }
             }
         }
-        if documents.isEmpty, let failed = leftOut.first(where: \.message.isInput) ?? leftOut.first {
+        if documents.isEmpty, let failed = leftOut.first(where: \.message.isInput) {
             for other in leftOut where other.message.irisID != failed.message.irisID {
                 IrisLog.log(other.line)
             }
@@ -160,10 +160,6 @@ public enum MessageFormatter {
             IrisLog.log(item.line)
         }
         switch format {
-        case .markdown where documents.isEmpty:
-            return Data()
-        case .json where documents.isEmpty:
-            return Data("[]\n".utf8)
         case .markdown:
             let markdowns = documents.map { markdown($0, timeZone: timeZone) }
             return Data((markdowns.joined(separator: "\n\n\(threadSeparator)\n\n") + "\n").utf8)
