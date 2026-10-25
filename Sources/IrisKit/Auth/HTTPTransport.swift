@@ -43,16 +43,18 @@ struct URLSessionTransport: HTTPTransport {
 /// Encodes `application/x-www-form-urlencoded` bodies. Everything but letters,
 /// digits, and `-._~` is percent-encoded, so `+` and `/` in a token stay what they are.
 enum FormEncoder {
+    /// The unreserved characters of RFC 3986, ASCII only.
+    private static let unreserved = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+    )
+
     static func encode(_ fields: [(String, String)]) -> Data {
-        var allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-        allowed.insert(charactersIn: "-._~")
-        let encoded = fields
-            .map { name, value in
-                let name = name.addingPercentEncoding(withAllowedCharacters: allowed) ?? name
-                let value = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
-                return "\(name)=\(value)"
-            }
-            .joined(separator: "&")
-        return Data(encoded.utf8)
+        Data(fields.map { "\(escape($0))=\(escape($1))" }.joined(separator: "&").utf8)
+    }
+
+    /// `text` with every character but the unreserved ones percent-encoded, as UTF-8.
+    static func escape(_ text: String) -> String {
+        // Only an unpaired UTF-16 surrogate makes this nil, and a Swift String has none.
+        text.addingPercentEncoding(withAllowedCharacters: unreserved) ?? text
     }
 }
