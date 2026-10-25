@@ -9,8 +9,9 @@ struct Iris: AsyncParsableCommand {
         abstract: "A command-line tool for reading email over IMAP.",
         version: "0.1.0",
         // Every read-only command is here and under `iris ro`. A write command
-        // goes only here, never in `ReadOnly.commands`.
-        subcommands: ReadOnly.commands.map { $0 as any ParsableCommand.Type } + [Read.self, Unread.self, ReadOnly.self]
+        // goes only here, after them, never in `ReadOnly.commands`.
+        subcommands: ReadOnly.commands.map { $0 as any ParsableCommand.Type }
+            + [Read.self, Unread.self, Auth.self, ReadOnly.self]
     )
 
     static func main() async {

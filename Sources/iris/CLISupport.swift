@@ -22,6 +22,15 @@ enum CLI {
         FileHandle.standardOutput.write(Data(text.utf8))
     }
 
+    /// Opens `url` in the default browser. A failure is not reported: the
+    /// sign-in also logs the URL, so the user can open it by hand.
+    @Sendable static func openInBrowser(_ url: URL) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = [url.absoluteString]
+        try? process.run()
+    }
+
     /// SwiftMail logs through swift-log, whose default handler writes `.info`
     /// lines on every connect, and it logs every failed command at `.error`, a
     /// long diagnostic line before iris's own message. iris reports every

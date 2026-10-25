@@ -65,4 +65,15 @@ final class ReadOnlyCommandTests: XCTestCase {
         // There is no `draft` yet; when it exists, it must still fail here.
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "draft"]))
     }
+
+    func testAuthIsAWriteCommandOnlyAtTheTopLevel() throws {
+        // `auth login` opens a browser and writes .env.
+        XCTAssertFalse(Auth.self is any ReadOnlyCommand.Type)
+        XCTAssertFalse(Auth.Login.self is any ReadOnlyCommand.Type)
+        XCTAssertTrue(names(Iris.configuration.subcommands).contains("auth"))
+        XCTAssertFalse(names(ReadOnly.configuration.subcommands).contains("auth"))
+        XCTAssertTrue(try Iris.parseAsRoot(["auth", "login"]) is Auth.Login)
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "auth", "login"]))
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "auth"]))
+    }
 }
