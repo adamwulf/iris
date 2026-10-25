@@ -233,6 +233,10 @@ public struct ThreadMessage: Sendable, Equatable {
         /// It is large, and a body part did not download in SwiftMail's
         /// fixed time limit for one part.
         case bodyTimedOut(seconds: Int)
+        /// It is large, and the server sent no bytes for a body part that is
+        /// not empty: an unsolicited FETCH (another client's flag change)
+        /// came before the part.
+        case bodyNotReceived
         /// It left its mailbox after iris found it.
         case gone
 
@@ -241,6 +245,7 @@ public struct ThreadMessage: Sendable, Equatable {
             switch self {
             case .timedOut(let seconds): return .messageDownloadTimedOut(seconds: seconds)
             case .bodyTimedOut(let seconds): return .bodyDownloadTimedOut(seconds: seconds)
+            case .bodyNotReceived: return .bodyNotReceived(id)
             case .gone: return .unknownMessage(id)
             }
         }

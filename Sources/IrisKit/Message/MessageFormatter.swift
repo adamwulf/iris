@@ -124,6 +124,9 @@ public enum MessageFormatter {
                 because: "its body did not download in \(seconds) seconds",
                 then: "It may be large, or the connection may be slow. Try again on a faster connection."
             )
+        case .bodyNotReceived:
+            // An unsolicited FETCH came first; the next session most likely has none.
+            return leftOutLine(id, because: "the server sent no bytes for its body", then: "Run the command again.")
         case .gone:
             // `iris show` would not find it either.
             return leftOutLine(id, because: "it is no longer in its mailbox", then: "Run the command again.")

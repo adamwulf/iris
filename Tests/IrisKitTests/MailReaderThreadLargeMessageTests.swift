@@ -132,6 +132,38 @@ final class MailReaderThreadLargeMessageTests: XCTestCase {
         ])
     }
 
+    /// Another client changed a flag during the walk, and its unsolicited
+    /// FETCH came before the body part, so SwiftMail kept no bytes.
+    func testALargeMessageWithoutBodyBytesIsLeftOutAndTheMailboxIsOpenedAgain() async throws {
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+        var empty = plan
+        empty.bodyParts = [part(1): Data()]
+        let fake = FakeMailClient(
+            mailboxes: [MailboxInfo(name: "INBOX", attributes: [])],
+            mailboxMessages: ["INBOX": [1: first, 2: empty, 3: last]]
+        )
+
+        let messages = try await reader(fake).thread(id(3))
+
+        XCTAssertEqual(messages.map(\.irisID), [id(1), id(2), id(3)])
+        XCTAssertEqual(messages[1].download, .failure(.bodyNotReceived))
+        XCTAssertEqual(ThreadMessage.DownloadFailure.bodyNotReceived.irisError(for: id(2)), .bodyNotReceived(id(2)))
+        let calls = await fake.calls
+        XCTAssertEqual(downloads(calls), [
+            .fetchRawMessage(1), .fetchOutline(2), .fetchBodyPart(part(1), 2),
+            .examine("INBOX"), .fetchRawMessage(3), .logout,
+        ], "the rest of the thread downloads, after one EXAMINE, as after any failed download")
+
+        let output = try await MessageFormatter.render(thread: messages, format: .json)
+        let array = try XCTUnwrap(try JSONSerialization.jsonObject(with: output) as? [[String: Any]])
+        XCTAssertEqual(array.compactMap { $0["irisID"] as? String }, ["work/INBOX/1", "work/INBOX/3"])
+        XCTAssertEqual(recorder.lines, [
+            "Left work/INBOX/2 out of the thread: the server sent no bytes for its body. Run the command again.",
+        ])
+    }
+
     func testAThreadOfOneLargeMessageWhoseBodyTimesOutFailsAsShowWould() async throws {
         let fake = FakeMailClient(
             mailboxes: [MailboxInfo(name: "INBOX", attributes: [])],

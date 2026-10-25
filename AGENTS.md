@@ -223,7 +223,9 @@ at all when it is the one the walk's last EXAMINE left open, which
 downloads it, by the size the walk's headers gave (`ThreadWalk.sizes`): at
 most `wholeDownloadLimit`, or no size, is `fetchRawMessage` with no other
 FETCH; above it, the outline and the body parts. A download that times out
-(whole: `.timedOut`, a body part: `.bodyTimedOut`) or
+(whole: `.timedOut`, a body part: `.bodyTimedOut`), that gets no bytes for
+a body part (`.bodyNotReceived`: another client's flag change sent an
+unsolicited FETCH first), or that
 finds the message gone is kept as a `ThreadMessage.DownloadFailure`, and
 the mailbox is examined again before the next download (SwiftMail
 reconnects after a timeout, with no mailbox open). `MessageFormatter.render(thread:)`

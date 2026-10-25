@@ -517,8 +517,10 @@ public struct MailReader: Sendable {
     }
 
     /// `id` from the open mailbox, which must be `id`'s mailbox, or the error
-    /// of this one message: it did not download in time, or it is gone. Every
-    /// other error, such as a lost connection, throws. `size` is the size from
+    /// of this one message: it did not download in time, it is gone, or the
+    /// server sent no bytes for a body part (an unsolicited FETCH, such as
+    /// another client's flag change, came before the part). Every other
+    /// error, such as a lost connection, throws. `size` is the size from
     /// the walk's headers: at most `wholeDownloadLimit`, or unknown, gives the
     /// whole message with no other FETCH; above it, `download(_:with:)`
     /// fetches the outline and the body parts.
@@ -534,6 +536,8 @@ public struct MailReader: Sendable {
             return .failure(.timedOut(seconds: seconds))
         } catch IrisError.bodyDownloadTimedOut(let seconds) {
             return .failure(.bodyTimedOut(seconds: seconds))
+        } catch IrisError.bodyNotReceived {
+            return .failure(.bodyNotReceived)
         } catch IrisError.unknownMessage {
             return .failure(.gone)
         }
