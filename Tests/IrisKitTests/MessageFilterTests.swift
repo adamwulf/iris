@@ -57,7 +57,9 @@ final class MessageFilterTests: XCTestCase {
             MessageFilter(flagged: true),
             MessageFilter(from: "jane"),
             MessageFilter(from: ""),
+            MessageFilter(to: "bob"),
             MessageFilter(subject: "Hi"),
+            MessageFilter(search: "invoice"),
             MessageFilter(since: day),
             MessageFilter(before: day),
         ]
@@ -73,5 +75,7 @@ final class MessageFilterTests: XCTestCase {
             MessageFilter(subject: "Q4 plan", before: try CalendarDay(parsing: "2026-11-01")).options,
             ["--subject", "'Q4 plan'", "--before", "2026-11-01"]
         )
+        XCTAssertEqual(MessageFilter(search: "invoice 42").options, ["--search", "'invoice 42'"])
+        XCTAssertEqual(MessageFilter(to: "bob@example.com").options, ["--to", "bob@example.com"])
     }
 }

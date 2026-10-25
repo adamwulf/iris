@@ -5,7 +5,7 @@ import IrisKit
 struct List: ReadOnlyCommand {
     static let configuration = CommandConfiguration(
         abstract: "List the messages in a mailbox, newest first, one page at a time. Messages are not marked as read.",
-        discussion: "The filter options (--unread, --flagged, --from, --subject, --since, --before) combine: a message must match all of them. The server does the matching."
+        discussion: "The filter options (--unread, --flagged, --from, --to, --subject, --search, --since, --before) combine: a message must match all of them. The server does the matching."
     )
 
     @OptionGroup var accountOptions: AccountOptions
@@ -24,8 +24,19 @@ struct List: ReadOnlyCommand {
     ))
     var from: String?
 
+    @Option(help: ArgumentHelp(
+        "Show only messages whose To header has this text, in a name or an address.", valueName: "text"
+    ))
+    var to: String?
+
     @Option(help: ArgumentHelp("Show only messages whose subject has this text.", valueName: "text"))
     var subject: String?
+
+    @Option(help: ArgumentHelp(
+        "Show only messages that have this text anywhere: in a header (such as From, To, or Subject) or in the body.",
+        valueName: "text"
+    ))
+    var search: String?
 
     @Option(
         help: ArgumentHelp("Show only messages that the server received on this day or later.", valueName: "YYYY-MM-DD"),
@@ -49,7 +60,10 @@ struct List: ReadOnlyCommand {
     var format: OutputFormat = .listDefault
 
     var filter: MessageFilter {
-        MessageFilter(unread: unread, flagged: flagged, from: from, subject: subject, since: since, before: before)
+        MessageFilter(
+            unread: unread, flagged: flagged, from: from, to: to, subject: subject, search: search,
+            since: since, before: before
+        )
     }
 
     func run() async throws {

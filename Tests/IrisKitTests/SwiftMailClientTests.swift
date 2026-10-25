@@ -444,8 +444,14 @@ final class SwiftMailClientTests: XCTestCase {
         let since = try CalendarDay(parsing: "2026-10-01")
         let before = try CalendarDay(parsing: "2026-11-01")
         assertCriteria(
-            MessageFilter(unread: true, flagged: true, from: "jane", subject: "Q4 plan", since: since, before: before),
-            [.unseen, .flagged, .from("jane"), .subject("Q4 plan"), .since(since.start), .before(before.start)]
+            MessageFilter(
+                unread: true, flagged: true, from: "jane", to: "bob", subject: "Q4 plan", search: "budget",
+                since: since, before: before
+            ),
+            [
+                .unseen, .flagged, .from("jane"), .to("bob"), .subject("Q4 plan"), .text("budget"),
+                .since(since.start), .before(before.start),
+            ]
         )
     }
 
@@ -453,6 +459,8 @@ final class SwiftMailClientTests: XCTestCase {
         assertCriteria(MessageFilter(unread: true), [.unseen])
         assertCriteria(MessageFilter(flagged: true), [.flagged])
         assertCriteria(MessageFilter(from: "Jürgen"), [.from("Jürgen")])
+        assertCriteria(MessageFilter(to: "bob"), [.to("bob")])
+        assertCriteria(MessageFilter(search: "invoice"), [.text("invoice")])
         let since = try CalendarDay(parsing: "2026-10-01")
         assertCriteria(MessageFilter(since: since), [.since(since.start)])
     }

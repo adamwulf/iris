@@ -47,7 +47,8 @@ final class ArgumentParsingTests: XCTestCase {
     func testListParsesEveryOption() throws {
         let command = try List.parse([
             "--mailbox", "[Gmail]/All Mail", "--page", "3", "--limit", "10", "--format", "id", "--account", "personal",
-            "--unread", "--flagged", "--from", "jane@example.com", "--subject", "Q4 plan",
+            "--unread", "--flagged", "--from", "jane@example.com", "--to", "bob@example.com",
+            "--subject", "Q4 plan", "--search", "budget",
             "--since", "2026-10-01", "--before", "2026-11-01",
         ])
         XCTAssertEqual(command.mailbox, "[Gmail]/All Mail")
@@ -59,7 +60,9 @@ final class ArgumentParsingTests: XCTestCase {
             unread: true,
             flagged: true,
             from: "jane@example.com",
+            to: "bob@example.com",
             subject: "Q4 plan",
+            search: "budget",
             since: try CalendarDay(parsing: "2026-10-01"),
             before: try CalendarDay(parsing: "2026-11-01")
         ))
@@ -72,7 +75,9 @@ final class ArgumentParsingTests: XCTestCase {
             unread: true,
             flagged: true,
             from: "jane@example.com",
+            to: "bob@example.com",
             subject: "Q4",
+            search: "budget",
             since: try CalendarDay(parsing: "2026-10-01"),
             before: try CalendarDay(parsing: "2026-11-01")
         )

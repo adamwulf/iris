@@ -205,7 +205,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "The connection may be slow, or the server may be busy. Try again."
         case .searchFailed(let account, let reason):
             return "The server refused the search for the filter options (account \"\(account)\"): \(reason). "
-                + "Some servers refuse --from or --subject text that is not ASCII: try ASCII text. "
+                + "Some servers refuse filter text that is not ASCII: try ASCII text. "
                 + "Else try again with fewer filter options to find the one that the server refuses."
         case .serverError(let account, let command, let reason):
             return "The server answered \(command) with an error (account \"\(account)\"): \(reason). "

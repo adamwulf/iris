@@ -384,8 +384,10 @@ account (`--account <name>`).
   HEADER keys that mixed in In-Reply-To/References keys gave wrong answers
   (the same matching key found the message with 3, 6, and 12 keys but not
   with 9 or 15 to 18), so `thread` sends only Message-ID keys, at most 10
-  per SEARCH. Gmail's SEARCH is also index-based; check it before relying on
-  RFC 3501 substring matching anywhere.
+  per SEARCH. TEXT (`list --search`) with a Message-ID matches nothing;
+  TEXT and TO (`list --to`) were not probed with words. Gmail's SEARCH is
+  also index-based; check it before relying on RFC 3501 substring matching
+  anywhere.
 - **Special-use:** a plain LIST may leave out the attributes, so
   `SwiftMailClient.listMailboxes` merges LIST with LIST RETURN (SPECIAL-USE).
   Servers without SPECIAL-USE get SwiftMail's guess from mailbox names.

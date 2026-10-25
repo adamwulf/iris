@@ -163,8 +163,14 @@ struct SwiftMailClient: MailWriteClient {
         if let from = filter.from {
             criteria.append(.from(from))
         }
+        if let to = filter.to {
+            criteria.append(.to(to))
+        }
         if let subject = filter.subject {
             criteria.append(.subject(subject))
+        }
+        if let search = filter.search {
+            criteria.append(.text(search))
         }
         if let since = filter.since {
             criteria.append(.since(since.start))
