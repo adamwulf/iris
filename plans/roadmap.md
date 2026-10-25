@@ -59,10 +59,10 @@ done; README.md describes it.
   the first message's ID misses most of a thread (seen live on Zoho).
 - Show each `Message-ID` once. Zoho's Sent held two copies of one sent
   message, and on Gmail one message is in many mailboxes.
-- Open: should a subject change (ignoring `Re:`/`Fwd:`) end the thread?
-  Outlook users reply to an old email and change the subject, so
+- A subject change (ignoring `Re:`/`Fwd:`) starts a new thread, as in
+  Gmail. Outlook users reply to an old email and change the subject, so
   `References` links the new conversation to the old one (seen live on
-  Zoho). Gmail starts a new thread when the subject changes.
+  Zoho).
 - Trim repeated history. Each reply usually quotes the whole chain under it,
   so the thread view shows only the new text of each message, with a
   `--full` flag to turn trimming off. This is a heuristic, but the common
