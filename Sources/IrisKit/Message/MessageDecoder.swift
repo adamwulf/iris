@@ -78,7 +78,8 @@ public enum MessageDecoder {
         // has an empty SwiftMail header.
         let trimming = !full && !QuotedHistory.isForward(subject: headers.subject)
         let body = try await body(
-            of: message, preference: preference, trimming: trimming, parseHTML: parseHTML, log: log
+            of: message, preference: preference, trimming: trimming,
+            inReply: QuotedHistory.isReply(subject: headers.subject), parseHTML: parseHTML, log: log
         )
         return MessageDocument(
             messageID: headers.messageID,
@@ -244,12 +245,16 @@ public enum MessageDecoder {
     /// several parts of the chosen type, the body joins all of them. A note
     /// about which part is shown goes to `log`.
     ///
-    /// - Parameter trimming: Whether to leave out the quoted history and
-    ///   signature at the end of the body (see `QuotedHistory`).
+    /// - Parameters:
+    ///   - trimming: Whether to leave out the quoted history and signature at
+    ///     the end of the body (see `QuotedHistory`).
+    ///   - inReply: Whether the message is a reply (`QuotedHistory.isReply`),
+    ///     from its header fields.
     static func body(
         of message: Message,
         preference: BodyPreference,
         trimming: Bool,
+        inReply: Bool,
         parseHTML: (String) async throws -> HTMLDocument,
         log: (String) -> Void
     ) async throws -> (text: String, source: BodySource?, trimmed: Bool) {
@@ -268,7 +273,6 @@ public enum MessageDecoder {
             !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         let html = htmls.isEmpty ? nil : htmls
-        let inReply = QuotedHistory.isReply(subject: message.subject)
 
         if preference != .text, let html {
             do {

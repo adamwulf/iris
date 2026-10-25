@@ -233,4 +233,36 @@ final class MessageDecoderPartsTests: XCTestCase {
 
         XCTAssertEqual(MessageDecoder.bodyParts(of: parts).map(\.id), [id(1)], "only the bytes of the body are downloaded")
     }
+
+    /// The quoted history of a large message is trimmed as a whole one's, and
+    /// the subject rules read the outline's header fields: the SwiftMail
+    /// message made of the parts has an empty header.
+    func testABodyPartsMessageIsTrimmedByItsHeaderFieldsSubject() async throws {
+        let html = #"<div>Thanks!</div><blockquote type="cite"><div>Begin forwarded message:</div><div>Lunch on Tuesday?</div></blockquote>"#
+        func decode(subject: String, full: Bool = false) async throws -> MessageDocument {
+            let outline = MessageOutline(
+                size: 20_000_000,
+                headers: MessageHeaders(
+                    messageID: "<m1@example.com>", subject: subject, from: [], to: [], cc: [], replyTo: [],
+                    date: nil, inReplyTo: nil, references: []
+                ),
+                parts: [PartOutline(id: id(1), contentType: "text/html; charset=utf-8", encoding: "7BIT", size: 120)]
+            )
+            return try await MessageDecoder.decode(
+                MessageParts(outline: outline, bodies: [id(1): Data(html.utf8)]), body: .auto, full: full,
+                parsingHTMLWith: MessageDecoder.htmlDocument(fromHTML:)
+            )
+        }
+
+        // A reply: the quoted forward is the one it answers.
+        let reply = try await decode(subject: "Re: Fwd: Lunch")
+        XCTAssertEqual(reply.body, "Thanks!")
+        XCTAssertTrue(reply.bodyTrimmed)
+
+        // A forward is never trimmed, and --full keeps the whole body.
+        for document in [try await decode(subject: "Fwd: Lunch"), try await decode(subject: "Re: Fwd: Lunch", full: true)] {
+            XCTAssertFalse(document.bodyTrimmed)
+            XCTAssertTrue(document.body.contains("Lunch on Tuesday?"), document.body)
+        }
+    }
 }
