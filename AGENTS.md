@@ -382,8 +382,10 @@ for the user to save.
   `parsingHTMLWith`), then the text markers in the text or Markdown. It cuts
   only the end of a body, and never a forward: a `Fwd:`/`Fw:` subject
   (`QuotedHistory.isForward`, checked by `MessageDecoder.decode`), an HTML
-  quote that starts with a forward marker, or a forward marker line above
-  the text's history (`TextTrim.forward`). It keeps a body that would be
+  quote that starts with a forward marker (unless the subject is a reply's,
+  `QuotedHistory.isReply`: then it is the quoted forward the reply
+  answers), or a forward marker line above the text's history
+  (`TextTrim.forward`). It keeps a body that would be
   left empty, and the decoder parses the HTML again when the DOM pass cut
   something that the text pass then calls a forward or all history.
   `MessageDocument.bodyTrimmed` says

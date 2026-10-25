@@ -268,11 +268,12 @@ public enum MessageDecoder {
             !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         let html = htmls.isEmpty ? nil : htmls
+        let inReply = QuotedHistory.isReply(subject: message.subject)
 
         if preference != .text, let html {
             do {
                 let converted = try await markdown(
-                    fromHTMLParts: html, hasTextPart: text != nil, trimming: trimming, parseHTML: parseHTML
+                    fromHTMLParts: html, hasTextPart: text != nil, trimming: trimming, inReply: inReply, parseHTML: parseHTML
                 )
                 return (converted.text, .html, converted.trimmed)
             } catch IrisError.htmlNotConverted(let reason, _) where preference == .auto && text != nil {
@@ -294,7 +295,9 @@ public enum MessageDecoder {
         }
         // Only `.text` gets here with an HTML part: the other choices returned or threw above.
         log("The message has no text part, so the html part is shown.")
-        let converted = try await markdown(fromHTMLParts: html, hasTextPart: false, trimming: trimming, parseHTML: parseHTML)
+        let converted = try await markdown(
+            fromHTMLParts: html, hasTextPart: false, trimming: trimming, inReply: inReply, parseHTML: parseHTML
+        )
         return (converted.text, .html, converted.trimmed)
     }
 
@@ -324,18 +327,22 @@ public enum MessageDecoder {
     ///     the end: first the HTML elements that mark them, then the text
     ///     markers in the Markdown (see `QuotedHistory`). When that leaves
     ///     nothing, or the Markdown has a forward marker, the whole body is kept.
+    ///   - inReply: Whether the message is a reply, so that a quoted forward
+    ///     at its end is the forward it answers (see
+    ///     `QuotedHistory.removeHistory(fromHTMLParts:inReply:)`).
     /// - Throws: `IrisError.htmlNotConverted` when a part cannot be parsed.
     static func markdown(
         fromHTMLParts htmls: [String],
         hasTextPart: Bool,
         trimming: Bool,
+        inReply: Bool = false,
         parseHTML: (String) async throws -> HTMLDocument
     ) async throws -> (text: String, trimmed: Bool) {
         let documents = try await htmlDocuments(htmls, hasTextPart: hasTextPart, parseHTML: parseHTML)
         guard trimming else {
             return (markdown(of: documents), false)
         }
-        let removal = QuotedHistory.removeHistory(fromHTMLParts: documents)
+        let removal = QuotedHistory.removeHistory(fromHTMLParts: documents, inReply: inReply)
         let converted = markdown(of: documents)
         let trim = QuotedHistory.trim(converted, fromHTML: true, afterRemovedQuote: removal.quote)
         if case .trimmed(let kept) = trim {

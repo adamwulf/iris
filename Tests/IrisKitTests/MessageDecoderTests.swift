@@ -951,6 +951,25 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertTrue(html.body.hasSuffix("> Lunch?"))
     }
 
+    func testTheSubjectSaysWhetherAQuotedForwardIsTheMessageOrWhatItAnswers() async throws {
+        func message(subject: String) -> Data {
+            eml("""
+            Subject: \(subject)
+            Content-Type: text/html; charset=utf-8
+
+            <div>Thanks!</div><blockquote type="cite"><div>Begin forwarded message:</div><div>Lunch on Tuesday?</div></blockquote>
+            """)
+        }
+        let reply = try await MessageDecoder.decode(message(subject: "Re: Fwd: Lunch"))
+        XCTAssertEqual(reply.body, "Thanks!")
+        XCTAssertTrue(reply.bodyTrimmed)
+
+        // A forward with an edited subject.
+        let forward = try await MessageDecoder.decode(message(subject: "Lunch"))
+        XCTAssertFalse(forward.bodyTrimmed)
+        XCTAssertTrue(forward.body.contains("Lunch on Tuesday?"))
+    }
+
     func testTheQuoteInTheLastOfSeveralTextPartsIsTrimmed() async throws {
         // Apple Mail splits the body around an attachment.
         let document = try await MessageDecoder.decode(eml("""

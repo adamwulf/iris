@@ -16,11 +16,23 @@ enum QuotedHistory {
     /// Whether `subject` is a forward's: after any `[tags]`, it starts with
     /// `Fwd:` or `Fw:` (any case). A reply to a forward ("Re: Fwd: x") is not one.
     static func isForward(subject: String?) -> Bool {
+        withoutTags(subject).prefixMatch(of: /(?:fwd|fw)\s*:/.ignoresCase()) != nil
+    }
+
+    /// Whether `subject` is a reply's: after any `[tags]`, it starts with
+    /// `Re:` (any case). Gmail, Apple Mail, and Thunderbird write `Re:` in
+    /// every language.
+    static func isReply(subject: String?) -> Bool {
+        withoutTags(subject).prefixMatch(of: /re\s*:/.ignoresCase()) != nil
+    }
+
+    /// `subject` without the `[tags]` and the whitespace at its start.
+    static func withoutTags(_ subject: String?) -> String {
         var text = subject ?? ""
         if let tags = text.prefixMatch(of: /\s*(?:\[[^\]]*\]\s*)*/) {
             text.removeSubrange(tags.range)
         }
-        return text.prefixMatch(of: /(?:fwd|fw)\s*:/.ignoresCase()) != nil
+        return text
     }
 
     /// Whether `line` starts a forwarded message: Gmail's
@@ -214,18 +226,21 @@ enum QuotedHistory {
     ///
     /// A quote or `div.gmail_quote` that starts a forward
     /// (`isForwardMarker(_:)`) counts as content: it is kept whole, and so is
-    /// everything before it.
+    /// everything before it. In a reply, it is the forward that the reply
+    /// quotes, so it is removed like any quote.
     ///
     /// Outlook's reply header, `div#divRplyFwdMsg`, is removed with everything
     /// after it, and with the `<hr>` just above it: Outlook does not put the
     /// message it quotes in a blockquote. A header inside another app's
     /// quote is part of that quote, so it is not looked for there.
-    static func removeHistory(fromHTMLParts documents: [HTMLDocument]) -> Removal {
+    ///
+    /// - Parameter inReply: Whether the message is a reply (`isReply(subject:)`).
+    static func removeHistory(fromHTMLParts documents: [HTMLDocument], inReply: Bool = false) -> Removal {
         var removal = Removal()
         for document in documents.reversed() {
             let root = contentRoot(of: document)
             removal.quote = removeOutlookHistory(in: root) || removal.quote
-            let tail = removeTrailingHistory(in: root, depth: 0)
+            let tail = removeTrailingHistory(in: root, inReply: inReply, depth: 0)
             removal = removal + tail.removal
             if tail.contentLeft {
                 break
@@ -264,7 +279,10 @@ enum QuotedHistory {
     /// Removes the history elements at the end of `element`, from its last
     /// child back to the first child with content. Returns what it removed,
     /// and whether content is left.
-    static func removeTrailingHistory(in element: DOMElement, depth: Int) -> (removal: Removal, contentLeft: Bool) {
+    ///
+    /// - Parameter inReply: Whether a quote that starts a forward is removed
+    ///   too (see `removeHistory(fromHTMLParts:inReply:)`).
+    static func removeTrailingHistory(in element: DOMElement, inReply: Bool, depth: Int) -> (removal: Removal, contentLeft: Bool) {
         var removal = Removal()
         for index in element.children.indices.reversed() {
             guard let child = element.children[index] as? DOMElement else {
@@ -279,7 +297,7 @@ enum QuotedHistory {
             if child.name == "img" {
                 return (removal, true)
             }
-            if (isQuote(child) || isQuoteContainer(child)) && startsForward(child) {
+            if !inReply && (isQuote(child) || isQuoteContainer(child)) && startsForward(child) {
                 return (removal, true)
             }
             if isSignature(child) {
@@ -298,7 +316,7 @@ enum QuotedHistory {
                 }
                 continue
             }
-            let inner = removeTrailingHistory(in: child, depth: depth + 1)
+            let inner = removeTrailingHistory(in: child, inReply: inReply, depth: depth + 1)
             removal = removal + inner.removal
             if inner.contentLeft {
                 return (removal, true)

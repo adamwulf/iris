@@ -16,6 +16,14 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertFalse(QuotedHistory.isForward(subject: nil))
     }
 
+    func testAReplySubjectStartsWithReAfterTags() {
+        XCTAssertTrue(QuotedHistory.isReply(subject: "Re: Lunch"))
+        XCTAssertTrue(QuotedHistory.isReply(subject: "[list] RE: Fwd: Lunch"))
+        XCTAssertFalse(QuotedHistory.isReply(subject: "Fwd: Re: Lunch"))
+        XCTAssertFalse(QuotedHistory.isReply(subject: "Recipe for lunch"))
+        XCTAssertFalse(QuotedHistory.isReply(subject: nil))
+    }
+
     func testForwardMarkers() {
         XCTAssertTrue(QuotedHistory.isForwardMarker("---------- Forwarded message ---------"))
         XCTAssertTrue(QuotedHistory.isForwardMarker("-------- Forwarded Message --------"))
@@ -329,6 +337,14 @@ final class QuotedHistoryTests: XCTestCase {
         )
     }
 
+    /// The HTML parts of a reply (a `Re:` subject) converted with trimming.
+    private func trimmedReply(_ parts: String...) async throws -> (text: String, trimmed: Bool) {
+        try await MessageDecoder.markdown(
+            fromHTMLParts: parts, hasTextPart: false, trimming: true, inReply: true,
+            parseHTML: MessageDecoder.htmlDocument(fromHTML:)
+        )
+    }
+
     /// The HTML parts converted without trimming.
     private func whole(_ parts: String...) async throws -> String {
         try await MessageDecoder.markdown(
@@ -365,6 +381,29 @@ final class QuotedHistoryTests: XCTestCase {
         let full = try await whole(html)
         XCTAssertEqual(result.text, full)
         XCTAssertTrue(result.text.contains("Who is in?"))
+    }
+
+    func testAReplyToAForwardWithoutANoteLosesTheQuotedForward() async throws {
+        // The quote starts with the forward marker: in a reply, it is the
+        // forward the reply answers. iPhone puts the attribution in its own blockquote.
+        let iPhone = """
+        <html><body dir="auto"><div dir="ltr">Thanks!</div><div dir="ltr"><br><blockquote type="cite">On Oct 24, 2026, at 10:00 AM, Adam Wulf &lt;adam@example.com&gt; wrote:<br><br></blockquote></div><blockquote type="cite"><div dir="ltr"><div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>From: Jane Doe &lt;jane@example.com&gt;<br>Subject: Lunch<br></div><div>Lunch on Tuesday?</div></div></div></blockquote></body></html>
+        """
+        let reply = try await trimmedReply(iPhone)
+        XCTAssertEqual(reply.text, "Thanks!")
+        XCTAssertTrue(reply.trimmed)
+
+        let gmail = """
+        <div dir="ltr">Danke!</div><br><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">Am Fr., 24. Okt. 2026 um 10:00 Uhr schrieb Adam Wulf &lt;adam@example.com&gt;:<br></div><blockquote class="gmail_quote"><div dir="ltr">---------- Forwarded message ---------<br>From: Jane Doe &lt;jane@example.com&gt;<br>Subject: Lunch<br><br>Lunch on Tuesday?</div></blockquote></div>
+        """
+        let german = try await trimmedReply(gmail)
+        XCTAssertEqual(german.text, "Danke!")
+        XCTAssertTrue(german.trimmed)
+
+        // The same HTML in a message that is not a reply could be the forward itself.
+        let notReply = try await trimmed(iPhone)
+        XCTAssertFalse(notReply.trimmed)
+        XCTAssertTrue(notReply.text.contains("Lunch on Tuesday?"))
     }
 
     func testTheDOMPassLeavesAGmailForwardAlone() async throws {
