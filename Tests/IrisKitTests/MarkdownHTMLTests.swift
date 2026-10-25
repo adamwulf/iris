@@ -67,6 +67,17 @@ final class MarkdownHTMLTests: XCTestCase {
         XCTAssertEqual(html("~~![Image](cid:logo)~~"), "", "strikethrough too")
     }
 
+    /// A Gmail signature with a logo above the name.
+    func testALineBreakLeftAtTheStartOfAParagraphIsLeftOut() {
+        XCTAssertEqual(html("![Image](cid:logo)  \nJane Doe  \nDirector"), "<p>Jane Doe<br />\nDirector</p>\n")
+        XCTAssertEqual(html("Jane Doe  \n![Image](cid:logo)"), "<p>Jane Doe</p>\n", "and at the end")
+    }
+
+    func testFormattingThatKeepsItsTextStays() {
+        XCTAssertEqual(html("~~old~~ new"), "<p><del>old</del> new</p>\n")
+        XCTAssertEqual(html("**Acme ![Image](cid:logo)**"), "<p><strong>Acme </strong></p>\n")
+    }
+
     func testALinkedRemoteLogoStays() {
         XCTAssertEqual(
             html("[![logo](https://acme.com/logo.png)](https://acme.com)"),

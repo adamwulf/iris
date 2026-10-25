@@ -66,7 +66,9 @@ enum MarkdownHTML {
 /// break as a bare newline, which HTML shows as a space, so "Thanks,\nAdam"
 /// would read "Thanks, Adam". And it drops `cid:` images: they point at a
 /// MIME part of the original (a signature logo, often), which the draft does
-/// not have. The links and paragraphs they leave empty go too.
+/// not have. The links, bold, italic, and struck text, and paragraphs that
+/// they leave blank (only white space and line breaks) go too, and so do the
+/// line breaks they leave at the start or end of a paragraph.
 private struct HTMLEscaper: MarkupRewriter {
     static func escaped(_ text: String) -> String {
         MarkdownHTML.escaped(text)
@@ -76,14 +78,17 @@ private struct HTMLEscaper: MarkupRewriter {
         LineBreak()
     }
 
+    /// Whether `markup` is a line break or white-space text.
+    static func isBreakOrSpace(_ markup: Markup) -> Bool {
+        markup is LineBreak || markup is SoftBreak || (markup as? Text)?.string.allSatisfy(\.isWhitespace) == true
+    }
+
     /// Whether `markup` shows nothing: every child is a line break or
     /// white-space text, or it has no children. Dropping `cid:` images leaves
     /// such nodes: two on lines next to each other leave a line break, and two
     /// linked icons leave the space between the links.
     static func isBlank(_ markup: Markup) -> Bool {
-        markup.children.allSatisfy { child in
-            child is LineBreak || child is SoftBreak || (child as? Text)?.string.allSatisfy(\.isWhitespace) == true
-        }
+        markup.children.allSatisfy(isBreakOrSpace)
     }
 
     /// `markup`, or nil when it is blank. The children are rewritten first, so
@@ -95,8 +100,26 @@ private struct HTMLEscaper: MarkupRewriter {
         return markup
     }
 
+    /// The paragraph without line breaks and white-space text at its start
+    /// and end, or nil when that leaves it blank. A logo on the first line of
+    /// a signature, once dropped, would leave a break before the name.
     mutating func visitParagraph(_ paragraph: Paragraph) -> Markup? {
-        Self.unlessBlank(defaultVisit(paragraph))
+        guard let rewritten = defaultVisit(paragraph) else {
+            return nil
+        }
+        return Self.unlessBlank(rewritten.withUncheckedChildren(Self.trimmed(Array(rewritten.children))))
+    }
+
+    /// `inlines` without line breaks and white-space text at the start and the end.
+    static func trimmed(_ inlines: [Markup]) -> [Markup] {
+        var inlines = inlines
+        while let first = inlines.first, isBreakOrSpace(first) {
+            inlines.removeFirst()
+        }
+        while let last = inlines.last, isBreakOrSpace(last) {
+            inlines.removeLast()
+        }
+        return inlines
     }
 
     /// Outlook writes a bold signature block as <b><span><a><img src="cid:...">, which
