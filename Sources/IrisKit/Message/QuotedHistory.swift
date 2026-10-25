@@ -34,13 +34,26 @@ enum QuotedHistory {
 
     // MARK: - Text
 
+    /// What `trim(_:fromHTML:afterRemovedQuote:)` did with a text.
+    enum TextTrim: Equatable {
+        /// The text has no marker, so nothing is cut.
+        case noMarker
+        /// The text has an unquoted forward marker (`isForwardMarker(_:)`),
+        /// so nothing is cut.
+        case forward
+        /// The cut would leave nothing, so nothing is cut.
+        case allHistory
+        /// The text without its quoted history and signature.
+        case trimmed(String)
+    }
+
     /// `text`, a cleaned body (plain text, or Markdown from HTML), without the
-    /// quoted history and signature at its end. Nil when it has none, when it
-    /// has an unquoted forward marker (`isForwardMarker(_:)`), or when nothing
-    /// would be left.
+    /// quoted history and signature at its end.
     ///
     /// The cut starts at the first of these:
-    /// - The signature separator, a line that is exactly `-- `.
+    /// - The signature separator, a line that is exactly `-- `. In Markdown
+    ///   from HTML, also a line that is `--` with only spaces after it:
+    ///   SwiftText drops the space, or writes a hard break after it.
     /// - An attribution line, `On <date>, <name> wrote:` (it may wrap onto a
     ///   second line) or Zoho's `---- On <date> <name> wrote ----`, with only
     ///   quoted (`>`) and blank lines after it, at least one of them quoted,
@@ -51,23 +64,27 @@ enum QuotedHistory {
     ///   `-----Original Message-----`, or a thematic break). Outlook does not
     ///   quote the message under it, so the cut runs to the end.
     ///
-    /// - Parameter afterRemovedQuote: Whether an HTML quote was removed from
-    ///   the end. Then an attribution line with nothing after it starts the
-    ///   cut too: it was the removed quote's (older Apple Mail puts it above
-    ///   the `blockquote`).
-    static func trimmedText(_ text: String, afterRemovedQuote: Bool = false) -> String? {
+    /// - Parameters:
+    ///   - fromHTML: Whether `text` is Markdown converted from HTML.
+    ///   - afterRemovedQuote: Whether an HTML quote was removed from the end.
+    ///     Then an attribution line with nothing after it starts the cut too:
+    ///     it was the removed quote's (older Apple Mail puts it above the
+    ///     `blockquote`).
+    static func trim(_ text: String, fromHTML: Bool = false, afterRemovedQuote: Bool = false) -> TextTrim {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        guard !lines.contains(where: { !isQuoted($0) && isForwardMarker($0) }) else { return nil }
+        guard !lines.contains(where: { !isQuoted($0) && isForwardMarker($0) }) else { return .forward }
 
-        let signature = lines.firstIndex { $0 == "-- " }
+        let signature = lines.firstIndex { line in
+            line == "-- " || (fromHTML && line.wholeMatch(of: /-- */) != nil)
+        }
         let starts = [
             signature,
             trailingAttributionStart(in: lines, before: signature ?? lines.count, allowingNoQuote: afterRemovedQuote),
             outlookHeaderStart(in: lines),
         ].compactMap { $0 }
-        guard let cut = starts.min() else { return nil }
+        guard let cut = starts.min() else { return .noMarker }
         let kept = BodyCleanup.clean(lines[..<cut].joined(separator: "\n"))
-        return kept.isEmpty ? nil : kept
+        return kept.isEmpty ? .allHistory : .trimmed(kept)
     }
 
     /// Whether a line is quoted: it starts with `>`, after any spaces.
@@ -166,8 +183,7 @@ enum QuotedHistory {
     /// nothing is left of the later one. Returns whether anything was removed.
     ///
     /// These elements are removed, each only when nothing but other such
-    /// elements and blank space follows it, except a quote that starts a
-    /// forward (`isForwardMarker(_:)`):
+    /// elements and blank space follows it:
     /// - Gmail: class `gmail_quote` (the attribution and the quote) and
     ///   `gmail_signature` or `gmail_signature_prefix` (the `-- ` line).
     /// - Apple Mail and Thunderbird: `blockquote type="cite"` (Apple Mail puts
@@ -175,9 +191,13 @@ enum QuotedHistory {
     ///   attribution), and class `moz-signature`.
     /// - New Outlook: id `mail-editor-reference-message-container`.
     ///
+    /// A quote that starts a forward (`isForwardMarker(_:)`) counts as
+    /// content: it is kept, and so is everything before it.
+    ///
     /// Outlook's reply header, `div#divRplyFwdMsg`, is removed with everything
-    /// after it, wherever it is, and with the `<hr>` just above it: Outlook
-    /// does not put the message it quotes in a blockquote.
+    /// after it, and with the `<hr>` just above it: Outlook does not put the
+    /// message it quotes in a blockquote. A header inside another app's
+    /// quote is part of that quote, so it is not looked for there.
     static func removeHistory(fromHTMLParts documents: [HTMLDocument]) -> Bool {
         var removed = false
         for document in documents.reversed() {
@@ -234,7 +254,10 @@ enum QuotedHistory {
             if child.name == "img" {
                 return (removed, true)
             }
-            if isHistory(child) {
+            if isSignature(child) || isQuote(child) {
+                if isQuote(child) && startsForward(child) {
+                    return (removed, true)
+                }
                 element.children.remove(at: index)
                 removed = true
                 continue
@@ -254,16 +277,21 @@ enum QuotedHistory {
         return (removed, false)
     }
 
-    /// Whether `element` is a quote or a signature that `removeHistory(fromHTMLParts:)` removes.
-    static func isHistory(_ element: DOMElement) -> Bool {
-        let classes = Set(attribute("class", of: element)?.split(whereSeparator: \.isWhitespace).map(String.init) ?? [])
-        if !classes.isDisjoint(with: signatureClasses) {
-            return true
-        }
-        let isQuote = !classes.isDisjoint(with: quoteClasses)
+    /// Whether `element` is a signature that `removeHistory(fromHTMLParts:)` removes.
+    static func isSignature(_ element: DOMElement) -> Bool {
+        !classes(of: element).isDisjoint(with: signatureClasses)
+    }
+
+    /// Whether `element` is a quote (or its attribution) that
+    /// `removeHistory(fromHTMLParts:)` removes, unless it starts a forward.
+    static func isQuote(_ element: DOMElement) -> Bool {
+        !classes(of: element).isDisjoint(with: quoteClasses)
             || (element.name == "blockquote" && attribute("type", of: element)?.lowercased() == "cite")
             || attribute("id", of: element).map(quoteIDs.contains) == true
-        return isQuote && !startsForward(element)
+    }
+
+    static func classes(of element: DOMElement) -> Set<String> {
+        Set(attribute("class", of: element)?.split(whereSeparator: \.isWhitespace).map(String.init) ?? [])
     }
 
     /// Whether the first line of text in `element` is a forward marker.
@@ -275,9 +303,10 @@ enum QuotedHistory {
     }
 
     /// Removes Outlook's reply header, everything after it in the document,
-    /// and the `<hr>` just above it. Returns whether there was one.
+    /// and the `<hr>` just above it. Returns whether there was one outside
+    /// the quotes (`isQuote(_:)`).
     static func removeOutlookHistory(in root: DOMElement) -> Bool {
-        guard let path = path(in: root, to: { attribute("id", of: $0) == outlookHeaderID }),
+        guard let path = path(in: root, to: { attribute("id", of: $0) == outlookHeaderID }, skipping: isQuote),
               let header = path.last
         else { return false }
         for (level, step) in path.enumerated() {
@@ -298,14 +327,20 @@ enum QuotedHistory {
     /// The path from `root` to the first element in document order that
     /// `matches`: each step is a parent and the index of the next element in
     /// it. Nil when no element matches.
+    ///
+    /// - Parameter skips: The elements whose subtree is not searched.
     static func path(
         in root: DOMElement,
-        to matches: (DOMElement) -> Bool
+        to matches: (DOMElement) -> Bool,
+        skipping skips: (DOMElement) -> Bool = { _ in false }
     ) -> [(parent: DOMElement, index: Int)]? {
         var pending: [(element: DOMElement, path: [(parent: DOMElement, index: Int)])] = [(root, [])]
         while let entry = pending.popLast() {
             if !entry.path.isEmpty && matches(entry.element) {
                 return entry.path
+            }
+            if !entry.path.isEmpty && skips(entry.element) {
+                continue
             }
             // Reversed, so that the first child comes off the stack first.
             for (index, child) in entry.element.children.enumerated().reversed() {

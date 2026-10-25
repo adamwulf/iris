@@ -284,8 +284,8 @@ public enum MessageDecoder {
                 log("The message has no html part, so the text part is shown.")
             }
             // The joined text, so that only the end of the whole body is cut.
-            if trimming, let trimmed = QuotedHistory.trimmedText(text) {
-                return (trimmed, .text, true)
+            if trimming, case .trimmed(let kept) = QuotedHistory.trim(text) {
+                return (kept, .text, true)
             }
             return (text, .text, false)
         }
@@ -323,7 +323,7 @@ public enum MessageDecoder {
     ///   - trimming: Whether to leave out the quoted history and signature at
     ///     the end: first the HTML elements that mark them, then the text
     ///     markers in the Markdown (see `QuotedHistory`). When that leaves
-    ///     nothing, the whole body is kept.
+    ///     nothing, or the Markdown has a forward marker, the whole body is kept.
     /// - Throws: `IrisError.htmlNotConverted` when a part cannot be parsed.
     static func markdown(
         fromHTMLParts htmls: [String],
@@ -337,12 +337,14 @@ public enum MessageDecoder {
         }
         let removedQuote = QuotedHistory.removeHistory(fromHTMLParts: documents)
         let converted = markdown(of: documents)
-        if let trimmed = QuotedHistory.trimmedText(converted, afterRemovedQuote: removedQuote) {
-            return (trimmed, true)
+        let trim = QuotedHistory.trim(converted, fromHTML: true, afterRemovedQuote: removedQuote)
+        if case .trimmed(let kept) = trim {
+            return (kept, true)
         }
-        if removedQuote && converted.isEmpty {
-            // The body was all history. The elements are gone from these
-            // documents, so the parts are parsed again.
+        if removedQuote && (converted.isEmpty || trim != .noMarker) {
+            // The body was all history, or it is a forward, so it is shown
+            // whole. The elements are gone from these documents, so the
+            // parts are parsed again.
             return (markdown(of: try await htmlDocuments(htmls, hasTextPart: hasTextPart, parseHTML: parseHTML)), false)
         }
         return (converted, removedQuote)

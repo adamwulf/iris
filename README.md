@@ -378,7 +378,8 @@ iris cuts only at the marks that mail apps leave:
 - HTML: Gmail's quote and signature (`gmail_quote`, `gmail_signature`),
   Apple Mail's and Thunderbird's `<blockquote type="cite">` (and
   Thunderbird's attribution and signature), and Outlook's reply header
-  (`divRplyFwdMsg`), with everything under it.
+  (`divRplyFwdMsg`), with everything under it (but not when it is inside
+  another app's quote: then it is part of that quote).
 - Text (also the Markdown from HTML): an `On <date>, <name> wrote:` line
   (or Zoho's `---- On <date> <name> wrote ----`) with only `>` lines under
   it, Outlook's `From:` / `Sent:` / `To:` / `Subject:` header block, and a
@@ -395,9 +396,15 @@ Limits:
 
 - An Outlook reply with answers written inside the quoted message (under
   its `From:` / `Sent:` header) loses those answers; `--full` shows them.
+- Outlook writes the same header for a forward. A forward is known only by
+  `Fwd:` or `Fw:`, so a forward from an Outlook in another language
+  (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.
 - The text marks are in English: `Am ... schrieb ...:` and other languages
-  are not found in a plain-text body. HTML marks do not depend on the
-  language.
+  are not found in a plain-text body. The HTML quote marks do not depend
+  on the language.
+- A plain-text reply from Apple Mail is kept whole: Apple Mail quotes its
+  `On ... wrote:` line too, so there is no mark. Its HTML part, which iris
+  shows by default, is trimmed.
 - A signature without the `-- ` line (most signatures that people type) is
   kept, and so is "Sent from my iPhone".
 

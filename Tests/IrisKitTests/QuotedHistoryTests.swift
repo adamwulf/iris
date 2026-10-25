@@ -26,7 +26,7 @@ final class QuotedHistoryTests: XCTestCase {
     // MARK: - Plain text
 
     func testGmailPlainTextReply() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
@@ -34,22 +34,22 @@ final class QuotedHistoryTests: XCTestCase {
         > Lunch on Tuesday?
         >
         > Jane
-        """), "Sounds good.")
+        """), .trimmed("Sounds good."))
     }
 
     func testAnAttributionWrappedOntoTwoLines() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         On Fri, Oct 24, 2026 at 9:41 AM Jane Doe-Smithfield <jane.doe-smithfield@example.com>
         wrote:
 
         > Lunch on Tuesday?
-        """), "Sounds good.")
+        """), .trimmed("Sounds good."))
     }
 
     func testAppleMailPlainTextReplyKeepsSentFromMyIPhone() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         Sent from my iPhone
@@ -57,9 +57,9 @@ final class QuotedHistoryTests: XCTestCase {
         > On Oct 24, 2026, at 9:41 AM, Jane Doe <jane@example.com> wrote:
         >
         > Lunch on Tuesday?
-        """), nil, "the attribution is quoted too, so there is no marker")
+        """), .noMarker, "the attribution is quoted too, so there is no marker")
 
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         Sent from my iPhone
@@ -67,25 +67,33 @@ final class QuotedHistoryTests: XCTestCase {
         On Oct 24, 2026, at 9:41 AM, Jane Doe <jane@example.com> wrote:
 
         > Lunch on Tuesday?
-        """), "Sounds good.\n\nSent from my iPhone")
+        """), .trimmed("Sounds good.\n\nSent from my iPhone"))
     }
 
     func testZohoAttribution() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         ---- On Fri, 24 Oct 2026 09:41:00 -0500 Jane Doe <jane@example.com> wrote ----
 
         > Lunch on Tuesday?
-        """), "Sounds good.")
+        """), .trimmed("Sounds good."))
     }
 
     func testASignatureIsCut() {
-        XCTAssertEqual(QuotedHistory.trimmedText("Sounds good.\n\n-- \nAdam Wulf\n555-0100"), "Sounds good.")
+        XCTAssertEqual(QuotedHistory.trim("Sounds good.\n\n-- \nAdam Wulf\n555-0100"), .trimmed("Sounds good."))
+    }
+
+    func testOnlyMarkdownFromHTMLTakesADoubleDashWithoutTheSpace() {
+        // SwiftText writes "-- " as "--", or as "--" with a hard break.
+        for text in ["Sounds good.\n\n--\nAdam", "Sounds good.\n\n--  \nAdam"] {
+            XCTAssertEqual(QuotedHistory.trim(text, fromHTML: true), .trimmed("Sounds good."), text)
+            XCTAssertEqual(QuotedHistory.trim(text), .noMarker, "plain text needs RFC 3676's \"-- \": \(text)")
+        }
     }
 
     func testASignatureAboveTheQuoteIsCutWithIt() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         --\u{20}
@@ -93,11 +101,11 @@ final class QuotedHistoryTests: XCTestCase {
 
         On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
         > Lunch on Tuesday?
-        """), "Sounds good.")
+        """), .trimmed("Sounds good."))
     }
 
     func testAQuoteWithASignatureUnderItIsCut() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
@@ -105,11 +113,11 @@ final class QuotedHistoryTests: XCTestCase {
 
         --\u{20}
         Adam
-        """), "Sounds good.")
+        """), .trimmed("Sounds good."))
     }
 
     func testOutlookPlainTextReply() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         ________________________________
@@ -119,11 +127,11 @@ final class QuotedHistoryTests: XCTestCase {
         Subject: Lunch
 
         Lunch on Tuesday?
-        """), "Sounds good.")
+        """), .trimmed("Sounds good."))
     }
 
     func testOutlookOriginalMessageWithCc() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         -----Original Message-----
@@ -134,11 +142,11 @@ final class QuotedHistoryTests: XCTestCase {
         Subject: RE: Lunch
 
         Lunch on Tuesday?
-        """), "Sounds good.")
+        """), .trimmed("Sounds good."))
     }
 
     func testOutlookHeaderWithBoldLabelsInMarkdown() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Sounds good.
 
         **From:** Jane Doe <jane@example.com>\u{20}\u{20}
@@ -147,20 +155,49 @@ final class QuotedHistoryTests: XCTestCase {
         **Subject:** Lunch
 
         Lunch on Tuesday?
-        """), "Sounds good.")
+        """), .trimmed("Sounds good."))
+    }
+
+    func testOutlookForMacHeaderHasDateInsteadOfSent() {
+        XCTAssertEqual(QuotedHistory.trim("""
+        Sounds good.
+
+        From: Jane Doe <jane@example.com>
+        Date: Friday, October 24, 2026 at 9:41 AM
+        To: Adam Wulf <adam@example.com>
+        Subject: Lunch
+
+        Lunch on Tuesday?
+        """), .trimmed("Sounds good."))
+    }
+
+    func testEveryHeaderSeparatorIsCutWithTheHeader() {
+        for separator in ["***", "* * *", "-----", "__________"] {
+            XCTAssertEqual(QuotedHistory.trim("""
+            Sounds good.
+
+            \(separator)
+
+            From: Jane Doe <jane@example.com>
+            Sent: Friday, October 24, 2026 9:41 AM
+            Subject: Lunch
+
+            Lunch on Tuesday?
+            """), .trimmed("Sounds good."), separator)
+        }
     }
 
     func testAFromLineAloneIsNoHeader() {
-        XCTAssertNil(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         From: the desk of Jane
         To: everyone
 
         Lunch is on Tuesday.
-        """))
+        """), .noMarker)
     }
 
     func testAnInterleavedReplyIsKept() {
-        XCTAssertNil(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
         > Lunch on Tuesday?
 
@@ -169,41 +206,41 @@ final class QuotedHistoryTests: XCTestCase {
         > Same place?
 
         No, the new one.
-        """))
+        """), .noMarker)
     }
 
     func testABottomPostedReplyKeepsTheQuoteAndLosesTheSignature() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
         > Lunch on Tuesday?
 
         Yes.
         --\u{20}
         Adam
-        """), """
+        """), .trimmed("""
         On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
         > Lunch on Tuesday?
 
         Yes.
-        """)
+        """))
     }
 
     func testAQuoteWithoutAnAttributionIsKept() {
-        XCTAssertNil(QuotedHistory.trimmedText("Sounds good.\n\n> Lunch on Tuesday?"))
+        XCTAssertEqual(QuotedHistory.trim("Sounds good.\n\n> Lunch on Tuesday?"), .noMarker)
     }
 
     func testAQuotedSignatureSeparatorIsNotASignature() {
-        XCTAssertNil(QuotedHistory.trimmedText("Sounds good.\n\n> -- \n> Jane"))
+        XCTAssertEqual(QuotedHistory.trim("Sounds good.\n\n> -- \n> Jane"), .noMarker)
     }
 
     func testAnAttributionWithNothingUnderItIsKeptUnlessAQuoteWasRemoved() {
         let text = "Sounds good.\n\nOn Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:"
-        XCTAssertNil(QuotedHistory.trimmedText(text))
-        XCTAssertEqual(QuotedHistory.trimmedText(text, afterRemovedQuote: true), "Sounds good.")
+        XCTAssertEqual(QuotedHistory.trim(text), .noMarker)
+        XCTAssertEqual(QuotedHistory.trim(text, afterRemovedQuote: true), .trimmed("Sounds good."))
     }
 
     func testAForwardIsNotCut() {
-        XCTAssertNil(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         FYI
 
         ---------- Forwarded message ---------
@@ -215,12 +252,12 @@ final class QuotedHistoryTests: XCTestCase {
         Lunch on Tuesday?
         --\u{20}
         Jane
-        """))
-        XCTAssertNil(QuotedHistory.trimmedText("FYI\n\nBegin forwarded message:\n\nFrom: Jane\n\nLunch on Tuesday?"))
+        """), .forward)
+        XCTAssertEqual(QuotedHistory.trim("FYI\n\nBegin forwarded message:\n\nFrom: Jane\n\nLunch on Tuesday?"), .forward)
     }
 
     func testAReplyThatQuotesAForwardIsCut() {
-        XCTAssertEqual(QuotedHistory.trimmedText("""
+        XCTAssertEqual(QuotedHistory.trim("""
         Thanks!
 
         On Fri, Oct 24, 2026 at 10:00 AM Adam Wulf <adam@example.com> wrote:
@@ -228,18 +265,20 @@ final class QuotedHistoryTests: XCTestCase {
         >
         > ---------- Forwarded message ---------
         > From: Jane Doe <jane@example.com>
-        """), "Thanks!")
+        """), .trimmed("Thanks!"))
     }
 
     func testABodyThatIsAllHistoryIsKept() {
-        XCTAssertNil(QuotedHistory.trimmedText("On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:\n> Lunch?"))
-        XCTAssertNil(QuotedHistory.trimmedText("-- \nAdam"))
+        XCTAssertEqual(
+            QuotedHistory.trim("On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:\n> Lunch?"), .allHistory
+        )
+        XCTAssertEqual(QuotedHistory.trim("-- \nAdam"), .allHistory)
     }
 
     func testAHardBreakBeforeTheCutIsRemoved() {
         XCTAssertEqual(
-            QuotedHistory.trimmedText("Sounds good.  \n-- \nAdam"),
-            "Sounds good.",
+            QuotedHistory.trim("Sounds good.  \n-- \nAdam"),
+            .trimmed("Sounds good."),
             "a hard break at the end does nothing"
         )
     }
@@ -276,6 +315,65 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertFalse(result.trimmed)
         let full = try await whole(html)
         XCTAssertEqual(result.text, full)
+    }
+
+    func testAForwardKeepsTheQuoteAndSignatureOfTheMessageItForwards() async throws {
+        // A Gmail forward whose subject has no "Fwd:": the forwarded message
+        // has its own quote and signature, which are part of the forward.
+        let html = """
+        <div dir="ltr">FYI<br><br><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>From: Jane Doe &lt;jane@example.com&gt;<br>Date: Fri, Oct 24, 2026 at 9:41 AM<br>Subject: Lunch<br></div><br><div dir="ltr">Lunch on Tuesday?<br><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature">Jane</div></div><br><div class="gmail_quote"><div class="gmail_attr">On Thu, Oct 23, 2026 Bob wrote:<br></div><blockquote class="gmail_quote">Who is in?</blockquote></div></div></div>
+        """
+        let result = try await trimmed(html)
+        XCTAssertFalse(result.trimmed)
+        let full = try await whole(html)
+        XCTAssertEqual(result.text, full)
+        XCTAssertTrue(result.text.contains("Who is in?"))
+    }
+
+    func testAnEmptyReplyWithItsAttributionAboveTheQuoteIsShownWhole() async throws {
+        // Older Apple Mail, a reply with only an attachment: the attribution
+        // is all that would be left.
+        let html = """
+        <html><body><div><div>On Oct 24, 2026, at 9:41 AM, Jane Doe &lt;jane@example.com&gt; wrote:</div><br class="Apple-interchange-newline"><blockquote type="cite"><div>Lunch on Tuesday?</div></blockquote></div></body></html>
+        """
+        let result = try await trimmed(html)
+        XCTAssertFalse(result.trimmed)
+        let full = try await whole(html)
+        XCTAssertEqual(result.text, full)
+        XCTAssertTrue(result.text.contains("Lunch on Tuesday?"))
+    }
+
+    func testATypedSignatureSeparatorInHTML() async throws {
+        for html in ["<div>Sounds good.</div><div>-- </div><div>Adam Wulf</div>", "<p>Sounds good.<br>-- <br>Adam Wulf</p>"] {
+            let result = try await trimmed(html)
+            XCTAssertEqual(result.text, "Sounds good.", html)
+            XCTAssertTrue(result.trimmed, html)
+        }
+    }
+
+    func testNewOutlookReferenceContainer() async throws {
+        let result = try await trimmed("""
+        <div>Sounds good.</div><div id="mail-editor-reference-message-container"><hr><div><b>From:</b> Jane Doe<br><b>Sent:</b> Friday<br><b>Subject:</b> Lunch</div><div>Lunch on Tuesday?</div></div>
+        """)
+        XCTAssertEqual(result.text, "Sounds good.")
+        XCTAssertTrue(result.trimmed)
+    }
+
+    func testGmailQuoteContainerAlone() async throws {
+        let result = try await trimmed("""
+        <div>Sounds good.</div><div class="gmail_quote_container"><div>On Fri, Jane wrote:</div><blockquote>Lunch on Tuesday?</blockquote></div>
+        """)
+        XCTAssertEqual(result.text, "Sounds good.")
+        XCTAssertTrue(result.trimmed)
+    }
+
+    func testAnOutlookHeaderInsideAnotherAppsQuoteKeepsTheTextAfterTheQuote() async throws {
+        // A Thunderbird reply under the quote of an Outlook message.
+        let result = try await trimmed("""
+        <html><body><div class="moz-cite-prefix">On 10/24/26 9:41 AM, Jane Doe wrote:<br></div><blockquote type="cite"><div>Lunch on Tuesday?</div><hr><div id="divRplyFwdMsg"><b>From:</b> Bob<br><b>Sent:</b> Thursday<br><b>Subject:</b> Lunch</div><div>Who is in?</div></blockquote><p>Sounds good.</p></body></html>
+        """)
+        XCTAssertFalse(result.trimmed)
+        XCTAssertTrue(result.text.hasSuffix("Sounds good."), result.text)
     }
 
     func testAppleMailIPhoneReply() async throws {

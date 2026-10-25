@@ -210,8 +210,9 @@ Next:
   searched is not found.
 - The quoted-history trimming is a heuristic (README.md, "Quoted history
   and signatures", lists its limits). It loses answers written inside an
-  Outlook quote, finds only English attribution lines in text, and keeps a
-  signature without a `-- ` line. A fix that would cover more: compare
+  Outlook quote and the forwarded message of a forward from an Outlook in
+  another language (`WG:`, `TR:`), finds only English attribution lines in
+  text, and keeps a signature without a `-- ` line. A fix that would cover more: compare
   each quote with the earlier messages of the thread, and cut only what
   they already show.
 - A server that sends a mailbox name that is not valid modified UTF-7 (raw
