@@ -27,8 +27,8 @@ public struct DraftMessage: Sendable, Equatable {
     /// including inline parts, when updating.
     public let attachments: [DraftAttachment]
 
-    /// Unfolded threading values from a draft being updated, including all
-    /// In-Reply-To IDs and any comments. New replies use `threadingHeaders`.
+    /// Threading values from a draft being updated, refolded for serialization,
+    /// including all In-Reply-To IDs and comments. New replies use `threadingHeaders`.
     let preservedThreadingHeaders: [String: String]?
 
     init(
@@ -91,5 +91,40 @@ public struct DraftMessage: Sendable, Equatable {
             }
         }
         return value
+    }
+
+    /// Refold an already-unfolded header at its existing spaces or tabs. Unlike
+    /// `folded(_:headerName:)` for IDs, this preserves every character of the
+    /// value, including comments and their whitespace. Removing just the added
+    /// CRLFs restores the input exactly. Unbreakable oversized values are refused.
+    static func refolded(_ value: String, headerName: String) throws -> String {
+        var result = ""
+        var lineLength = headerName.utf8.count + 2
+        var whitespace = ""
+        var word = ""
+        func appendWord() throws {
+            let chunk = whitespace + word
+            if !whitespace.isEmpty && lineLength + chunk.utf8.count > maxLineLength {
+                result += "\r\n"
+                lineLength = 0
+            }
+            guard lineLength + chunk.utf8.count <= 998 else {
+                throw IrisError.draftNotPreserved(reason: "a threading header contains text too long to fold safely")
+            }
+            result += chunk
+            lineLength += chunk.utf8.count
+            whitespace = ""
+            word = ""
+        }
+        for character in value {
+            if character == " " || character == "\t" {
+                if !word.isEmpty { try appendWord() }
+                whitespace.append(character)
+            } else {
+                word.append(character)
+            }
+        }
+        try appendWord()
+        return result
     }
 }

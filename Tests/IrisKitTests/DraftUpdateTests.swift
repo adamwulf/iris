@@ -145,6 +145,49 @@ final class DraftUpdateTests: XCTestCase {
         XCTAssertEqual(logo.disposition, "inline")
     }
 
+    func testSerializedUpdateRendersOnlyImagesWhoseInlineAttachmentsArePreserved() throws {
+        let body = "![Logo](cid:logo@example.com)\n\n![Missing](cid:missing@example.com)"
+        let draft = try DraftUpdater.replacingBody(in: Data(source.utf8), body: body)
+        let message = try EMLParser.parse(Data(Email(draft: draft).constructContent().utf8))
+        let html = try XCTUnwrap(message.htmlBody)
+        XCTAssertTrue(html.contains("<img src=\"cid:logo@example.com\" />"), html)
+        XCTAssertFalse(html.contains("cid:missing@example.com"), html)
+        let text = try XCTUnwrap(message.textBody).replacingOccurrences(of: "\r\n", with: "\n")
+        XCTAssertTrue(text.contains(body), text)
+        let logo = try XCTUnwrap(message.parts.first { $0.contentId == "logo@example.com" })
+        XCTAssertEqual(logo.filename, "logo.png")
+        XCTAssertEqual(logo.disposition, "inline")
+        XCTAssertEqual(logo.decodedData(), Data([1, 2, 3]))
+    }
+
+    func testSerializedUpdateRefoldsLongThreadingHeadersWithoutLosingIDsOrComments() throws {
+        let entries = (0..<100).map { "<ancestor\($0)@example.com> (comment \($0))" }
+        let folded = entries.joined(separator: "\n ")
+        let raw = source.replacingOccurrences(
+            of: "In-Reply-To: <parent@example.com>", with: "In-Reply-To: \(folded)"
+        ).replacingOccurrences(
+            of: "References: <root@example.com> <parent@example.com>", with: "References: \(folded)"
+        ).replacingOccurrences(of: "\n", with: "\r\n")
+        let original = try EMLParser.parse(Data(raw.utf8))
+        let draft = try DraftUpdater.replacingBody(in: Data(raw.utf8), body: "Updated")
+        let serialized = Email(draft: draft).constructContent()
+        let updated = try EMLParser.parse(Data(serialized.utf8))
+        for name in ["in-reply-to", "references"] {
+            XCTAssertEqual(updated.header.additionalFields?[name], original.header.additionalFields?[name])
+            XCTAssertTrue(draft.threadingHeaders[name]?.contains("\r\n ") == true)
+        }
+        let headers = try XCTUnwrap(serialized.components(separatedBy: "\r\n\r\n").first)
+        XCTAssertTrue(headers.components(separatedBy: "\r\n").allSatisfy { $0.utf8.count <= 998 })
+    }
+
+    func testThreadingHeaderFoldingRetainsExistingWhitespace() throws {
+        let value = String(repeating: "<id@example.com>  (two  spaces)\t", count: 12) + "<last@example.com>"
+        let folded = try DraftMessage.refolded(value, headerName: "References")
+        XCTAssertTrue(folded.contains("\r\n"))
+        XCTAssertEqual(folded.replacingOccurrences(of: "\r\n", with: ""), value)
+        XCTAssertTrue(folded.components(separatedBy: "\r\n").allSatisfy { $0.utf8.count <= 78 })
+    }
+
     func testAnUnreferencedInlinePartWithoutDispositionIsPreserved() throws {
         let raw = source.replacingOccurrences(of: "Content-Disposition: inline; filename=\"logo.png\"\n", with: "")
             .replacingOccurrences(of: "<img src=\"cid:logo@example.com\">", with: "")

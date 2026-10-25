@@ -275,8 +275,9 @@ original untouched. Do not retry either blindly.
 SwiftMail `Email.constructContent` omits Bcc, so `Email(draft:)` adds an
 explicit Bcc header using the public encoded address description. It also adds
 Reply-To and retains Message-ID. `DraftMessage.preservedThreadingHeaders`
-keeps the unfolded In-Reply-To and References values for updates; controls are
-refused because SwiftMail writes additional header values verbatim.
+keeps In-Reply-To and References values for updates, refolded at existing
+whitespace without dropping IDs or comments; controls and unbreakable oversized
+values are refused because SwiftMail writes additional header values verbatim.
 `DraftAttachment` carries `isInline` and `contentID` as well as bytes, name,
 and MIME type. SwiftMail only emits Content-ID for inline attachments: an
 explicitly non-inline attachment with one is rejected before APPEND. The whole
@@ -722,8 +723,9 @@ account (`--account <name>`).
   them first, and turns raw HTML into text: the quoted original is untrusted,
   so iris never emits HTML that it did not make. It writes a soft break as a
   bare newline (a space in HTML), so `MarkdownHTML` makes each one a line
-  break, and it drops `cid:` images (SwiftText keeps an original's
-  `<img src="cid:...">`, which the draft has no part for). It also parses
+  break, and it drops `cid:` images in new replies (they have no copied inline
+  parts). Updates pass only their preserved inline Content-IDs to the renderer,
+  so a matching Markdown image stays, with the usual HTML escaping. It also parses
   with `.disableSmartOpts`, so the HTML part has the same quotes and dashes
   as the text part.
 - **No setext headings:** a line of only `-` or `=` under a text line (the

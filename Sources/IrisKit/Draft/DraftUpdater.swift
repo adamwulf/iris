@@ -15,7 +15,7 @@ enum DraftUpdater {
         guard headers.from.count == 1, let from = headers.from.first else {
             throw IrisError.draftNotPreserved(reason: "it must have exactly one From address")
         }
-        let threading = (message.header.additionalFields ?? [:]).filter {
+        var threading = (message.header.additionalFields ?? [:]).filter {
             $0.key == "in-reply-to" || $0.key == "references"
         }
         // SwiftMail writes additionalHeaders verbatim. Its parser unfolds
@@ -24,6 +24,9 @@ enum DraftUpdater {
             guard !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) && $0 != "\t" }) else {
                 throw IrisError.draftNotPreserved(reason: "a threading header contains a control character")
             }
+        }
+        for (name, value) in threading {
+            threading[name] = try DraftMessage.refolded(value, headerName: name)
         }
         let attachmentIDs = Set(MessageDecoder.attachments(of: message).map(\.attachmentID))
         let attachments = try message.parts.filter {
@@ -50,7 +53,12 @@ enum DraftUpdater {
             bcc: MessageDecoder.addresses(message.header.bccAddresses), replyTo: headers.replyTo,
             messageID: headers.messageID, subject: headers.subject ?? "",
             inReplyTo: headers.inReplyTo, references: headers.references,
-            markdown: body, html: MarkdownHTML.html(fromMarkdown: body), attachments: attachments,
+            markdown: body,
+            html: MarkdownHTML.html(
+                fromMarkdown: body,
+                inlineContentIDs: Set(attachments.filter(\.isInline).compactMap(\.contentID))
+            ),
+            attachments: attachments,
             preservedThreadingHeaders: threading
         )
     }
