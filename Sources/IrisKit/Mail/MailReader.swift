@@ -179,8 +179,8 @@ public struct MailReader: Sendable {
         let messages: [IrisID]
         /// The copy shown of the message that the thread was asked for.
         let inputCopy: IrisID?
-        /// The mailbox that is open when the walk ends.
-        let openMailbox: String
+        /// The mailbox that the walk's last EXAMINE opened.
+        let openMailbox: String?
     }
 
     /// Runs the walk of `thread(_:)` for `id` in one session, then `body` with
@@ -199,19 +199,26 @@ public struct MailReader: Sendable {
 
     /// The walk of `thread(_:)`, from the headers alone: it downloads no message.
     private func threadWalk(_ id: IrisID, with client: any MailClient) async throws -> ThreadWalk {
-        _ = try await examine(id.mailbox, with: client)
+        // The downloads start in the mailbox that the walk's last EXAMINE
+        // opened, so every EXAMINE of the walk goes through `open`.
+        var openMailbox: String?
+        func open(_ mailbox: String) async throws {
+            _ = try await examine(mailbox, with: client)
+            openMailbox = mailbox
+        }
+
+        try await open(id.mailbox)
         guard let input = try await client.fetchThreadHeaders(uids: [id.uid]).first(where: { $0.uid == id.uid }) else {
             throw IrisError.unknownMessage(id)
         }
         guard let inputMessageID = input.messageID else {
-            return ThreadWalk(messages: [id], inputCopy: id, openMailbox: id.mailbox)
+            return ThreadWalk(messages: [id], inputCopy: id, openMailbox: openMailbox)
         }
 
         let mailboxes = Self.threadMailboxes(listed: Self.decoded(try await client.listMailboxes()), inputMailbox: id.mailbox)
         let subject = ThreadSubject.normalized(input.subject)
         // Every message whose headers were read, in the thread or not, so none is read twice.
         var fetched: [IrisID: ThreadHeaders] = [id: input]
-        var openMailbox = id.mailbox
 
         /// Reads the headers of the messages `uids` in the open mailbox, `mailbox`, that are not read yet.
         func readHeaders(_ uids: [UInt32], in mailbox: String) async throws {
@@ -277,8 +284,7 @@ public struct MailReader: Sendable {
         var messageIDMailboxes: [String] = []
         for mailbox in [id.mailbox] + mailboxes.filter({ $0 != id.mailbox }) {
             if mailbox != id.mailbox {
-                _ = try await examine(mailbox, with: client)
-                openMailbox = mailbox
+                try await open(mailbox)
             }
             if let matches = try await subjectMatches(in: mailbox) {
                 try await readHeaders(matches, in: mailbox)
@@ -313,8 +319,7 @@ public struct MailReader: Sendable {
             }
             searchedIDs.formUnion(newIDs)
             for mailbox in messageIDMailboxes {
-                _ = try await examine(mailbox, with: client)
-                openMailbox = mailbox
+                try await open(mailbox)
                 try await readHeaders(try await messageIDMatches(newIDs), in: mailbox)
             }
         }
@@ -353,7 +358,7 @@ public struct MailReader: Sendable {
             (lhs.element.mailbox, lhs.offset) < (rhs.element.mailbox, rhs.offset)
         }
         var downloaded: [(position: Int, message: ThreadMessage)] = []
-        var openMailbox: String? = walk.openMailbox
+        var openMailbox = walk.openMailbox
         for (position, copy) in byMailbox {
             if copy.mailbox != openMailbox {
                 _ = try await examine(copy.mailbox, with: client)
