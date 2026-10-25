@@ -111,7 +111,9 @@ mailbox in `threadMailboxes` order (lowest UID). That walk (`threadWalk`)
 gives those copies, oldest first, from headers alone. `MailReader.threadIDs`
 stops there (`thread --format id`), so it downloads nothing; `thread` then
 downloads only those copies with `fetchRawMessage` (`threadDownloads`), in
-the same session, each mailbox opened once. A download that times out or
+the same session, mailbox by mailbox in name order, each opened once (not
+at all when it is the one the walk's last EXAMINE left open, which
+`ThreadWalk.openMailbox` records). A download that times out or
 finds the message gone is kept as a `ThreadMessage.DownloadFailure`, and
 the mailbox is examined again before the next download (SwiftMail
 reconnects after a timeout, with no mailbox open). `MessageFormatter.render(thread:)`

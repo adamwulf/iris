@@ -340,9 +340,11 @@ final class MailReaderThreadTests: XCTestCase {
 
     func testEachMessageIsDownloadedFromItsOwnMailboxWhichIsOpenedOnce() async throws {
         // The UIDs repeat in every mailbox, so a download from the wrong mailbox
-        // gives another message, or none. The walk ends in Archive, the last
-        // mailbox it searches: the downloads start there without opening it
-        // again, or open INBOX first when Archive has no message of the thread.
+        // gives another message, or none. The downloads go mailbox by mailbox,
+        // in name order, and skip the EXAMINE of a mailbox only when it is
+        // open. The walk ends in Archive, the last mailbox it searches, and
+        // "Archive" sorts first, so with a message there the first download
+        // needs no EXAMINE; without one, INBOX is opened first.
         let a = message("a", subject: "Budget", day: 1)
         let b = message("b", day: 2, replyTo: "a", references: ["a"])
         let c = message("c", day: 3, replyTo: "b", references: ["a", "b"])

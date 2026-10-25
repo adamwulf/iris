@@ -199,8 +199,8 @@ public struct MailReader: Sendable {
 
     /// The walk of `thread(_:)`, from the headers alone: it downloads no message.
     private func threadWalk(_ id: IrisID, with client: any MailClient) async throws -> ThreadWalk {
-        // The downloads start in the mailbox that the walk's last EXAMINE
-        // opened, so every EXAMINE of the walk goes through `open`.
+        // The downloads skip the EXAMINE of the mailbox that the walk's last
+        // EXAMINE left open, so every EXAMINE of the walk goes through `open`.
         var openMailbox: String?
         func open(_ mailbox: String) async throws {
             _ = try await examine(mailbox, with: client)
@@ -352,8 +352,9 @@ public struct MailReader: Sendable {
     /// The messages of `walk`, downloaded in the session of the walk, in the
     /// walk's order. A message that does not download is kept with its failure.
     private func threadDownloads(_ walk: ThreadWalk, with client: any MailClient) async throws -> [ThreadMessage] {
-        // Downloaded mailbox by mailbox, so each mailbox is opened once, then
-        // put back in the walk's order.
+        // Downloaded mailbox by mailbox, in name order, so each mailbox is
+        // opened once (and not at all when the walk left it open), then put
+        // back in the walk's order.
         let byMailbox = walk.messages.enumerated().sorted { lhs, rhs in
             (lhs.element.mailbox, lhs.offset) < (rhs.element.mailbox, rhs.offset)
         }
