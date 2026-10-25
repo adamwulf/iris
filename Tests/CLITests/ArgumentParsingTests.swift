@@ -252,6 +252,7 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertNil(command.file)
         XCTAssertFalse(command.all)
         XCTAssertFalse(command.noQuote, "the original is quoted by default")
+        XCTAssertEqual(command.attach, [], "no attachments by default")
     }
 
     func testDraftTakesTheReplyAsAnArgument() throws {
@@ -286,6 +287,28 @@ final class ArgumentParsingTests: XCTestCase {
         let command = try Draft.parse(["work/INBOX/42", "Thanks!", "-F", "reply.md"])
         XCTAssertEqual(command.body, "Thanks!")
         XCTAssertEqual(command.file, "reply.md")
+    }
+
+    func testDraftTakesRepeatedAttachInOrder() throws {
+        let command = try Draft.parse([
+            "work/INBOX/42", "--attach", "q4.pdf", "Thanks!", "--attach=notes/My Notes.txt", "--all", "--attach", "q4.pdf",
+        ])
+        XCTAssertEqual(command.attach, ["q4.pdf", "notes/My Notes.txt", "q4.pdf"], "in order, repeats kept")
+        XCTAssertEqual(command.body, "Thanks!")
+        XCTAssertTrue(command.all)
+
+        let withFile = try Draft.parse(["work/INBOX/42", "-F", "reply.md", "--attach", "q4.pdf"])
+        XCTAssertEqual(withFile.file, "reply.md")
+        XCTAssertEqual(withFile.attach, ["q4.pdf"])
+    }
+
+    /// Each --attach takes one path, so a second path is the reply, not another file.
+    func testDraftAttachTakesOnePathEach() throws {
+        let command = try Draft.parse(["work/INBOX/42", "--attach", "q4.pdf", "budget.xlsx"])
+        XCTAssertEqual(command.attach, ["q4.pdf"])
+        XCTAssertEqual(command.body, "budget.xlsx")
+
+        XCTAssertThrowsError(try Draft.parse(["work/INBOX/42", "--attach"]), "--attach needs a path")
     }
 
     func testDraftNeedsAFullIrisIDAndHasNoAccountOption() {
