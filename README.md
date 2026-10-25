@@ -385,12 +385,13 @@ iris cuts only at the marks that mail apps leave:
   it, Outlook's `From:` / `Sent:` / `To:` / `Subject:` header block, and a
   signature after a `-- ` line.
 
-Only the end of a body is cut. A quote with your answers between or under
-the quoted lines is shown whole, and so is a body with no mark. A forward
-(a subject that starts with `Fwd:` or `Fw:`, or a "Forwarded message" or
-"Begin forwarded message:" line) is never cut, because the message it
-forwards is new to the reader. A body that is nothing but history is shown
-whole.
+Only the end of a body is cut. When someone answers between the quoted
+lines, the answers and the quoted lines above them are kept; only quoted
+lines after the last answer are hidden. A body with no mark is shown whole.
+A forward (a subject that starts with `Fwd:` or `Fw:`, or a "Forwarded
+message" or "Begin forwarded message:" line above any quoted history) is
+never cut, because the message it forwards is new to the reader. A body
+that is nothing but history is shown whole.
 
 Limits:
 

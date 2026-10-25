@@ -367,6 +367,23 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertTrue(result.text.contains("Who is in?"))
     }
 
+    func testTheDOMPassLeavesAGmailForwardAlone() async throws {
+        // The Markdown pass would keep these forwards whole too (by parsing
+        // again); this checks that the DOM pass does not touch them.
+        let signed = try await MessageDecoder.htmlDocument(fromHTML: """
+        <div>FYI</div><div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>From: Jane</div><div>Lunch on Tuesday?</div><div class="gmail_signature">Jane</div></div>
+        """)
+        XCTAssertEqual(QuotedHistory.removeHistory(fromHTMLParts: [signed]), QuotedHistory.Removal())
+
+        let outlook = try await MessageDecoder.htmlDocument(fromHTML: """
+        <div>FYI</div><div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>From: Jane</div><div>Sounds good.</div><hr><div id="divRplyFwdMsg"><b>From:</b> Bob<br><b>Sent:</b> Thursday<br><b>Subject:</b> Lunch</div><div>Who is in?</div></div>
+        """)
+        XCTAssertEqual(
+            QuotedHistory.removeHistory(fromHTMLParts: [outlook]), QuotedHistory.Removal(),
+            "an Outlook header inside the forward is part of it"
+        )
+    }
+
     func testAnEmptyReplyWithItsAttributionAboveTheQuoteIsShownWhole() async throws {
         // Older Apple Mail, a reply with only an attachment: the attribution
         // is all that would be left.

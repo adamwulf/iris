@@ -380,8 +380,13 @@ for the user to save.
   rules: first the HTML elements that mail apps mark (in the DOM, before the
   Markdown conversion, so `MessageDecoder`'s test seam is the HTML parser,
   `parsingHTMLWith`), then the text markers in the text or Markdown. It cuts
-  only the end of a body, never a forward (`QuotedHistory.isForward`), and
-  keeps a body that would be left empty. `MessageDocument.bodyTrimmed` says
+  only the end of a body, and never a forward: a `Fwd:`/`Fw:` subject
+  (`QuotedHistory.isForward`, checked by `MessageDecoder.decode`), an HTML
+  quote that starts with a forward marker, or a forward marker line above
+  the text's history (`TextTrim.forward`). It keeps a body that would be
+  left empty, and the decoder parses the HTML again when the DOM pass cut
+  something that the text pass then calls a forward or all history.
+  `MessageDocument.bodyTrimmed` says
   whether it cut (JSON `bodyTrimmed`), and Markdown then prints
   `MessageFormatter.trimmedNote` under the body. The trimming is in the
   decoder's shared document step, so a message downloaded in parts is
