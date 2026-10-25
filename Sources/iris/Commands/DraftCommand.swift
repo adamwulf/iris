@@ -2,11 +2,11 @@ import ArgumentParser
 import Foundation
 import IrisKit
 
-/// Both children save drafts, so neither belongs under `iris ro`.
+/// Every child saves drafts, so none belongs under `iris ro`.
 struct Draft: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Create reply drafts or update saved drafts. iris never sends mail.",
-        subcommands: [Reply.self, Update.self]
+        abstract: "Create new or reply drafts, or update saved drafts. iris never sends mail.",
+        subcommands: [New.self, Reply.self, Update.self]
     )
 
     private static func printSavedDraft(_ saved: SavedDraft) {
@@ -14,6 +14,54 @@ struct Draft: AsyncParsableCommand {
             FileHandle.standardOutput.write(Data("\(draftID)\n".utf8))
         } else if let note = saved.missingIDNote {
             CLI.printToStderr(note)
+        }
+    }
+}
+
+extension Draft {
+    struct New: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Save a new message as a draft. iris never sends mail: review and send it in your mail app.",
+            discussion: "The body is Markdown, from exactly one source: the argument, -F <path>, or stdin. The draft has plain text and HTML parts, with no reply quote or threading headers, and goes to the \\Drafts mailbox. Each recipient option takes one address, optionally with a display name; repeat the option for more recipients. Each --attach takes one file, read before connecting. iris prints the draft's iris ID. The From address is IRIS_<NAME>_FROM, else the username when it is an address."
+        )
+
+        @OptionGroup var accountOptions: AccountOptions
+
+        @Option(parsing: .singleValue, help: "One To recipient. Repeat --to for each recipient.")
+        var to: [String]
+
+        @Option(parsing: .singleValue, help: "One Cc recipient. Repeat --cc for each recipient.")
+        var cc: [String] = []
+
+        @Option(parsing: .singleValue, help: "One Bcc recipient. Repeat --bcc for each recipient.")
+        var bcc: [String] = []
+
+        @Option(help: "The subject of the new message, on one line.")
+        var subject: String
+
+        @Argument(help: "The body, in Markdown. Omit to read from -F or stdin. Put -- before a body that starts with -, or use -F or stdin.")
+        var body: String?
+
+        @Option(
+            name: [.customShort("F"), .customLong("file")],
+            help: ArgumentHelp("Read the body (Markdown) from this file. -F - reads stdin.", valueName: "path")
+        )
+        var file: String?
+
+        @Option(parsing: .singleValue, help: ArgumentHelp("Attach this file. Repeat --attach for each file.", valueName: "path"))
+        var attach: [String] = []
+
+        func run() async throws {
+            let settings = AccountResolver.settings()
+            let account = try AccountResolver.resolve(name: accountOptions.account, settings: settings)
+            let from = try AccountResolver.fromAddress(for: account, in: settings)
+            let composer = try DraftComposer(from: from, to: to, cc: cc, bcc: bcc, subject: subject)
+            let attachments = try attach.map(DraftAttachment.read(path:))
+            let body = try DraftBody.read(
+                argument: body, file: file, attaching: !attach.isEmpty, stdinIsTerminal: isatty(STDIN_FILENO) == 1
+            )
+            let draft = composer.message(body: body, attachments: attachments)
+            Draft.printSavedDraft(try await MailWriter(account: account).saveDraft(draft))
         }
     }
 }

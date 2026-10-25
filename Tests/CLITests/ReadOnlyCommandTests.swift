@@ -127,7 +127,10 @@ final class ReadOnlyCommandTests: XCTestCase {
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "read", "work/INBOX/42"]))
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "unread", "work/INBOX/42"]))
         XCTAssertTrue(try Iris.parseAsRoot(["draft", "update", "work/Drafts/42", "Replacement"]) is Draft.Update)
-        XCTAssertEqual(names(Draft.configuration.subcommands), ["reply", "update"])
+        let newDraftArguments = ["draft", "new", "--to", "jane@example.com", "--subject", "Hello", "Body"]
+        XCTAssertTrue(try Iris.parseAsRoot(newDraftArguments) is Draft.New)
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro"] + newDraftArguments))
+        XCTAssertEqual(names(Draft.configuration.subcommands), ["new", "reply", "update"])
         for command in Draft.configuration.subcommands {
             XCTAssertFalse(command is any ReadOnlyCommand.Type)
         }

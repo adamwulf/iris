@@ -19,8 +19,6 @@ limits below remain useful when diagnosing a problem.
 
 These are the remaining ideas, not a committed implementation order:
 
-- **Standalone drafts:** `iris draft new --to ... --subject ...` remains deferred;
-  `draft reply` and `draft update` are implemented.
 - **Archive and move messages:** let an agent file mail after processing it.
 - **An iris skill for agents:** `skill/iris/SKILL.md`, with guidance for
   reading mail, using iris IDs, handling attachments, and saving drafts.

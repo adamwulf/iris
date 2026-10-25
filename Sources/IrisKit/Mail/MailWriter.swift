@@ -147,7 +147,7 @@ public struct MailWriter: Sendable {
     /// Saves `draft` with the flags `\Seen \Draft` in the first mailbox that
     /// LIST marks `\Drafts`. A `draftMayBeSaved` or `draftRefused` error holds
     /// the decoded name.
-    func saveDraft(_ draft: DraftMessage) async throws -> SavedDraft {
+    public func saveDraft(_ draft: DraftMessage) async throws -> SavedDraft {
         let client = makeClient(account)
         return try await client.session {
             let mailboxes = MailboxInfo.merged(try await client.listMailboxes())
