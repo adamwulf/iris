@@ -204,8 +204,9 @@ public struct MailReader: Sendable {
         }
         return try await withClient { client in
             _ = try await examine(id.mailbox, with: client)
-            // The one FETCH of the BODYSTRUCTURE also finds whether the message exists.
-            guard let parts = try await client.fetchStructure(uid: id.uid) else {
+            // The one FETCH of the outline (its BODYSTRUCTURE gives the parts)
+            // also finds whether the message exists.
+            guard let parts = try await client.fetchOutline(uid: id.uid)?.parts else {
                 throw IrisError.unknownMessage(id)
             }
             // Every message has a part, so no parts means that the server sent

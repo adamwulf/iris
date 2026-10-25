@@ -43,20 +43,16 @@ protocol MailClient: Sendable {
     /// the open mailbox does not have is left out. `uids` is not empty.
     func fetchThreadHeaders(uids: [UInt32]) async throws -> [ThreadHeaders]
     /// The size, the header fields that iris shows, and the parts of the
-    /// message with this UID in the open mailbox, before it is downloaded: one
-    /// UID FETCH of RFC822.SIZE, BODYSTRUCTURE, and
-    /// `BODY.PEEK[HEADER.FIELDS (...)]`, so `\Seen` is never set. Nil when the
-    /// open mailbox has no message with this UID.
+    /// message with this UID in the open mailbox, before anything of it is
+    /// downloaded (`show` and `download` both start with it): one UID FETCH of
+    /// RFC822.SIZE, BODYSTRUCTURE, and `BODY.PEEK[HEADER.FIELDS (...)]`, so
+    /// `\Seen` is never set. Nil when the open mailbox has no message with
+    /// this UID; the parts are empty when the server's answer has no
+    /// BODYSTRUCTURE that SwiftMail can read.
     func fetchOutline(uid: UInt32) async throws -> MessageOutline?
     /// The raw RFC 822 bytes of one message, fetched with `BODY.PEEK[]` so `\Seen`
     /// is never set. Empty when the open mailbox has no message with this UID.
     func fetchRawMessage(uid: UInt32) async throws -> Data
-    /// The parts of the message with this UID in the open mailbox, from its
-    /// BODYSTRUCTURE (one UID FETCH), in section order: each part that is not
-    /// a multipart, and after a message/rfc822 part, the parts of the message
-    /// inside it. Nil when the open mailbox has no message with this UID.
-    /// Empty when the server's answer has no BODYSTRUCTURE that SwiftMail can read.
-    func fetchStructure(uid: UInt32) async throws -> [PartStructure]?
     /// The bytes of the part `id` of the message with this UID in the open
     /// mailbox, fetched with `BODY.PEEK[<section>]` so `\Seen` is never set.
     /// They are still in the part's Content-Transfer-Encoding. A timeout is
@@ -126,29 +122,20 @@ struct MessageEnvelope: Sendable, Equatable {
     let internalDate: Date?
 }
 
-/// One part of a message as BODYSTRUCTURE describes it, without its bytes.
-struct PartStructure: Sendable, Equatable {
-    /// The part's section, which `BODY[<section>]` fetches.
-    let id: AttachmentID
-    /// The Content-Transfer-Encoding, such as `BASE64`. Nil when the part has none.
-    let encoding: String?
-    /// The size of the part's body as the message holds it, transfer-encoded
-    /// (BODYSTRUCTURE's body-fld-octets). Nil when it is not known.
-    let size: Int?
-}
-
 /// What one FETCH (UID RFC822.SIZE BODYSTRUCTURE and the header fields)
 /// reports about a message before iris downloads it. Its size decides how
 /// iris downloads it (see `MailReader.wholeDownloadLimit`), and for a large
-/// message its headers and parts are what iris shows without the whole message.
+/// message its headers and parts are what iris shows without the whole
+/// message. `download` finds the part to fetch in its parts.
 struct MessageOutline: Sendable, Equatable {
     /// The size of the whole message in bytes (RFC822.SIZE). Nil when the
     /// server's answer has none.
     let size: Int?
     let headers: MessageHeaders
-    /// The parts from BODYSTRUCTURE, in section order, as `PartStructure`
-    /// lists them: also the parts inside a message/rfc822 part. Empty when
-    /// the answer has no BODYSTRUCTURE that SwiftMail can read.
+    /// The parts from BODYSTRUCTURE, in section order: each part that is not
+    /// a multipart, and after a message/rfc822 part, the parts of the message
+    /// inside it. Empty when the answer has no BODYSTRUCTURE that SwiftMail
+    /// can read.
     let parts: [PartOutline]
 }
 
@@ -193,8 +180,9 @@ struct MessageHeaders: Sendable, Equatable {
     }
 }
 
-/// One part of a message as BODYSTRUCTURE describes it, with what the
-/// decoder needs to tell the body from the other parts, without its bytes.
+/// One part of a message as BODYSTRUCTURE describes it, without its bytes:
+/// what `download` needs to fetch and decode it, and what the decoder needs
+/// to tell the body from the other parts.
 struct PartOutline: Sendable, Equatable {
     /// The part's section, which `BODY[<section>]` fetches.
     let id: AttachmentID
@@ -203,7 +191,7 @@ struct PartOutline: Sendable, Equatable {
     let contentType: String
     /// The Content-Disposition type, such as `attachment` or `inline`.
     let disposition: String?
-    /// The Content-Transfer-Encoding, such as `BASE64`.
+    /// The Content-Transfer-Encoding, such as `BASE64`. Nil when the part has none.
     let encoding: String?
     /// The filename that SwiftMail found, which can also be one it made up
     /// (see "Large messages" in AGENTS.md).
@@ -211,7 +199,7 @@ struct PartOutline: Sendable, Equatable {
     /// The Content-ID.
     let contentID: String?
     /// The size of the part's body as the message holds it, transfer-encoded
-    /// (BODYSTRUCTURE's body-fld-octets).
+    /// (BODYSTRUCTURE's body-fld-octets). Nil when it is not known.
     let size: Int?
 
     init(

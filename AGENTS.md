@@ -100,16 +100,17 @@ the error mapping (`irisError(for:command:account:accessToken:)`), the TLS choic
 (`transportSecurity(forPort:)`), the SEARCH keys
 (`searchCriteria(for:)`, `subjectSearchCriteria(_:)`, `messageIDSearchCriteria(_:)`),
 the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
-`MessageEnvelope(swiftMail:)`, `ThreadHeaders(swiftMail:)`,
-`PartStructure(swiftMail:)`, the outline (`outline(in:uid:)`,
-`MessageHeaders(swiftMail:)`, `PartOutline(swiftMail:)`), and `Email(draft:)`.
+`MessageEnvelope(swiftMail:)`, `ThreadHeaders(swiftMail:)`, the outline
+(`outline(in:uid:)`, `MessageHeaders(swiftMail:)`, `PartOutline(swiftMail:)`),
+and `Email(draft:)`.
 
 `show` in Markdown or JSON (`MailReader.message(_:)`) is one read-only
 session: EXAMINE, then `fetchOutline(uid:)`, one UID FETCH of RFC822.SIZE,
 BODYSTRUCTURE, and `BODY.PEEK[HEADER.FIELDS (...)]` for the fields of
 `MessageHeaders` (`SwiftMailClient.messageHeaderFields`), through
-`fetchMessageInfosBulk`. Nil is a missing message, `unknownMessage`, so it
-is the existence check. A message of at most `MailReader.wholeDownloadLimit`
+`fetchMessageInfosBulk`, not SwiftMail's `fetchStructure`, which fails for a
+missing UID and sends a second FETCH for filenames. Nil is a missing
+message, `unknownMessage`, so it is the existence check. A message of at most `MailReader.wholeDownloadLimit`
 bytes (1 MiB), or of unknown size, is then downloaded whole with
 `fetchRawMessage` and decoded as before: `.whole(Data)` of
 `DownloadedMessage`. A larger one gets only its body parts, found by
@@ -124,25 +125,20 @@ their attachment IDs are shown. A large message whose outline has no parts
 way left, with one `IrisLog` line that says it can time out.
 `outline(in:uid:)` combines every answer with the UID: SwiftMail puts the
 header fields on the first answer with the sequence number, and the size and
-BODYSTRUCTURE on the last, so a CONDSTORE flag change before the answer
-splits them. `show --format raw` never takes this path: it reads
+BODYSTRUCTURE on the last, so a CONDSTORE flag change (`MODSEQ`/`FLAGS`)
+before the answer splits them; an unsolicited FETCH for another message is
+skipped. `show --format raw` never takes this path: it reads
 `rawMessage(_:)`, the whole message at any size
 (`MessageOutputFormat.documentFormat` is nil for raw). See "Large messages"
 in "Gotchas" for what the parts path gives differently.
 
 `download` (`MailReader.attachment(_:of:)`) is one read-only session:
-EXAMINE, `fetchStructure(uid:)`, then `fetchPart(_:uid:)`
+EXAMINE, the same `fetchOutline(uid:)` as `show`, then `fetchPart(_:uid:)`
 (`BODY.PEEK[<section>]`) for that one part, never `fetchRawMessage` (see
-"Gotchas"). `fetchStructure` is one UID FETCH (UID BODYSTRUCTURE), through
-SwiftMail's `fetchMessageInfosBulk(using:options: [.bodyStructure])`, not
-its `fetchStructure`, which fails for a missing UID and sends a second
-FETCH for filenames. It gives `[PartStructure]?` (the section, the
-transfer encoding, and the transfer-encoded size of each part;
-`SwiftMailClient.partStructures(in:uid:)` takes them from the first answer
-with that UID that has parts, so an unsolicited FETCH for another message,
-or for this one without a BODYSTRUCTURE (a CONDSTORE `MODSEQ`/`FLAGS`
-answer), is skipped): nil for a missing message, which
-is `unknownMessage`, so it is also the existence check. Empty parts mean
+"Gotchas"). It reads only the parts of the outline (`PartOutline`: the
+section, the transfer encoding, and the transfer-encoded size of each
+part). Nil is a missing message, `unknownMessage`, so the outline is also
+the existence check. Empty parts mean
 the answer had no BODYSTRUCTURE that SwiftMail could read (every message
 has a part): `attachmentStructureMissing`, not a wrong attachment ID. A
 section that is not in the structure is `unknownAttachment`, which names
@@ -246,11 +242,11 @@ way Zoho did in the 2026-10-24 probes (`SearchRules.zoho`), or by RFC 3501
 (`.rfc3501`); `refusesNonASCII` models a server that refuses non-ASCII
 SEARCH text, and `rawMessageErrors` a message that does not download (after
 a timeout no mailbox is open, as after SwiftMail's reconnect). For
-`download` it holds each UID's `structures` and `parts` (the bytes still
-transfer-encoded): `fetchStructure` gives nil for a UID it does not have,
-and an empty structure stands for an answer without a BODYSTRUCTURE. For a
-large message it holds each UID's `outlines` (in `mailboxMessages`, a
-`Message`'s `outline` and `bodyParts`); `fetchBodyPart` reads `parts`, and
+`download` and a large message it holds each UID's `outlines` (in
+`mailboxMessages`, a `Message`'s `outline` and `bodyParts`) and `parts` (the
+bytes still transfer-encoded): `fetchOutline` gives nil for a UID it does
+not have, and an outline without parts stands for an answer without a
+BODYSTRUCTURE. `fetchPart` and `fetchBodyPart` read `parts`, and
 `bodyPartErrors` throws for a UID (after `bodyDownloadTimedOut` no mailbox
 is open). A UID in `rawMessages` without an outline gets one with its size
 and nothing else, which the whole download does not read. The
@@ -494,8 +490,8 @@ account (`--account <name>`).
   messages"). `fetchEnvelopes` and `fetchThreadHeaders` use
   the chunked `fetchMessageInfos(using:options:headerFields:chunkSize:)`
   stream (`envelopeChunkSize`, 100 messages per FETCH), so each chunk has
-  its own deadline. Any other timeout after login (also the BODYSTRUCTURE
-  FETCH of `download`, and the outline FETCH of `show`) is
+  its own deadline. Any other timeout after login (also the outline FETCH
+  of `show` and `download`) is
   `serverTimedOut`; before login it is `connectionFailed`. In the same way, a
   broken connection (a closed channel, BYE, or a network error) is
   `connectionFailed` on connect and LOGIN (or AUTHENTICATE), and `connectionLost` after it,
@@ -530,8 +526,8 @@ account (`--account <name>`).
   `fetchRawMessage`: its 10 seconds fail large messages, and attachments are
   what make a message large. The parts path of `show` fetches each body
   part the same way. A part-fetch timeout is `attachmentDownloadTimedOut`
-  (for a body part, `bodyDownloadTimedOut`); a BODYSTRUCTURE timeout (10 seconds,
-  `FetchMessageInfoCommand.timeoutSeconds`, for a few hundred bytes) is
+  (for a body part, `bodyDownloadTimedOut`); an outline timeout (10 seconds,
+  `FetchMessageInfoCommand.timeoutSeconds`, for a few kilobytes at most) is
   `serverTimedOut`, as for the other small FETCHes. No chunked or ranged fetch is
   built, so an attachment that takes more than 60 seconds fails
   (`plans/roadmap.md`, "Known limits").
@@ -543,8 +539,8 @@ account (`--account <name>`).
   section and then adds its inner parts (`2`, `2.1`, `2.2`; SwiftMail's
   `rfc822InsideMultipartMixed` test pins this). So every ID that `show`
   lists is in the structure, and `BODY[2]` gives the whole forwarded
-  message, an `.eml`. `download` reads only the section and the transfer
-  encoding from it, never the filename (see "Output"). For a large message,
+  message, an `.eml`. `download` reads only the section, the transfer
+  encoding, and the size from it, never the filename (see "Output"). For a large message,
   `MessageDecoder.message(of:bodies:)` drops the inner parts, so the list
   is the one EMLParser gives.
 - **Large messages** (`MailReader.wholeDownloadLimit`, 1 MiB by RFC822.SIZE,
@@ -597,7 +593,7 @@ account (`--account <name>`).
   error (FETCH returns nothing, and STORE answers OK); `MailReader` and
   `MailWriter` turn that into `unknownMessage`. SwiftMail's own
   `fetchStructure` throws instead (`fetchFailed`, "No body structure
-  received"), so `SwiftMailClient.fetchStructure` asks for BODYSTRUCTURE
+  received"), so `SwiftMailClient.fetchOutline` asks for BODYSTRUCTURE
   with `fetchMessageInfosBulk`, which gives no answer for a missing UID.
 - **SEARCH days:** SwiftMail takes a `Date` for SINCE and BEFORE and turns
   it into a day with the `Calendar` it is given. Its `IMAPCalendarDay`

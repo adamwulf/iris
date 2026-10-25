@@ -88,9 +88,9 @@ final class SwiftMailClientTests: XCTestCase {
         )
         XCTAssertEqual(SwiftMailClient.partTimeoutSeconds, 60, "FetchMessagePartCommand.timeoutSeconds in SwiftMail 88c45cbd")
         XCTAssertEqual(
-            irisError(IMAPError.timeout, .fetchStructure), .serverTimedOut(account: "work", command: "FETCH"),
-            "FetchMessageInfoCommand's 10 seconds for BODYSTRUCTURE, which is small, so its timeout says nothing "
-                + "about the attachment's size"
+            irisError(IMAPError.timeout, .fetchOutline), .serverTimedOut(account: "work", command: "FETCH"),
+            "FetchMessageInfoCommand's 10 seconds for a size, a few header fields, and a BODYSTRUCTURE, which are "
+                + "small, so its timeout says nothing about the attachment's size"
         )
     }
 
@@ -100,14 +100,10 @@ final class SwiftMailClientTests: XCTestCase {
             irisError(IMAPError.timeout, .fetchBodyPart),
             .bodyDownloadTimedOut(seconds: SwiftMailClient.partTimeoutSeconds)
         )
-        XCTAssertEqual(
-            irisError(IMAPError.timeout, .fetchOutline), .serverTimedOut(account: "work", command: "FETCH"),
-            "FetchMessageInfoCommand's 10 seconds for a size, a few header fields, and a BODYSTRUCTURE"
-        )
     }
 
-    func testOtherBodyPartAndOutlineErrorsBecomeServerErrorsOrConnectionLost() {
-        for command in [SwiftMailClient.Command.fetchBodyPart, .fetchOutline] {
+    func testOtherPartAndOutlineErrorsBecomeServerErrorsOrConnectionLost() {
+        for command in [SwiftMailClient.Command.fetchOutline, .fetchPart, .fetchBodyPart] {
             XCTAssertEqual(
                 irisError(IMAPError.fetchFailed("no(NO [UNAVAILABLE] secret)"), command),
                 .serverError(account: "work", command: "FETCH", reason: "Fetch failed: no(NO [UNAVAILABLE] <redacted>)"),
@@ -119,17 +115,6 @@ final class SwiftMailClientTests: XCTestCase {
                 "\(command)"
             )
         }
-    }
-
-    func testOtherPartAndStructureErrorsBecomeServerErrorsOrConnectionLost() {
-        XCTAssertEqual(
-            irisError(IMAPError.fetchFailed("no(NO [UNAVAILABLE] secret)"), .fetchStructure),
-            .serverError(account: "work", command: "FETCH", reason: "Fetch failed: no(NO [UNAVAILABLE] <redacted>)")
-        )
-        XCTAssertEqual(
-            irisError(IMAPError.connectionFailed("Server terminated connection: secret"), .fetchPart),
-            .connectionLost(account: "work", command: "FETCH", reason: "Server terminated connection: <redacted>")
-        )
     }
 
     func testTimeoutOnLoginBecomesConnectionFailed() {
@@ -349,7 +334,6 @@ final class SwiftMailClientTests: XCTestCase {
         XCTAssertEqual(SwiftMailClient.Command.fetchEnvelopes.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchThreadHeaders.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchRawMessage.name, "FETCH")
-        XCTAssertEqual(SwiftMailClient.Command.fetchStructure.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.fetchPart.name, "FETCH")
         XCTAssertEqual(SwiftMailClient.Command.select(mailbox: "INBOX").name, "SELECT")
         XCTAssertEqual(SwiftMailClient.Command.store.name, "STORE")
@@ -741,17 +725,22 @@ final class SwiftMailClientTests: XCTestCase {
 
     // MARK: - Parts
 
-    func testPartStructureKeepsTheSectionEncodingAndSize() {
+    // A missing UID, an answer without a BODYSTRUCTURE, and a part without
+    // the optional fields are in "Outlines" below.
+
+    func testPartOutlineKeepsWhatDownloadAndTheDecoderNeed() {
         let part = MessagePart(
-            sectionString: "1.2", contentType: "application/pdf; name=\"report.pdf\"", disposition: "attachment",
-            encoding: "BASE64", filename: "report.pdf", size: 1234
+            sectionString: "1.2", contentType: "application/pdf", disposition: "attachment",
+            encoding: "BASE64", filename: "report.pdf", contentId: "<report@example.com>", size: 1234
         )
-        XCTAssertEqual(
-            PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [1, 2]), encoding: "BASE64", size: 1234)
-        )
+        XCTAssertEqual(PartOutline(swiftMail: part), PartOutline(
+            id: AttachmentID(components: [1, 2]), contentType: "application/pdf", disposition: "attachment",
+            encoding: "BASE64", filename: "report.pdf", contentID: "<report@example.com>", size: 1234
+        ))
     }
 
-    func testPartStructuresAreTheBodyStructureOfTheAnswerWithTheUID() {
+    /// `download` fetches a forwarded message whole (`2`), or a part inside it (`2.1`).
+    func testTheOutlineKeepsAForwardedMessageAndThePartsInsideIt() {
         let parts = [
             MessagePart(sectionString: "1", contentType: "text/plain", encoding: "7BIT", size: 10),
             MessagePart(sectionString: "2", contentType: "message/rfc822", encoding: "7BIT", size: 300),
@@ -761,16 +750,18 @@ final class SwiftMailClientTests: XCTestCase {
         let unsolicited = MessageInfo(sequenceNumber: SequenceNumber(3), flags: [.seen])
         let answer = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), parts: parts)
 
-        XCTAssertEqual(SwiftMailClient.partStructures(in: [unsolicited, answer], uid: 150), [
-            PartStructure(id: AttachmentID(components: [1]), encoding: "7BIT", size: 10),
-            PartStructure(id: AttachmentID(components: [2]), encoding: "7BIT", size: 300),
-            PartStructure(id: AttachmentID(components: [2, 1]), encoding: "QUOTED-PRINTABLE", size: 0),
+        XCTAssertEqual(SwiftMailClient.outline(in: [unsolicited, answer], uid: 150)?.parts, [
+            PartOutline(id: AttachmentID(components: [1]), contentType: "text/plain", encoding: "7BIT", size: 10),
+            PartOutline(id: AttachmentID(components: [2]), contentType: "message/rfc822", encoding: "7BIT", size: 300),
+            PartOutline(
+                id: AttachmentID(components: [2, 1]), contentType: "text/plain", encoding: "QUOTED-PRINTABLE", size: 0
+            ),
         ])
     }
 
     /// A CONDSTORE server (Zoho advertises it) can send `* n FETCH (UID x
     /// MODSEQ (...) FLAGS (...))` for the same message before the answer.
-    func testPartStructuresSkipAnUnsolicitedFetchForTheSameMessage() {
+    func testTheOutlineSkipsAFlagChangeWithoutABodyStructure() {
         let flagChange = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), flags: [.seen])
         let answer = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150), parts: [
             MessagePart(sectionString: "1", contentType: "text/plain", encoding: "7BIT", size: 10),
@@ -778,34 +769,15 @@ final class SwiftMailClientTests: XCTestCase {
         ])
 
         let expected = [
-            PartStructure(id: AttachmentID(components: [1]), encoding: "7BIT", size: 10),
-            PartStructure(id: AttachmentID(components: [2]), encoding: "BASE64", size: 400),
+            PartOutline(id: AttachmentID(components: [1]), contentType: "text/plain", encoding: "7BIT", size: 10),
+            PartOutline(id: AttachmentID(components: [2]), contentType: "application/pdf", encoding: "BASE64", size: 400),
         ]
-        XCTAssertEqual(SwiftMailClient.partStructures(in: [flagChange, answer], uid: 150), expected)
-        XCTAssertEqual(SwiftMailClient.partStructures(in: [answer, flagChange], uid: 150), expected)
+        XCTAssertEqual(SwiftMailClient.outline(in: [flagChange, answer], uid: 150)?.parts, expected)
+        XCTAssertEqual(SwiftMailClient.outline(in: [answer, flagChange], uid: 150)?.parts, expected)
         XCTAssertEqual(
-            SwiftMailClient.partStructures(in: [flagChange], uid: 150), [],
-            "answers without a BODYSTRUCTURE fall back to the first: the message exists, its parts are unknown"
+            SwiftMailClient.outline(in: [flagChange], uid: 150)?.parts, [],
+            "answers without a BODYSTRUCTURE: the message exists, its parts are unknown"
         )
-    }
-
-    func testPartStructuresOfAMissingUIDAreNil() {
-        let other = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(151), parts: [
-            MessagePart(sectionString: "1", contentType: "text/plain"),
-        ])
-        XCTAssertNil(SwiftMailClient.partStructures(in: [], uid: 150), "no answer: no such message")
-        XCTAssertNil(SwiftMailClient.partStructures(in: [other], uid: 150), "only another message answered")
-    }
-
-    func testPartStructuresOfAnAnswerWithoutABodyStructureAreEmpty() {
-        // SwiftMail leaves `parts` empty when BODYSTRUCTURE is missing or cannot be parsed.
-        let answer = MessageInfo(sequenceNumber: SequenceNumber(7), uid: UID(150))
-        XCTAssertEqual(SwiftMailClient.partStructures(in: [answer], uid: 150), [])
-    }
-
-    func testPartStructureWithoutAnEncodingOrSizeHasNone() {
-        let part = MessagePart(sectionString: "3", contentType: "image/png")
-        XCTAssertEqual(PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [3]), encoding: nil, size: nil))
     }
 
     // MARK: - Thread headers

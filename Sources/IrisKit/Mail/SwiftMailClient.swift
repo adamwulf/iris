@@ -47,7 +47,6 @@ struct SwiftMailClient: MailWriteClient {
         /// The FETCH of RFC822.SIZE, BODYSTRUCTURE, and the header fields of one message.
         case fetchOutline
         case fetchRawMessage
-        case fetchStructure
         /// One part, for `iris download`.
         case fetchPart
         /// One body part of a message that iris shows in parts.
@@ -67,8 +66,7 @@ struct SwiftMailClient: MailWriteClient {
             case .list: return "LIST"
             case .examine: return "EXAMINE"
             case .search, .headerSearch: return "SEARCH"
-            case .fetchEnvelopes, .fetchThreadHeaders, .fetchOutline, .fetchRawMessage, .fetchStructure, .fetchPart,
-                 .fetchBodyPart:
+            case .fetchEnvelopes, .fetchThreadHeaders, .fetchOutline, .fetchRawMessage, .fetchPart, .fetchBodyPart:
                 return "FETCH"
             case .select: return "SELECT"
             case .store: return "STORE"
@@ -288,6 +286,8 @@ struct SwiftMailClient: MailWriteClient {
     func fetchOutline(uid: UInt32) async throws -> MessageOutline? {
         // One UID FETCH, with FetchMessageInfoCommand's 10 seconds: a size, the
         // header fields, and a BODYSTRUCTURE are a few kilobytes at most.
+        // IMAPServer.fetchStructure would fail for a missing UID, and sends a
+        // second FETCH for the filenames.
         let infos = try await run(.fetchOutline) {
             try await server.fetchMessageInfosBulk(
                 using: UIDSet(UID(uid)), options: [.size, .bodyStructure], headerFields: Self.messageHeaderFields
@@ -323,31 +323,6 @@ struct SwiftMailClient: MailWriteClient {
         // at 10, and no public API sends BODY.PEEK[] with a longer timeout.
         try await run(.fetchRawMessage) {
             try await server.fetchRawMessage(identifier: UID(uid))
-        }
-    }
-
-    func fetchStructure(uid: UInt32) async throws -> [PartStructure]? {
-        // One UID FETCH (UID BODYSTRUCTURE), with FetchMessageInfoCommand's 10
-        // seconds. IMAPServer.fetchStructure would fail for a missing UID, and
-        // sends a second FETCH for the filenames, which iris does not use.
-        let infos = try await run(.fetchStructure) {
-            try await server.fetchMessageInfosBulk(using: UIDSet(UID(uid)), options: [.bodyStructure])
-        }
-        return Self.partStructures(in: infos, uid: uid)
-    }
-
-    /// The parts that FETCH (UID BODYSTRUCTURE) gave for `uid`, from the
-    /// first answer with that UID that has parts, else the first answer with
-    /// that UID. An unsolicited FETCH for another message (such as a flag
-    /// change) is skipped, and so is one for this message without a
-    /// BODYSTRUCTURE, such as a CONDSTORE server's `* n FETCH (UID x MODSEQ
-    /// (...) FLAGS (...))` before the answer. Nil when no answer has the UID,
-    /// so the open mailbox has no such message. Empty when no answer with the
-    /// UID has a BODYSTRUCTURE that SwiftMail could read.
-    static func partStructures(in infos: [MessageInfo], uid: UInt32) -> [PartStructure]? {
-        let answers = infos.filter { $0.uid?.value == uid }
-        return (answers.first { !$0.parts.isEmpty } ?? answers.first).map { info in
-            info.parts.map(PartStructure.init(swiftMail:))
         }
     }
 
@@ -635,15 +610,6 @@ extension MessageEnvelope {
     }
 }
 
-extension PartStructure {
-    /// `part` from BODYSTRUCTURE, as SwiftMail's `[MessagePart](BodyStructure)` gives it.
-    /// SwiftMail keeps a message/rfc822 part at its own section, so it can be
-    /// fetched whole, and adds the parts inside it after it (`2`, then `2.1`, `2.2`).
-    init(swiftMail part: MessagePart) {
-        self.init(id: AttachmentID(components: part.section.components), encoding: part.encoding, size: part.size)
-    }
-}
-
 extension MessageHeaders {
     /// `info` from FETCH (the `messageHeaderFields`, without ENVELOPE).
     /// SwiftMail reads the header block with EMLParser's code for the subject,
@@ -674,6 +640,8 @@ extension MessageHeaders {
 
 extension PartOutline {
     /// `part` from BODYSTRUCTURE, as SwiftMail's `[MessagePart](BodyStructure)` gives it.
+    /// SwiftMail keeps a message/rfc822 part at its own section, so it can be
+    /// fetched whole, and adds the parts inside it after it (`2`, then `2.1`, `2.2`).
     init(swiftMail part: MessagePart) {
         self.init(
             id: AttachmentID(components: part.section.components),

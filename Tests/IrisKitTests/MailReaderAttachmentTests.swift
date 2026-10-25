@@ -3,7 +3,8 @@ import XCTest
 @testable import IrisKit
 
 /// `MailReader.attachment`: one part of a message, found in its BODYSTRUCTURE
-/// and fetched alone, then decoded from its Content-Transfer-Encoding.
+/// (from the outline FETCH) and fetched alone, then decoded from its
+/// Content-Transfer-Encoding.
 final class MailReaderAttachmentTests: XCTestCase {
     private let account = Account(
         name: "work", host: "imap.example.com", port: 993, username: "me@example.com",
@@ -26,24 +27,24 @@ final class MailReaderAttachmentTests: XCTestCase {
 
     /// A fake whose `mailbox` (a wire name) holds the message UID 150 with these parts.
     private func server(
-        structure: [PartStructure],
+        structure: [PartOutline],
         parts: [AttachmentID: Data],
         mailbox: String = "INBOX",
         errors: [FakeMailClient.Method: any Error] = [:]
     ) -> FakeMailClient {
         FakeMailClient(
             statuses: [mailbox: MailboxStatus(messageCount: 1, uidValidity: 7, uidNext: 200)],
-            structures: [150: structure],
+            outlines: [150: MessageOutline(size: nil, headers: MessageHeaders(), parts: structure)],
             parts: [150: parts],
             errors: errors
         )
     }
 
     /// multipart/mixed(text/plain, application/pdf), as SwiftMail gives its BODYSTRUCTURE.
-    private var report: [PartStructure] {
+    private var report: [PartOutline] {
         [
-            PartStructure(id: part(1), encoding: "7BIT", size: 24),
-            PartStructure(id: part(2), encoding: "BASE64", size: 22),
+            PartOutline(id: part(1), contentType: "text/plain", encoding: "7BIT", size: 24),
+            PartOutline(id: part(2), contentType: "application/pdf", encoding: "BASE64", size: 22),
         ]
     }
 
@@ -69,12 +70,12 @@ final class MailReaderAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment, Data("Hello World".utf8))
         let calls = await fake.calls
         XCTAssertEqual(calls, [
-            .login, .examine("INBOX"), .fetchStructure(150), .fetchPart(part(2), 150), .logout,
-        ], "EXAMINE, one BODYSTRUCTURE FETCH, and PEEK only, and never the whole message")
+            .login, .examine("INBOX"), .fetchOutline(150), .fetchPart(part(2), 150), .logout,
+        ], "EXAMINE, one FETCH of the outline with its BODYSTRUCTURE, and PEEK only, and never the whole message")
     }
 
     func testAttachmentDecodesQuotedPrintable() async throws {
-        let structure = [PartStructure(id: part(2), encoding: "QUOTED-PRINTABLE", size: 24)]
+        let structure = [PartOutline(id: part(2), contentType: "text/plain", encoding: "QUOTED-PRINTABLE", size: 24)]
         let fake = server(structure: structure, parts: [part(2): Data("caf=C3=A9 au =\r\nlait\r\n".utf8)])
 
         let attachment = try await reader(fake).attachment(part(2), of: id(150))
@@ -85,7 +86,9 @@ final class MailReaderAttachmentTests: XCTestCase {
     func testAttachmentWithoutATransferEncodingKeepsItsBytes() async throws {
         let bytes = Data([0x00, 0xFF, 0x0D, 0x0A, 0x41])
         for encoding in [nil, "7BIT", "8BIT", "BINARY"] {
-            let structure = [PartStructure(id: part(1), encoding: encoding, size: bytes.count)]
+            let structure = [
+                PartOutline(id: part(1), contentType: "application/octet-stream", encoding: encoding, size: bytes.count),
+            ]
             let fake = server(structure: structure, parts: [part(1): bytes])
 
             let attachment = try await reader(fake).attachment(part(1), of: id(150))
@@ -99,11 +102,11 @@ final class MailReaderAttachmentTests: XCTestCase {
     func testAForwardedMessageDownloadsWholeAsAnEMLFile() async throws {
         let forwarded = Data("From: jane@example.com\r\nSubject: Plans\r\n\r\nThe plans.\r\n".utf8)
         let structure = [
-            PartStructure(id: part(1), encoding: "7BIT", size: 12),
-            PartStructure(id: part(2), encoding: "7BIT", size: forwarded.count),
-            PartStructure(id: part(2, 1), encoding: "7BIT", size: 12),
-            PartStructure(id: part(2, 2), encoding: "BASE64", size: 8),
-            PartStructure(id: part(3), encoding: "BASE64", size: 8),
+            PartOutline(id: part(1), contentType: "text/plain", encoding: "7BIT", size: 12),
+            PartOutline(id: part(2), contentType: "message/rfc822", encoding: "7BIT", size: forwarded.count),
+            PartOutline(id: part(2, 1), contentType: "text/plain", encoding: "7BIT", size: 12),
+            PartOutline(id: part(2, 2), contentType: "image/png", encoding: "BASE64", size: 8),
+            PartOutline(id: part(3), contentType: "application/pdf", encoding: "BASE64", size: 8),
         ]
         let fake = server(structure: structure, parts: [part(2): forwarded, part(2, 2): Data("SGVsbG8=".utf8)])
 
@@ -129,7 +132,8 @@ final class MailReaderAttachmentTests: XCTestCase {
 
     func testAnEmptyPartDownloadsAsNoBytes() async throws {
         for size in [0, nil] as [Int?] {
-            let fake = server(structure: [PartStructure(id: part(2), encoding: "BASE64", size: size)], parts: [part(2): Data()])
+            let structure = [PartOutline(id: part(2), contentType: "application/pdf", encoding: "BASE64", size: size)]
+            let fake = server(structure: structure, parts: [part(2): Data()])
 
             let attachment = try await reader(fake).attachment(part(2), of: id(150))
 
@@ -139,7 +143,8 @@ final class MailReaderAttachmentTests: XCTestCase {
 
     func testTheBytesNeedNotMatchTheStructureSize() async throws {
         // Servers count line ends differently; only no bytes at all is an error.
-        let fake = server(structure: [PartStructure(id: part(2), encoding: "BASE64", size: 99)], parts: [part(2): Data("SGVsbG8=".utf8)])
+        let structure = [PartOutline(id: part(2), contentType: "application/pdf", encoding: "BASE64", size: 99)]
+        let fake = server(structure: structure, parts: [part(2): Data("SGVsbG8=".utf8)])
 
         let attachment = try await reader(fake).attachment(part(2), of: id(150))
 
@@ -160,7 +165,7 @@ final class MailReaderAttachmentTests: XCTestCase {
         XCTAssertEqual(calls.last, .logout)
     }
 
-    func testAMissingMessageThrowsUnknownMessageFromTheOneStructureFetch() async {
+    func testAMissingMessageThrowsUnknownMessageFromTheOneOutlineFetch() async {
         let fake = server(structure: report, parts: [:])
 
         await assertThrows(.unknownMessage(id(999))) {
@@ -168,7 +173,7 @@ final class MailReaderAttachmentTests: XCTestCase {
         }
 
         let calls = await fake.calls
-        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchStructure(999), .logout])
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchOutline(999), .logout])
     }
 
     /// Every message has a part, so an answer without parts is the server's
@@ -181,17 +186,17 @@ final class MailReaderAttachmentTests: XCTestCase {
         }
 
         let calls = await fake.calls
-        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchStructure(150), .logout])
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchOutline(150), .logout])
     }
 
-    func testAStructureFetchTimeoutPassesThroughAndLogsOut() async {
+    func testAnOutlineFetchTimeoutPassesThroughAndLogsOut() async {
         let failure = IrisError.serverTimedOut(account: "work", command: "FETCH")
-        let fake = server(structure: report, parts: [:], errors: [.fetchStructure: failure])
+        let fake = server(structure: report, parts: [:], errors: [.fetchOutline: failure])
 
         await assertThrows(failure) { try await self.reader(fake).attachment(self.part(2), of: self.id(150)) }
 
         let calls = await fake.calls
-        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchStructure(150), .logout])
+        XCTAssertEqual(calls, [.login, .examine("INBOX"), .fetchOutline(150), .logout])
     }
 
     func testUIDZeroIsRejectedBeforeConnecting() async {

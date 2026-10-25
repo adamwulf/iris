@@ -17,7 +17,6 @@ actor FakeMailClient: MailWriteClient {
         case fetchThreadHeaders([UInt32])
         case fetchOutline(UInt32)
         case fetchRawMessage(UInt32)
-        case fetchStructure(UInt32)
         case fetchPart(AttachmentID, UInt32)
         case fetchBodyPart(AttachmentID, UInt32)
         case select(String)
@@ -29,8 +28,7 @@ actor FakeMailClient: MailWriteClient {
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
         case login, capabilities, listMailboxes, examine, searchUIDs, searchSubject, searchMessageIDs, fetchEnvelopes,
-             fetchThreadHeaders, fetchOutline, fetchRawMessage, fetchStructure, fetchPart, fetchBodyPart, select, setSeen,
-             appendDraft
+             fetchThreadHeaders, fetchOutline, fetchRawMessage, fetchPart, fetchBodyPart, select, setSeen, appendDraft
     }
 
     /// How the fake answers a search in a mailbox of `mailboxMessages`.
@@ -117,7 +115,6 @@ actor FakeMailClient: MailWriteClient {
     private let rawMessageErrors: [UInt32: any Error]
     private let outlines: [UInt32: MessageOutline]
     private let bodyPartErrors: [UInt32: any Error]
-    private let structures: [UInt32: [PartStructure]]
     private let parts: [UInt32: [AttachmentID: Data]]
     private let appendedUID: UInt32?
     private let errors: [Method: any Error]
@@ -145,16 +142,14 @@ actor FakeMailClient: MailWriteClient {
     /// `fetchRawMessage` throws the error in `rawMessageErrors` for its UID;
     /// after `messageDownloadTimedOut` no mailbox is open, as after SwiftMail's reconnect.
     ///
-    /// `fetchStructure` returns the `structures` of its UID, and nil for a UID
-    /// that is not in it, as for a missing message; an empty structure stands
-    /// for an answer without a BODYSTRUCTURE. `fetchPart` returns the `parts`
-    /// bytes, still transfer-encoded, and empty data for a part that is not in it.
-    ///
     /// `fetchOutline` returns the `outlines` of its UID (in a mailbox of
-    /// `mailboxMessages`, the message's `outline`). A message with no outline
+    /// `mailboxMessages`, the message's `outline`); an outline without parts
+    /// stands for an answer without a BODYSTRUCTURE. A message with no outline
     /// that `fetchRawMessage` would return gets one with its size and no
     /// headers or parts, which a whole download does not read; any other UID
-    /// gets nil, as for a missing message. `fetchBodyPart` returns the bytes
+    /// gets nil, as for a missing message. `fetchPart` returns the `parts`
+    /// bytes, still transfer-encoded, and empty data for a part that is not
+    /// in it. `fetchBodyPart` returns the bytes
     /// in `parts` (in a mailbox of `mailboxMessages`, the message's
     /// `bodyParts`), or throws the error in `bodyPartErrors` for its UID;
     /// after `bodyDownloadTimedOut` no mailbox is open, as after SwiftMail's reconnect.
@@ -172,7 +167,6 @@ actor FakeMailClient: MailWriteClient {
         rawMessageErrors: [UInt32: any Error] = [:],
         outlines: [UInt32: MessageOutline] = [:],
         bodyPartErrors: [UInt32: any Error] = [:],
-        structures: [UInt32: [PartStructure]] = [:],
         parts: [UInt32: [AttachmentID: Data]] = [:],
         appendedUID: UInt32? = nil,
         errors: [Method: any Error] = [:]
@@ -190,7 +184,6 @@ actor FakeMailClient: MailWriteClient {
         self.rawMessageErrors = rawMessageErrors
         self.outlines = outlines
         self.bodyPartErrors = bodyPartErrors
-        self.structures = structures
         self.parts = parts
         self.appendedUID = appendedUID
         self.errors = errors
@@ -372,11 +365,6 @@ actor FakeMailClient: MailWriteClient {
             return outline
         }
         return rawMessages[uid].map { MessageOutline(size: $0.count, headers: MessageHeaders(), parts: []) }
-    }
-
-    func fetchStructure(uid: UInt32) async throws -> [PartStructure]? {
-        try record(.fetchStructure(uid), .fetchStructure)
-        return structures[uid]
     }
 
     func fetchPart(_ id: AttachmentID, uid: UInt32) async throws -> Data {
