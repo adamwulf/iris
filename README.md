@@ -175,7 +175,8 @@ client ID but no refresh token yet.
 - `iris thread`: every message in the thread of one message, oldest first,
   by the iris ID of any message in it. Each message is shown in full, as
   `iris show` shows it, with its own iris ID (a reply you sent shows its
-  Sent iris ID). Also as JSON.
+  Sent iris ID). Also as JSON or JSON Lines, or only the iris IDs, which
+  downloads no message.
 - `iris read` and `iris unread`: mark one message, by its iris ID, as read
   or unread (they add or remove the `\Seen` flag). Each one sets the state,
   so running it again changes nothing. They print nothing when they succeed.
@@ -201,6 +202,8 @@ iris show 'personal/[Gmail]/Sent Mail/77'
 
 iris thread 'work/INBOX/4821'                 # the whole thread, oldest first
 iris thread 'work/INBOX/4821' --format json   # an array of `iris show --format json` objects
+iris thread 'work/INBOX/4821' --format jsonl  # the same objects, one per line
+iris thread 'work/INBOX/4821' --format id     # only the iris IDs, one per line
 
 iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
@@ -243,10 +246,17 @@ and ignores the time and the time zone. That day can be different from the
 `iris thread <iris-id>` shows every message of the thread that the message
 is in: the messages before it and the replies after it, oldest first (by
 the `Date:` header, else the date the server received the message). It
-takes `--body` like `iris show`, and `--format markdown` (the default:
-each message as `iris show` prints it, with a `* * *` line between
-messages) or `--format json` (an array of the objects that
-`iris show --format json` prints).
+takes `--body` like `iris show`, and `--format`:
+
+- `markdown` (the default): each message as `iris show` prints it, with a
+  `* * *` line between messages.
+- `json`: an array of the objects that `iris show --format json` prints.
+- `jsonl`: the same objects, one per line, as the list commands print
+  `jsonl`.
+- `id`: only the iris ID of each message, one per line, as
+  `iris list --format id` prints them. iris finds the thread from the
+  headers alone, so this downloads no message: it saves the download time
+  (the most for large messages), and it leaves no message out.
 
 iris looks in INBOX, the Sent, Drafts, Archive, and All Mail mailboxes,
 and the message's own mailbox. A message is in the thread when it has the
@@ -275,8 +285,9 @@ message of a thread that never branched gives the whole thread; on a
 thread that branched (A has replies B and C), naming C gives A and C, not
 B.
 
-When one message cannot be shown, iris leaves it out, shows the others,
-and writes a line to stderr with its iris ID, why, and what to do next:
+When one message cannot be shown (in every format but `id`), iris leaves
+it out, shows the others, and writes a line to stderr with its iris ID,
+why, and what to do next:
 
 - It did not download in time (SwiftMail stops every download after 10
   seconds): it may be large, or the connection slow, so try again on a

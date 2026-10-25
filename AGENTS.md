@@ -107,11 +107,14 @@ says so. Only the mailboxes with no SUBJECT search get HEADER Message-ID
 searches (`searchUIDs(messageIDs:)`, at most `messageIDSearchChunkSize` IDs
 each), round after round. Messages with the subject that name a known ID
 join until none joins. Each Message-ID is shown once, from the first
-mailbox in `threadMailboxes` order (lowest UID). Only those copies are
-downloaded with `fetchRawMessage`. A download that times out or finds the
-message gone is kept as a `ThreadMessage.DownloadFailure`, and the
-mailbox is examined again before the next download (SwiftMail reconnects
-after a timeout, with no mailbox open). `MessageFormatter.render(thread:)`
+mailbox in `threadMailboxes` order (lowest UID). That walk (`threadWalk`)
+gives those copies, oldest first, from headers alone. `MailReader.threadIDs`
+stops there (`thread --format id`), so it downloads nothing; `thread` then
+downloads only those copies with `fetchRawMessage` (`threadDownloads`), in
+the same session, each mailbox opened once. A download that times out or
+finds the message gone is kept as a `ThreadMessage.DownloadFailure`, and
+the mailbox is examined again before the next download (SwiftMail
+reconnects after a timeout, with no mailbox open). `MessageFormatter.render(thread:)`
 leaves out a message that failed, or that cannot be decoded, and logs one
 line for it (`leftOutLine`); when none is left to show, it throws the error
 of the input message (`ThreadMessage.isInput`), as `show` would. The
@@ -206,10 +209,15 @@ for the user to save.
   Markdown and JSON also show `appleMailURL`, the `message:` URL that opens
   the message in Apple Mail. `MessageDocument` makes it from `messageID` with
   `AppleMailURL`, so it is nil when there is no `Message-ID` header.
-- `thread` takes `--format markdown|json` (`ThreadOutputFormat`), default
-  `markdown`, through `MessageFormatter.render(thread:format:body:timeZone:)`:
+- `thread` takes `--format markdown|json|jsonl|id` (`ThreadOutputFormat`),
+  default `markdown`, through `MessageFormatter.render(thread:format:body:timeZone:)`:
   each message as `show` prints it, oldest first, with a `* * *` line
-  between messages, or a JSON array of the `show --format json` objects.
+  between messages, a JSON array of the `show --format json` objects, or
+  those objects one per line (compact, sorted keys, as the list commands'
+  `jsonl`). `id` is one iris ID per line, as `list --format id` writes
+  them: the CLI gets them from `MailReader.threadIDs` and prints them with
+  `MessageFormatter.render(threadIDs:)`, so it downloads and leaves out
+  nothing, and only the walk's own lines go to stderr.
 - Hints (such as the next-page command) and errors go to stderr. stdout holds
   only data.
 
