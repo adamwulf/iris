@@ -425,12 +425,15 @@ account (`--account <name>`).
   it, change the revision in `Package.swift`, then run `swift package resolve`
   (never edit `Package.resolved` by hand). Read SwiftMail's source in
   `.build/checkouts/SwiftMail`; its README is behind the code.
-- **10 second deadlines:** every SwiftMail FETCH gives up after 10 seconds
-  (fixed in SwiftMail). `fetchRawMessage` turns that into
-  `messageDownloadTimedOut`. `fetchEnvelopes` and `fetchThreadHeaders` use
+- **10 second deadlines:** every SwiftMail FETCH but a part fetch (60
+  seconds, below) gives up after 10 seconds (fixed in SwiftMail).
+  `fetchRawMessage` turns that into `messageDownloadTimedOut`, and
+  `fetchPart` its 60 seconds into `attachmentDownloadTimedOut`.
+  `fetchEnvelopes` and `fetchThreadHeaders` use
   the chunked `fetchMessageInfos(using:options:headerFields:chunkSize:)`
   stream (`envelopeChunkSize`, 100 messages per FETCH), so each chunk has
-  its own deadline. Any other timeout after login is
+  its own deadline. Any other timeout after login (also the BODYSTRUCTURE
+  FETCH of `download`) is
   `serverTimedOut`; before login it is `connectionFailed`. In the same way, a
   broken connection (a closed channel, BYE, or a network error) is
   `connectionFailed` on connect and LOGIN (or AUTHENTICATE), and `connectionLost` after it,
