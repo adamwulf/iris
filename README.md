@@ -432,7 +432,8 @@ quoted-printable, and does not mark the message as read:
   path, file name included (for example the name that `iris show` lists),
   and prints nothing, as `iris read` prints nothing. A folder is not a
   path to write: iris stops and says to add a file name, and it also stops
-  before it downloads when the folder of the path does not exist. It never
+  before it downloads when the path ends in `/` or its folder does not
+  exist. It never
   overwrites a file: when something is already at the path (a file, or a
   symbolic link, even one that leads nowhere), it stops before it downloads
   and says to pass `-o` with another path.

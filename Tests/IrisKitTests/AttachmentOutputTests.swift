@@ -95,6 +95,16 @@ final class AttachmentOutputTests: XCTestCase {
         assertThrows(.attachmentNotSaved(path: underAFile, reason: "\"\(file)\" is not a folder")) {
             try AttachmentOutput(path: underAFile, stdoutIsTerminal: false)
         }
+
+        // Its own folder exists, but the write would make a file named new-folder.
+        let newFolder = directory.path + "/new-folder/"
+        assertThrows(.attachmentNotSaved(
+            path: newFolder,
+            reason: "the path ends in \"/\", so it names a folder, and -o takes the path of the file to write: add a file name"
+        )) {
+            try AttachmentOutput(path: newFolder, stdoutIsTerminal: false)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path("new-folder")))
     }
 
     func testAPathInALinkToAFolderOrInTheCurrentFolderIsFine() throws {

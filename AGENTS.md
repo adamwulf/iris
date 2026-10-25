@@ -311,8 +311,9 @@ for the user to save.
   CLI checks `isatty` and passes it in, as `draft` passes
   `stdinIsTerminal`), `-o` naming an existing folder is
   `attachmentOutputIsFolder`, which says to add a file name, and an `-o`
-  whose folder does not exist (or is not a folder) is `attachmentNotSaved`,
-  which names that folder. iris never
+  that ends in `/` (a folder that does not exist: the write would make a
+  file of that name) or whose folder does not exist (or is not a folder) is
+  `attachmentNotSaved`, which says why. iris never
   makes a file name from the sender's text: SwiftMail's BODYSTRUCTURE
   filename skips RFC 2231 `filename*=`, so it would lose names such as
   `Résumé.pdf`. A file is never overwritten: `AttachmentOutput.init` finds

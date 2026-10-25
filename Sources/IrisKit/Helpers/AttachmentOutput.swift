@@ -14,8 +14,9 @@ public enum AttachmentOutput: Sendable, Equatable {
     /// `.file` for `-o <path>`, else `.stdout`. A path that is an existing
     /// folder throws `attachmentOutputIsFolder`: `-o` takes the file's path.
     /// Anything else at the path, also a symbolic link that leads nowhere,
-    /// throws `attachmentFileExists`, and a path whose folder does not exist
-    /// (or is not a folder) throws `attachmentNotSaved`, so iris does not
+    /// throws `attachmentFileExists`, and a path that ends in `/` (a folder
+    /// that does not exist), or whose folder does not exist (or is not a
+    /// folder), throws `attachmentNotSaved`, so iris does not
     /// download for nothing; `write(_:)` checks again when it creates the
     /// file. Without a path, a terminal on stdout throws
     /// `attachmentStdoutIsTerminal`: the bytes would garble it.
@@ -27,6 +28,14 @@ public enum AttachmentOutput: Sendable, Equatable {
             var isDirectory: ObjCBool = false
             guard !(fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue) else {
                 throw IrisError.attachmentOutputIsFolder(path: path)
+            }
+            // The write would make a file named after the folder (`invoices/` gives `invoices`).
+            if path.hasSuffix("/") {
+                throw IrisError.attachmentNotSaved(
+                    path: path,
+                    reason: "the path ends in \"/\", so it names a folder, and -o takes the path of the file to write: "
+                        + "add a file name"
+                )
             }
             // attributesOfItem does not follow a symbolic link (lstat), so a link that leads nowhere counts.
             if (try? fileManager.attributesOfItem(atPath: path)) != nil {
