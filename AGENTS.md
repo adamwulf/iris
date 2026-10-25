@@ -78,7 +78,7 @@ sends AUTHENTICATE XOAUTH2 (`Command.authenticate`) instead of LOGIN. Its
 parts that need no server are static and tested in `SwiftMailClientTests`:
 the error mapping (`irisError(for:command:account:accessToken:)`), the TLS choice
 (`transportSecurity(forPort:)`), the SEARCH keys
-(`searchCriteria(for:)`, `headerSearchCriteria(field:values:)`), the STORE
+(`searchCriteria(for:)`, `messageIDSearchCriteria(_:)`), the STORE
 operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
 `MessageEnvelope(swiftMail:)`, and `ThreadHeaders(swiftMail:)`.
 
@@ -99,7 +99,7 @@ and `\All` mailbox, and the input mailbox, in that order (each kind in LIST
 order). The candidates come from one SUBJECT search per mailbox (the
 existing `searchUIDs(matching:)` with `MessageFilter(subject:)`), with the
 input subject without `Re:`/`Fwd:`/`Fw:`; HEADER Message-ID searches
-(`searchUIDs(header:containingAny:)`, at most
+(`searchUIDs(messageIDs:)`, at most
 `messageIDSearchChunkSize` IDs each) find what that missed. Candidates with
 the input's subject (`ThreadSubject`) that name a known ID join, round after
 round, until none joins. Each Message-ID is shown once, from the first
@@ -271,9 +271,10 @@ account (`--account <name>`).
   `.build/checkouts/SwiftMail`; its README is behind the code.
 - **10 second deadlines:** every SwiftMail FETCH gives up after 10 seconds
   (fixed in SwiftMail). `fetchRawMessage` turns that into
-  `messageDownloadTimedOut`. `fetchEnvelopes` uses the chunked
-  `fetchMessageInfos(using:options:chunkSize:)` stream (100 messages per
-  FETCH), so each chunk has its own deadline. Any other timeout after login is
+  `messageDownloadTimedOut`. `fetchEnvelopes` and `fetchThreadHeaders` use
+  the chunked `fetchMessageInfos(using:options:headerFields:chunkSize:)`
+  stream (`envelopeChunkSize`, 100 messages per FETCH), so each chunk has
+  its own deadline. Any other timeout after login is
   `serverTimedOut`; before login it is `connectionFailed`. In the same way, a
   broken connection (a closed channel, BYE, or a network error) is
   `connectionFailed` on connect and LOGIN (or AUTHENTICATE), and `connectionLost` after it,

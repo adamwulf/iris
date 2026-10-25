@@ -10,7 +10,7 @@ actor FakeMailClient: MailWriteClient {
         case listMailboxes
         case examine(String)
         case searchUIDs(MessageFilter)
-        case searchHeader(String, values: [String])
+        case searchMessageIDs([String])
         case fetchEnvelopes(ClosedRange<Int>)
         case fetchEnvelopesByUID([UInt32])
         case fetchThreadHeaders([UInt32])
@@ -22,7 +22,7 @@ actor FakeMailClient: MailWriteClient {
 
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
-        case login, capabilities, listMailboxes, examine, searchUIDs, searchHeader, fetchEnvelopes, fetchThreadHeaders,
+        case login, capabilities, listMailboxes, examine, searchUIDs, searchMessageIDs, fetchEnvelopes, fetchThreadHeaders,
              fetchRawMessage, select, setSeen
     }
 
@@ -31,13 +31,12 @@ actor FakeMailClient: MailWriteClient {
         /// As Zoho answered the probes on 2026-10-24 (see `zohoHeaderMatch`
         /// and `zohoSubjectMatches`).
         case zoho
-        /// As RFC 3501 says: the text inside the header, ignoring case, in
-        /// any header, and any text in SUBJECT.
+        /// As RFC 3501 says: the text inside the header or the subject, ignoring case.
         case rfc3501
     }
 
-    /// One message in a fake mailbox, for `thread`: the headers that the header
-    /// search matches and `fetchThreadHeaders` returns, and the raw message
+    /// One message in a fake mailbox, for `thread`: the headers that the
+    /// searches match and `fetchThreadHeaders` returns, and the raw message
     /// that `fetchRawMessage` returns.
     struct Message {
         var messageID: String?
@@ -71,16 +70,6 @@ actor FakeMailClient: MailWriteClient {
             }
             lines += ["Content-Type: text/plain; charset=utf-8", "", "Body of \(messageID ?? "a message").", ""]
             return Data(lines.joined(separator: "\r\n").utf8)
-        }
-
-        /// The text of a header field, as an RFC 3501 header search reads it.
-        func header(_ field: String) -> String? {
-            switch field.lowercased() {
-            case "message-id": return messageID
-            case "in-reply-to": return inReplyTo
-            case "references": return references.isEmpty ? nil : references.joined(separator: " ")
-            default: return nil
-            }
         }
 
         func threadHeaders(uid: UInt32) -> ThreadHeaders {
@@ -225,13 +214,13 @@ actor FakeMailClient: MailWriteClient {
         }
     }
 
-    func searchUIDs(header field: String, containingAny values: [String]) async throws -> [UInt32] {
-        try record(.searchHeader(field, values: values), .searchHeader)
+    func searchUIDs(messageIDs: [String]) async throws -> [UInt32] {
+        try record(.searchMessageIDs(messageIDs), .searchMessageIDs)
         return openMessages.filter { _, message in
-            values.contains { value in
+            messageIDs.contains { id in
                 switch searchRules {
-                case .zoho: return Self.zohoHeaderMatch(field, of: message, value: value)
-                case .rfc3501: return Self.contains(message.header(field), value)
+                case .zoho: return Self.zohoMessageIDMatches(message.messageID, id)
+                case .rfc3501: return Self.contains(message.messageID, id)
                 }
             }
         }.map(\.key)
@@ -246,11 +235,11 @@ actor FakeMailClient: MailWriteClient {
     // (imappro.zoho.com) on 2026-10-24. RFC 3501 asks for a substring match
     // in any header, but Zoho searches a word index.
 
-    /// Zoho's HEADER search: Message-ID matches the whole ID, with or without
-    /// the angle brackets, and ignores case. In-Reply-To and References never
-    /// match, even when the header has the ID.
-    private static func zohoHeaderMatch(_ field: String, of message: Message, value: String) -> Bool {
-        guard field.lowercased() == "message-id", let messageID = message.messageID else {
+    /// Zoho's HEADER Message-ID search: the whole ID, with or without the angle
+    /// brackets, ignoring case. (HEADER In-Reply-To and References never
+    /// matched, so iris does not send them.)
+    private static func zohoMessageIDMatches(_ messageID: String?, _ value: String) -> Bool {
+        guard let messageID else {
             return false
         }
         func bare(_ id: String) -> String {

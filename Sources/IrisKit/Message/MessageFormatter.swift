@@ -31,19 +31,23 @@ public enum MessageFormatter {
         body preference: BodyPreference = .auto,
         timeZone: TimeZone = .current
     ) async throws -> Data {
-        func decoded() async throws -> MessageDocument {
-            var document = try await MessageDecoder.decode(data, body: preference)
-            document.irisID = irisID
-            return document
-        }
         switch format {
         case .raw:
             return data
         case .markdown:
-            return Data((markdown(try await decoded(), timeZone: timeZone) + "\n").utf8)
+            let document = try await document(rawMessage: data, irisID: irisID, body: preference)
+            return Data((markdown(document, timeZone: timeZone) + "\n").utf8)
         case .json:
-            return Data((try json(try await decoded()) + "\n").utf8)
+            let document = try await document(rawMessage: data, irisID: irisID, body: preference)
+            return Data((try json(document) + "\n").utf8)
         }
+    }
+
+    /// The raw message `data` decoded, with `irisID`, the message it was read from.
+    static func document(rawMessage data: Data, irisID: IrisID, body preference: BodyPreference) async throws -> MessageDocument {
+        var document = try await MessageDecoder.decode(data, body: preference)
+        document.irisID = irisID
+        return document
     }
 
     /// The line between two messages in a Markdown thread. A thematic break
@@ -63,9 +67,7 @@ public enum MessageFormatter {
     ) async throws -> Data {
         var documents: [MessageDocument] = []
         for message in messages {
-            var document = try await MessageDecoder.decode(message.rawMessage, body: preference)
-            document.irisID = message.irisID
-            documents.append(document)
+            documents.append(try await document(rawMessage: message.rawMessage, irisID: message.irisID, body: preference))
         }
         switch format {
         case .markdown:

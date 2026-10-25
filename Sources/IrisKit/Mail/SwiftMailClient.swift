@@ -9,9 +9,11 @@ struct SwiftMailClient: MailWriteClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
 
-    /// The most envelopes one FETCH asks for. SwiftMail gives every FETCH 10
-    /// seconds (`FetchMessageInfoCommand.timeoutSeconds`), so a page is fetched
-    /// in chunks. 100 envelopes are tens of kilobytes, which a slow link moves in time.
+    /// The most messages one FETCH of `fetchEnvelopes` or `fetchThreadHeaders`
+    /// asks for. SwiftMail gives every FETCH 10 seconds
+    /// (`FetchMessageInfoCommand.timeoutSeconds`), so a page is fetched in
+    /// chunks. 100 envelopes, or the thread headers of 100 messages, are tens
+    /// of kilobytes, which a slow link moves in time.
     static let envelopeChunkSize = 100
 
     /// The header fields that `fetchThreadHeaders` asks for.
@@ -29,7 +31,7 @@ struct SwiftMailClient: MailWriteClient {
         case examine(mailbox: String)
         /// The SEARCH for a `MessageFilter`: the `list` filter options, and the subject search of `thread`.
         case search
-        /// The HEADER SEARCH of `thread`.
+        /// The Message-ID SEARCH of `thread`.
         case headerSearch
         case fetchEnvelopes
         case fetchThreadHeaders
@@ -170,18 +172,18 @@ struct SwiftMailClient: MailWriteClient {
         return criteria
     }
 
-    func searchUIDs(header field: String, containingAny values: [String]) async throws -> [UInt32] {
+    func searchUIDs(messageIDs: [String]) async throws -> [UInt32] {
         let result: ExtendedSearchResult<UID> = try await run(.headerSearch) {
-            try await server.extendedSearch(criteria: [Self.headerSearchCriteria(field: field, values: values)])
+            try await server.extendedSearch(criteria: [Self.messageIDSearchCriteria(messageIDs)])
         }
         return result.all?.toArray().map(\.value) ?? []
     }
 
-    /// The SEARCH key for `values` in the header `field`: a HEADER key per
-    /// value, joined by OR. The ORs make a balanced tree, so the nesting stays
-    /// shallow. `values` is not empty.
-    static func headerSearchCriteria(field: String, values: [String]) -> SearchCriteria {
-        anyOf(values.map { SearchCriteria.header(field, $0) }[...])
+    /// The SEARCH key for `messageIDs`: a HEADER Message-ID key per ID, joined
+    /// by OR. The ORs make a balanced tree, so the nesting stays shallow.
+    /// `messageIDs` is not empty.
+    static func messageIDSearchCriteria(_ messageIDs: [String]) -> SearchCriteria {
+        anyOf(messageIDs.map { SearchCriteria.header("Message-ID", $0) }[...])
     }
 
     /// The key that matches when any of `keys` matches. `keys` is not empty.

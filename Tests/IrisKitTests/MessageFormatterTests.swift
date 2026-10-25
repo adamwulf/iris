@@ -120,6 +120,14 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertTrue(String(decoding: output, as: UTF8.self).contains(#""irisID" : "work/INBOX/42""#))
     }
 
+    func testDocumentDecodesAndSetsTheIrisID() async throws {
+        let document = try await MessageFormatter.document(rawMessage: latin1Message, irisID: irisID, body: .auto)
+
+        var expected = try await MessageDecoder.decode(latin1Message)
+        expected.irisID = irisID
+        XCTAssertEqual(document, expected)
+    }
+
     func testRenderPassesTheBodyPreference() async throws {
         let alternative = Data("""
         Subject: Both\r
@@ -158,9 +166,7 @@ final class MessageFormatterTests: XCTestCase {
     private func documents(_ messages: [ThreadMessage], body: BodyPreference = .auto) async throws -> [MessageDocument] {
         var documents: [MessageDocument] = []
         for message in messages {
-            var document = try await MessageDecoder.decode(message.rawMessage, body: body)
-            document.irisID = message.irisID
-            documents.append(document)
+            documents.append(try await MessageFormatter.document(rawMessage: message.rawMessage, irisID: message.irisID, body: body))
         }
         return documents
     }

@@ -130,17 +130,15 @@ final class MailReaderThreadTests: XCTestCase {
         ]])
         _ = try await fake.examine(mailbox: "INBOX")
 
-        let byMessageID = try await fake.searchUIDs(header: "Message-ID", containingAny: [id("a")])
-        let withoutBrackets = try await fake.searchUIDs(header: "Message-ID", containingAny: ["a@example.com"])
-        let byInReplyTo = try await fake.searchUIDs(header: "In-Reply-To", containingAny: [id("a")])
-        let byReferences = try await fake.searchUIDs(header: "References", containingAny: [id("a")])
+        let byMessageID = try await fake.searchUIDs(messageIDs: [id("a")])
+        let withoutBrackets = try await fake.searchUIDs(messageIDs: ["a@example.com"])
+        let partOfAnID = try await fake.searchUIDs(messageIDs: ["a@example"])
         let wholeWords = try await fake.searchUIDs(matching: MessageFilter(subject: "champion role"))
         let partOfAWord = try await fake.searchUIDs(matching: MessageFilter(subject: "Champ"))
 
         XCTAssertEqual(byMessageID, [1])
         XCTAssertEqual(withoutBrackets, [1])
-        XCTAssertEqual(byInReplyTo, [], "Zoho never matched In-Reply-To")
-        XCTAssertEqual(byReferences, [], "Zoho never matched References")
+        XCTAssertEqual(partOfAnID, [], "Zoho matches the whole ID")
         XCTAssertEqual(Set(wholeWords), [1, 2])
         XCTAssertEqual(partOfAWord, [], "Zoho matches whole words")
         await assertThrows(.searchFailed(account: "work", reason: "NO [BADCHARSET (US-ASCII)] Unsupported charset")) {
@@ -438,8 +436,7 @@ final class MailReaderThreadTests: XCTestCase {
             switch call {
             case .examine(let name):
                 mailbox = name
-            case .searchHeader(let field, let values):
-                XCTAssertEqual(field, "Message-ID")
+            case .searchMessageIDs(let values):
                 XCTAssertLessThanOrEqual(values.count, MailReader.messageIDSearchChunkSize)
                 searches[mailbox, default: []].append(values)
             default:
@@ -471,8 +468,8 @@ final class MailReaderThreadTests: XCTestCase {
         _ = try await thread(fake, from: "work/INBOX/10")
 
         let calls = await fake.calls
-        let headerSearches = calls.filter { if case .searchHeader = $0 { return true } else { return false } }
-        XCTAssertEqual(headerSearches, Array(repeating: .searchHeader("Message-ID", values: [id("a")]), count: 5))
+        let headerSearches = calls.filter { if case .searchMessageIDs = $0 { return true } else { return false } }
+        XCTAssertEqual(headerSearches, Array(repeating: .searchMessageIDs([id("a")]), count: 5))
     }
 
     func testWithoutTheSubjectSearchTheMessageIDSearchesWalkAChainOneParentAtATime() async throws {
@@ -496,7 +493,7 @@ final class MailReaderThreadTests: XCTestCase {
         XCTAssertEqual(found, ["work/INBOX/10", "work/Sent/20", "work/INBOX/12", "work/Sent/21"])
         let calls = await fake.calls
         let searchedIDs = calls.compactMap { call -> [String]? in
-            if case .searchHeader(_, let values) = call { return values } else { return nil }
+            if case .searchMessageIDs(let values) = call { return values } else { return nil }
         }
         XCTAssertEqual(searchedIDs, [
             [id("d"), id("c")], [id("d"), id("c")], [id("d"), id("c")], [id("d"), id("c")], [id("d"), id("c")],
@@ -605,7 +602,7 @@ final class MailReaderThreadTests: XCTestCase {
 
     func testEachFailingCallLogsOut() async {
         let failure = IrisError.connectionLost(account: "work", command: "FETCH", reason: "reset")
-        let methods: [FakeMailClient.Method] = [.listMailboxes, .searchHeader, .fetchThreadHeaders, .fetchRawMessage]
+        let methods: [FakeMailClient.Method] = [.listMailboxes, .searchMessageIDs, .fetchThreadHeaders, .fetchRawMessage]
         for method in methods {
             let fake = server([
                 "INBOX": [1: message("a", subject: "Budget", day: 1)],

@@ -188,7 +188,7 @@ public struct MailReader: Sendable {
                     }
                     for start in stride(from: 0, to: newIDs.count, by: Self.messageIDSearchChunkSize) {
                         let chunk = Array(newIDs[start..<min(start + Self.messageIDSearchChunkSize, newIDs.count)])
-                        matches.formUnion(try await client.searchUIDs(header: "Message-ID", containingAny: chunk))
+                        matches.formUnion(try await client.searchUIDs(messageIDs: chunk))
                     }
                     let unfetched = matches.filter { fetched[threadCopy(mailbox, $0)] == nil }
                     guard !unfetched.isEmpty else {

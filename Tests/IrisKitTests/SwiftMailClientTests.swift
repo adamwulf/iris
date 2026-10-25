@@ -343,15 +343,15 @@ final class SwiftMailClientTests: XCTestCase {
         assertCriteria(MessageFilter(since: since), [.since(since.start)])
     }
 
-    func testHeaderSearchForOneValueIsOneHeaderKey() {
+    func testMessageIDSearchForOneIDIsOneHeaderKey() {
         XCTAssertEqual(
-            "\(SwiftMailClient.headerSearchCriteria(field: "Message-ID", values: ["<a@x>"]))",
+            "\(SwiftMailClient.messageIDSearchCriteria(["<a@x>"]))",
             "\(SearchCriteria.header("Message-ID", "<a@x>"))"
         )
     }
 
-    func testHeaderSearchJoinsTheValuesWithABalancedOr() {
-        let criteria = SwiftMailClient.headerSearchCriteria(field: "Message-ID", values: ["<a@x>", "<b@x>", "<c@x>", "<d@x>", "<e@x>"])
+    func testMessageIDSearchJoinsTheIDsWithABalancedOr() {
+        let criteria = SwiftMailClient.messageIDSearchCriteria(["<a@x>", "<b@x>", "<c@x>", "<d@x>", "<e@x>"])
         let expected: SearchCriteria = .or(
             .or(.header("Message-ID", "<a@x>"), .header("Message-ID", "<b@x>")),
             .or(.header("Message-ID", "<c@x>"), .or(.header("Message-ID", "<d@x>"), .header("Message-ID", "<e@x>")))

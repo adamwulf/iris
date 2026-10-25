@@ -23,10 +23,11 @@ protocol MailClient: Sendable {
     /// The UIDs of the messages in the open mailbox that match every condition
     /// of `filter` (UID SEARCH), in any order. `filter` is not empty.
     func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32]
-    /// The UIDs of the messages in the open mailbox that have any of `values`
-    /// in the header `field`, in any order: one UID SEARCH with a HEADER key
-    /// per value, joined by OR. `values` is not empty.
-    func searchUIDs(header field: String, containingAny values: [String]) async throws -> [UInt32]
+    /// The UIDs of the messages in the open mailbox whose Message-ID is one of
+    /// `messageIDs`, in any order: one UID SEARCH with a HEADER Message-ID key
+    /// per ID, joined by OR. `messageIDs` is not empty, and `MailReader` sends
+    /// at most `MailReader.messageIDSearchChunkSize` of them.
+    func searchUIDs(messageIDs: [String]) async throws -> [UInt32]
     /// UID, flags, envelope, and internal date of the messages with these sequence numbers.
     func fetchEnvelopes(sequenceNumbers: ClosedRange<Int>) async throws -> [MessageEnvelope]
     /// The same for the messages with these UIDs (UID FETCH). `uids` is not empty.
@@ -101,7 +102,9 @@ struct ThreadHeaders: Sendable, Equatable {
     let uid: UInt32
     /// The `Message-ID` header. Nil when the message has none.
     let messageID: String?
-    /// The first message ID in `In-Reply-To`.
+    /// The `In-Reply-To` header read as one message ID (SwiftMail's
+    /// `MessageInfo.inReplyTo`). A header with more than one ID, or with a
+    /// comment, gives text that is no real ID, so it links to nothing.
     let inReplyTo: String?
     /// The message IDs in `References`, oldest first.
     let references: [String]
