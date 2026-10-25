@@ -22,7 +22,13 @@ go (stderr).
 
 ```
 Sources/IrisKit/
-  Config/      DotEnv (.env loader), AccountResolver (named accounts), Account
+  Config/      DotEnv (.env loader, and setValue for the refresh token),
+               AccountResolver (named accounts), Account (+ GoogleClient)
+  Auth/        Google OAuth: HTTPTransport (the HTTP seam, URLSessionTransport,
+               FormEncoder), GoogleTokenEndpoint (refresh and code exchange),
+               GoogleSignIn (`iris auth login`: consent URL, PKCE, redirect
+               checks), LoopbackServer (the 127.0.0.1 redirect listener),
+               GoogleURL (query escaping)
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
                MailReader (sessions, paging, errors), MailModels (rows, pages),
                MailWriter (the calls that change mail: read and unread),
@@ -33,7 +39,8 @@ Sources/IrisKit/
                AppleMailURL (the message: URL from the Message-ID header)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
                MailAddress (the one address type), DateText, ModifiedUTF7,
-               CalendarDay (a YYYY-MM-DD day for --since and --before)
+               CalendarDay (a YYYY-MM-DD day for --since and --before),
+               Redaction (removes secrets from text that iris shows)
   IrisError.swift   the one error type; each message says what to do next
   IrisLog.swift     the logging seam
 Sources/iris/
@@ -41,7 +48,8 @@ Sources/iris/
   CLISupport.swift  log handler, swift-log bootstrap, AccountOptions (--account),
                     ArgumentHelp.irisID (the help for every iris ID argument)
   Commands/         one file per command
-Tests/IrisKitTests/ offline library tests; Support/FakeMailClient.swift
+Tests/IrisKitTests/ offline library tests; Support/ has FakeMailClient,
+                    StubTransport (HTTP), and FakeRedirectReceiver (sign-in)
 Tests/CLITests/     argument parsing only, never run()
 ```
 
@@ -58,9 +66,11 @@ UTF-7 in both directions (it decodes LIST names in `mailboxes()`, encodes
 and sends no SEARCH. With one, it sends UID SEARCH, pages the sorted
 matching UIDs with the same math (UIDs grow in arrival order, as sequence
 numbers do), and fetches the page by UID. `MailClient` speaks wire names only. `SwiftMailClient` only
-converts SwiftMail types and errors. Its parts that need no server are static
-and tested in `SwiftMailClientTests`: the error mapping
-(`irisError(for:command:account:)`), the TLS choice
+converts SwiftMail types and errors; for a Google account, `login()` first
+gets an access token from `GoogleTokenEndpoint` (before it connects), then
+sends AUTHENTICATE XOAUTH2 (`Command.authenticate`) instead of LOGIN. Its
+parts that need no server are static and tested in `SwiftMailClientTests`:
+the error mapping (`irisError(for:command:account:accessToken:)`), the TLS choice
 (`transportSecurity(forPort:)`), the SEARCH keys
 (`searchCriteria(for:)`), the STORE operation (`storeOperation(seen:)`),
 `MailboxInfo(swiftMail:)`, and `MessageEnvelope(swiftMail:)`.
@@ -75,7 +85,11 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 `\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
 
 Tests never touch the network. They use `FakeMailClient`, which returns
-scripted results and records the calls.
+scripted results and records the calls. The Google code has its own seams:
+`HTTPTransport` (tests use `StubTransport`) and `RedirectReceiver` (tests use
+`FakeRedirectReceiver`, whose `open` is the browser opener). No test opens a
+socket, so the real `LoopbackServer` is covered only through its static
+parts (`queryParameters(ofRequest:)`, `response(isRedirect:)`).
 
 ### Accounts
 
@@ -88,8 +102,28 @@ an `IrisID` (such as `show` and `read`) has no `--account`: it resolves the acco
 the ID names, with `AccountResolver.resolve(name:settings:)`. Resolver functions take
 the settings as a parameter, so tests never read the real environment.
 
-Never put a password in an error message, a log line, or JSON output.
-`SwiftMailClient.redacting` removes it from server text.
+An account with `IRIS_<NAME>_GOOGLE_CLIENT_ID` signs in with Google
+(OAuth, XOAUTH2) instead of a password. It needs `_IMAP_HOST`,
+`_IMAP_USERNAME` (the address chosen at sign-in; XOAUTH2's `user=` and the
+`login_hint`), `_GOOGLE_CLIENT_ID`, `_GOOGLE_CLIENT_SECRET`, and
+`_GOOGLE_REFRESH_TOKEN`, which `iris auth login` writes. Then
+`Account.authentication` is `.google(client, refreshToken:)`, else
+`.password`. A Google account with `_IMAP_PASSWORD` too is an
+`invalidSetting`; a missing refresh token is `googleNotSignedIn`, which
+names `iris auth login`. `iris auth login` cannot use `resolve` (it has no
+refresh token yet): it uses `resolveGoogleSignIn(name:settings:)` (username,
+client ID, client secret), and `saveGoogleRefreshToken` writes the token
+into the `.env` that sets the client ID, or returns nil when the client ID
+comes from the environment.
+
+Never put a secret in an error message, a log line, or JSON output: the
+password, the client secret, the refresh token, the access token, the code,
+or the PKCE verifier. `Account.secrets` lists an account's secrets, and
+`Redaction.redacting(_:in:)` removes them from server text and from the
+token endpoint's answers (`SwiftMailClient` adds the access token during
+AUTHENTICATE). The one exception: when `iris auth login` does not write
+`.env` (no `.env` sets the client ID, or the write fails), it prints the
+refresh token's `KEY=value` line on stdout for the user to save.
 
 ### Output
 
@@ -161,7 +195,7 @@ enforces it:
   `Iris.configuration.subcommands`, after the read-only ones. Never
   mark it `ReadOnlyCommand`: `ReadOnly.commands` is typed
   `[any ReadOnlyCommand.Type]`, so the compiler keeps write commands out of
-  `ro`.
+  `ro`. `iris auth login` is one: it opens a browser and writes `.env`.
 - A **group with both kinds** (for example `iris draft show` and
   `iris draft new`) cannot be a `ReadOnlyCommand`. Give it two forms: the
   full group in `Iris` with all children, and a second group, also named
@@ -179,11 +213,14 @@ fails.
 
 ### Add an error
 
-Add a case to `IrisError` in its section (`// IMAP`, `// Message rendering`)
-with an `errorDescription` that says what the user can do next. Map library
-errors to it in one place (for IMAP, `SwiftMailClient.irisError(for:command:account:)`,
-with a test in `SwiftMailClientTests`). A next-step command in the message
-names the account (`--account <name>`).
+Add a case to `IrisError` in its section (`// IMAP`, `// Message rendering`,
+`// Google sign-in`) with an `errorDescription` that says what the user can
+do next. Map library errors to it in one place (for IMAP,
+`SwiftMailClient.irisError(for:command:account:accessToken:)`, with a test in
+`SwiftMailClientTests`; for Google's token endpoint,
+`GoogleTokenEndpoint.error(for:grant:secrets:account:)`, with a test in
+`GoogleTokenEndpointTests`). A next-step command in the message names the
+account (`--account <name>`).
 
 ## Gotchas
 
@@ -199,7 +236,7 @@ names the account (`--account <name>`).
   FETCH), so each chunk has its own deadline. Any other timeout after login is
   `serverTimedOut`; before login it is `connectionFailed`. In the same way, a
   broken connection (a closed channel, BYE, or a network error) is
-  `connectionFailed` on connect and LOGIN, and `connectionLost` after LOGIN,
+  `connectionFailed` on connect and LOGIN (or AUTHENTICATE), and `connectionLost` after it,
   so only the first one tells the user to check the host and port.
 - **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
   `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
@@ -243,6 +280,42 @@ names the account (`--account <name>`).
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the
   executable depends on swift-log.
+- **Google OAuth, 7 days:** Adam's Google Cloud app is External and in
+  Testing, so Google ends each refresh token after 7 days (and when the
+  Google password changes). The refresh then answers HTTP 400
+  `invalid_grant`, which `GoogleTokenEndpoint` turns into
+  `googleSignInExpired` (sign in again). `invalid_grant` from the code
+  exchange is a failed sign-in, not an expired one.
+- **Refresh token only with consent:** Google sends a refresh token only
+  with `access_type=offline`, and on a later sign-in only with
+  `prompt=consent`, so the sign-in URL has both. No refresh token is
+  `googleNoRefreshToken` (remove the app's access at
+  myaccount.google.com/permissions). A grant without
+  `https://mail.google.com/` (the user can untick it) is refused in
+  `GoogleSignIn.refreshToken(from:account:)`: IMAP needs that scope.
+- **Loopback redirect:** Google has no copy-and-paste flow for installed
+  apps, so `LoopbackServer` listens on 127.0.0.1 on a port the system picks,
+  and the redirect URI is `http://127.0.0.1:<port>`; the exchange must send
+  the same URI. `waitForRedirect` registers its continuation before it calls
+  back to open the browser, ignores requests with neither `code` nor `error`
+  (`/favicon.ico`), and gives up after 300 seconds. No semaphores: the
+  listener's start waits on a continuation.
+- **PKCE and state:** each sign-in makes a new random state and PKCE
+  verifier (`OAuthRandom`, `SystemRandomNumberGenerator`). The page gets
+  `code_challenge` (base64url SHA-256, `S256`); the exchange sends
+  `code_verifier`. The redirect is checked for the state first, then
+  `error`, then `code`.
+- **`+` in URLs:** `URLComponents` leaves `+` in a query, and Google reads it
+  as a space. `GoogleURL.build` and `FormEncoder` encode everything but
+  unreserved ASCII, so `me+tag@gmail.com` stays intact.
+- **Key names are per account:** never use graham's plain `GOOGLE_*` keys.
+  Both tools read and write the nearest `.env`, so shared names would
+  overwrite each other's refresh tokens.
+- **XOAUTH2 errors:** SwiftMail reports a refused token as
+  `IMAPError.authFailed` (the tagged NO, then Gmail's decoded JSON
+  challenge). On `Command.authenticate` that is `googleLoginRefused`, not
+  `loginFailed` with its app-password advice. A server without
+  `AUTH=XOAUTH2` (`unsupportedAuthMechanism`) points at the host key.
 - **Adam's global gitignore ignores folders named `Output/`.** Do not put
   sources in one. After adding files, check `git status --short --ignored`.
 

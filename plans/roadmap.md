@@ -4,7 +4,8 @@ This file is only future work. When a milestone is done, remove it from here
 and describe it in README.md.
 
 Providers that must work: Gmail, Zoho Mail, iCloud Mail. Auth is an
-app-specific password over TLS on port 993.
+app-specific password over TLS on port 993, or, for a Gmail account that
+cannot make an app password, Google OAuth (XOAUTH2) after `iris auth login`.
 
 Milestone 1 (the inbox reader: accounts, check, mailboxes, list, show) is
 done; README.md describes it.
@@ -15,6 +16,12 @@ done; README.md describes it.
   and `iris unread` once per provider (Gmail, iCloud, Zoho), and once each
   with a wrong password and a wrong host. Nothing has run against a real
   server yet.
+- Gmail with Google OAuth: run `iris auth login`, then `iris check`, with
+  Adam's Google Cloud app (External, Testing). Check the console steps in
+  README.md ("Gmail with OAuth") as they are done, the "not verified"
+  warning, the page the browser shows after the redirect, and the
+  `invalid_grant` error after the 7 days (or after removing the access at
+  myaccount.google.com/permissions). None of it has run against Google yet.
 - Record the post-login CAPABILITY and the Drafts/Sent names per provider
   (open in `plans/research/imap-libraries.md`, section 5).
 
@@ -63,7 +70,6 @@ done; README.md describes it.
 
 ## Later, maybe
 
-- XOAUTH2 login for Gmail.
 - More `list` filters (body text, To, Cc), archive/move.
 - A live smoke test (`iris test`) against a real account, like graham's.
 - A file log (FellerBuncher) like graham's.
