@@ -243,7 +243,7 @@ public struct DownloadedAttachment: Sendable, Equatable {
     public let attachmentID: AttachmentID
     /// The filename from the part's headers, decoded. Nil when the part has
     /// none. It comes from the sender, so it is not safe as a path:
-    /// `AttachmentFile` makes a safe name of it.
+    /// `AttachmentOutput.safeFilename(_:attachmentID:)` makes a safe name of it.
     public let filename: String?
     /// The part's bytes, decoded from its Content-Transfer-Encoding.
     public let data: Data

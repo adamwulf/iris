@@ -96,6 +96,12 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case unknownAttachment(IrisID, AttachmentID)
     /// The part did not arrive inside SwiftMail's fixed time limit for one part.
     case attachmentDownloadTimedOut(seconds: Int)
+    /// `iris download` has no `-o`, and stdout is a terminal, which the bytes would garble.
+    case attachmentStdoutIsTerminal
+    /// The file that `iris download -o` would write already exists.
+    case attachmentFileExists(path: String)
+    /// `iris download -o` could not write the file for another reason.
+    case attachmentNotSaved(path: String, reason: String)
 
     // Google sign-in
 
@@ -261,6 +267,16 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "The attachment did not download in \(seconds) seconds. It may be large, or the connection "
                 + "may be slow. This is a known limit of SwiftMail, the IMAP library that iris uses: it stops "
                 + "every attachment download after \(seconds) seconds. Try again on a faster connection."
+        case .attachmentStdoutIsTerminal:
+            return "iris writes the attachment's bytes to stdout, and stdout is a terminal, where they would garble "
+                + "the screen. Redirect stdout to a file, as in `iris download '<iris-id>' <attachment-id> > <file>`, "
+                + "or pass -o <path> to save it to a file (`iris ro download` has no -o)."
+        case .attachmentFileExists(let path):
+            return "The file \"\(path)\" already exists, and iris never overwrites a file. Pass -o with another path."
+        case .attachmentNotSaved(let path, let reason):
+            // In parentheses: Foundation's reasons end with a period.
+            return "Could not save the attachment to \"\(path)\" (\(reason)). "
+                + "Check that the folder exists and that you can write to it, or pass -o with another path."
         // Google sign-in
         case .noGoogleAccounts:
             return "No account signs in with Google. To sign in with Google, add the lines "
