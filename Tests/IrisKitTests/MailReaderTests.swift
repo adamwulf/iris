@@ -402,7 +402,7 @@ final class MailReaderTests: XCTestCase {
     }
 
     func testFailedSearchStillLogsOut() async {
-        let failure = IrisError.serverError(account: "work", command: "SEARCH", reason: "BAD Could not parse command")
+        let failure = IrisError.searchFailed(account: "work", reason: "BAD Could not parse command")
         let fake = FakeMailClient(
             statuses: ["INBOX": MailboxStatus(messageCount: 5, uidValidity: 7, uidNext: 200)],
             errors: [.searchUIDs: failure]

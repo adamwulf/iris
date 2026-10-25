@@ -223,6 +223,11 @@ struct SwiftMailClient: MailClient {
             // The login worked, so the host and port are right. SwiftMail
             // reports a closed connection and a BYE this way.
             return connectionLost(reason: reason(of: error), command: command, account: account)
+        case (.search, let error as IMAPError):
+            // The login and EXAMINE worked, so the server refused the filter, not
+            // the account: NO or BAD (commandFailed), or NO [BADCHARSET] for
+            // text that is not ASCII (searchCharsetNotSupported).
+            return .searchFailed(account: account.name, reason: redacting(password, in: error.description))
         case (_, let error as IMAPError):
             return .serverError(
                 account: account.name,

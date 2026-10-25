@@ -46,6 +46,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case messageDownloadTimedOut(seconds: Int)
     /// After a good login, the server did not answer a command in time.
     case serverTimedOut(account: String, command: String)
+    /// The server answered the SEARCH for the `list` filter options with NO or BAD.
+    case searchFailed(account: String, reason: String)
     /// The server answered a command with NO or BAD.
     case serverError(account: String, command: String, reason: String)
 
@@ -119,6 +121,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
         case .serverTimedOut(let account, let command):
             return "The server did not answer \(command) in time (account \"\(account)\"). "
                 + "The connection may be slow, or the server may be busy. Try again."
+        case .searchFailed(let account, let reason):
+            return "The server refused the search for the filter options (account \"\(account)\"): \(reason). "
+                + "Some servers refuse --from or --subject text that is not ASCII: try ASCII text. "
+                + "Else try again with fewer filter options to find the one that the server refuses."
         case .serverError(let account, let command, let reason):
             return "The server answered \(command) with an error (account \"\(account)\"): \(reason). "
                 + "Run `iris check --account \(MessagePage.shellQuoted(account))` to test the account settings."

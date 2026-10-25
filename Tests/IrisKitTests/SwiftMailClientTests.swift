@@ -124,6 +124,18 @@ final class SwiftMailClientTests: XCTestCase {
         )
     }
 
+    func testRefusedSearchBecomesSearchFailedWithoutThePassword() {
+        XCTAssertEqual(
+            irisError(IMAPError.commandFailed("BAD Could not parse command secret"), .search),
+            .searchFailed(account: "work", reason: "Command failed: BAD Could not parse command <password>")
+        )
+        let badCharset = IMAPError.searchCharsetNotSupported(supportedCharsets: ["US-ASCII"], reason: "NO [BADCHARSET]")
+        XCTAssertEqual(
+            irisError(badCharset, .search),
+            .searchFailed(account: "work", reason: badCharset.description)
+        )
+    }
+
     func testOtherErrorsOnLoginAreNetworkFailuresAndBecomeConnectionFailed() {
         struct TLSFailure: Error, CustomStringConvertible {
             var description: String { "handshake failed for secret" }

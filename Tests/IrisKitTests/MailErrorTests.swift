@@ -85,6 +85,19 @@ final class MailErrorTests: XCTestCase {
         )
     }
 
+    func testSearchFailureAdvisesChangingTheFilterNotTheAccount() throws {
+        let error = IrisError.searchFailed(account: "work", reason: "Command failed: BAD Could not parse command")
+        let message = try XCTUnwrap(error.errorDescription)
+        XCTAssertEqual(
+            message,
+            "The server refused the search for the filter options (account \"work\"): "
+                + "Command failed: BAD Could not parse command. "
+                + "Some servers refuse --from or --subject text that is not ASCII: try ASCII text. "
+                + "Else try again with fewer filter options to find the one that the server refuses."
+        )
+        XCTAssertFalse(message.contains("iris check"), "the login and the mailbox already worked")
+    }
+
     func testPageAndLimitErrorsGiveTheValue() {
         XCTAssertEqual(
             IrisError.invalidPage(0).errorDescription,
