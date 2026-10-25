@@ -20,7 +20,9 @@ describes them.
   iCloud, Zoho). They have not run against a real server yet. For
   `iris draft`, check that the draft opens in Apple Mail as its own draft,
   in the thread, and that the server reports its UID (UIDPLUS; Zoho
-  advertises it).
+  advertises it). With `--attach`, check that Apple Mail and Gmail's web
+  view show the files with their names, also a non-ASCII name (RFC 2231
+  `filename*=`).
 - Run `iris list --search` and `iris list --to` once per provider (Gmail,
   iCloud, Zoho). IMAP TEXT and TO have not been sent to a real server
   yet: check that `--search` finds a word that is only in the body, and
@@ -170,6 +172,12 @@ Next:
   cannot be converted and it has no text part, the error gives `show`'s
   advice (`--format raw`), which `draft` does not have, even with
   `--no-quote`, which needs no body.
+- APPEND has a 30 second total deadline: SwiftMail's
+  `AppendCommand.timeoutSeconds` is hard-coded at the pinned revision, and
+  the clock starts before the message bytes are sent. A draft with large
+  `--attach` files (base64 makes them about 4/3 their size) on a slow uplink
+  can time out, which iris reports as `draftMayBeSaved`. Fix: the same kind
+  of upstream timeout parameter as for the raw download.
 
 ## Open questions
 

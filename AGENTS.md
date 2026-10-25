@@ -47,8 +47,10 @@ Sources/IrisKit/
                BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw,
                and a thread), AppleMailURL (the message: URL from the Message-ID header)
   Draft/       DraftBody (the reply's one source: argument, -F, stdin),
+               DraftAttachment (a file of --attach: name, MIME type, bytes),
                ReplyComposer (MessageDocument -> DraftMessage), DraftMessage
-               (headers, parts, References folding), MarkdownHTML (the HTML part)
+               (headers, parts, attachments, References folding),
+               MarkdownHTML (the HTML part)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
                MailAddress (the one address type), DateText, ModifiedUTF7,
                CalendarDay (a YYYY-MM-DD day for --since and --before),
@@ -112,6 +114,20 @@ com.apple.mail-draft`; iris adds `\Seen`
 drafts, so other mail apps do not show the new draft as unread. Both
 sessions log in through `SwiftMailClient.login()`, so a Google account
 sends AUTHENTICATE XOAUTH2 to save a draft as it does to read.
+
+The files of `draft --attach` are read before either session: the CLI
+calls `DraftAttachment.read(path:)` for each path before it reads the
+reply, so a bad path (`draftAttachmentNotRead`, `draftAttachmentIsAFolder`)
+fails before login. It reads through SwiftMail's `Attachment(fileURL:)`,
+so the MIME type comes from SwiftMail's table by extension (internal to
+SwiftMail; `application/octet-stream` when unknown), and iris keeps no
+copy of it. `saveReply(..., attachments:)` passes them to `ReplyComposer`,
+which puts them in `DraftMessage.attachments` unchanged, and `Email(draft:)`
+makes each one a regular SwiftMail `Attachment` (`isInline: false`).
+SwiftMail then writes multipart/mixed: the multipart/alternative first, then
+one base64 part per file with `Content-Disposition: attachment`. With no
+attachments, `Email.attachments` is nil, so the draft is the
+multipart/alternative it was before `--attach`.
 
 `thread` (`MailReader.thread`) is one session too. It reads only headers
 until it knows the thread: `fetchThreadHeaders` (UID FETCH of
@@ -344,6 +360,19 @@ account (`--account <name>`).
   connection during APPEND is `draftMayBeSaved` instead, because the server
   may have saved the draft: it names the Drafts mailbox to look in before
   trying again.
+- **Large attachments and APPEND:** APPEND has 30 seconds
+  (`AppendCommand.timeoutSeconds`, fixed in SwiftMail), and the clock starts
+  when the APPEND line is flushed, before the message bytes go out. So a
+  draft with a large attachment on a slow uplink can end in
+  `draftMayBeSaved`. base64 makes each file about 4/3 of its size, and the
+  server's APPENDLIMIT (`draftTooLarge`) counts the whole message.
+- **Attachment filenames:** SwiftMail writes a filename of printable ASCII
+  as `filename="..."`, and any other (non-ASCII, `"`, `\`, a control
+  character) as one RFC 2231 parameter, `filename*=UTF-8''R%C3%A9sum%C3%A9.pdf`
+  (`MIMEHeaderEncoding`). A regular attachment gets no `name=` on its
+  Content-Type. SwiftMail sends a `text/calendar` part with a `method`
+  parameter as an invite, not base64; a type from an extension (`.ics` is
+  `text/calendar`) never has one.
 - **Mailbox names are modified UTF-7** on the wire (RFC 3501 5.1.3):
   `[Gmail]/Entw&APw-rfe`, `R&-D`. SwiftMail keeps the wire form, and
   `MailClient` (and `FakeMailClient`) use wire names only. `MailReader`

@@ -198,8 +198,9 @@ client ID but no refresh token yet.
   so running it again changes nothing. They print nothing when they succeed.
 - `iris draft`: save a reply to a message, by its iris ID, as a draft in the
   `\Drafts` mailbox. The reply is Markdown; the draft has it as plain text
-  and as HTML, with the original quoted below it. `--all` replies to all.
-  iris never sends the draft.
+  and as HTML, with the original quoted below it. `--all` replies to all,
+  and `--attach <path>` (once per file) attaches files. iris never sends the
+  draft.
 
 ## Usage
 
@@ -232,6 +233,7 @@ iris unread 'work/INBOX/4821'              # mark as unread
 iris draft 'work/INBOX/4821' 'Thanks, that works for me.'   # a reply, as a draft
 iris draft 'work/INBOX/4821' -F reply.md --all              # reply to all, from a file
 pbpaste | iris draft 'work/INBOX/4821' --no-quote           # from stdin, without the quote
+iris draft 'work/INBOX/4821' -F reply.md --attach q4.pdf    # with a file attached
 ```
 
 List commands (`accounts`, `mailboxes`, `list`, `auth status`) take
@@ -434,6 +436,22 @@ The draft is built from the original message:
   only `-` or `=` under a text line, such as the `-- ` before a signature,
   stays text: it never turns the line above it into a heading (use `#` for
   a heading).
+
+`--attach <path>` attaches one file; give it once for each file, as in
+`--attach q4.pdf --attach notes.txt`. The attachment has the file's name
+(the last part of the path) and a MIME type from its extension
+(`application/octet-stream` when iris does not know the extension). An
+empty file is attached as it is. iris reads every file before it connects,
+so a wrong path, a folder, or a file you cannot read stops iris before it
+saves anything.
+
+A large attachment can fail in two ways. The server's size limit
+(APPENDLIMIT) counts the whole draft, and base64 makes each file about a
+third larger. And iris waits at most 30 seconds for the upload and the
+server's answer (a fixed limit in SwiftMail, the IMAP library iris uses),
+so a large file on a slow connection can time out; then the server may have
+saved the draft anyway, and iris names the Drafts mailbox to look in before
+you try again.
 
 iris saves the draft with the flags `\Seen \Draft` (as Apple Mail saves its
 own drafts, so it does not show as unread) in the mailbox that the server
