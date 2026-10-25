@@ -181,7 +181,8 @@ client ID but no refresh token yet.
   (`\Drafts`, `\Sent`, `\All`, ...).
 - `iris list`: a mailbox, newest first, one page at a time
   (iris ID, date, sender, unread, subject). Filters: `--unread`,
-  `--flagged`, `--from`, `--subject`, `--since`, `--before`.
+  `--flagged`, `--from`, `--to`, `--subject`, `--search` (headers and
+  body), `--since`, `--before`.
 - `iris show`: one full message, by its iris ID, as Markdown. HTML mail is converted to
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
@@ -213,6 +214,7 @@ iris list --page 2 --limit 50
 iris list --mailbox "[Gmail]/Sent Mail" --format json
 iris list --unread                 # only the unread messages in INBOX
 iris list --flagged --from jane@example.com --since 2026-10-01
+iris list --search invoice         # the text anywhere: From, To, Subject, the body, ...
 
 iris show 'work/INBOX/4821'                # one message, as Markdown
 iris show 'work/INBOX/4821' --body text    # the plain-text part instead of the HTML
@@ -249,7 +251,9 @@ These `iris list` options show only some messages:
 | `--unread` | have no `\Seen` flag |
 | `--flagged` | have the `\Flagged` flag (starred, in Gmail) |
 | `--from <text>` | have the text in the `From:` header, in the name or the address |
+| `--to <text>` | have the text in the `To:` header, in a name or an address |
 | `--subject <text>` | have the text in the subject |
+| `--search <text>` | have the text anywhere: in a header (`From:`, `To:`, `Subject:`, ...) or in the body |
 | `--since <YYYY-MM-DD>` | the server received on that day or later |
 | `--before <YYYY-MM-DD>` | the server received before that day |
 
@@ -257,9 +261,9 @@ The options combine: a message must match all of them. Paging works the
 same, and the next-page hint keeps the filter options.
 
 The server does the matching (IMAP SEARCH), so the details depend on the
-server. RFC 3501 says that text matches any part of the header and ignores
-case, but some servers match only whole words, and some refuse `--from` or
-`--subject` text that is not ASCII. `--since` and `--before`
+server. RFC 3501 says that text matches any part of the header (or, for
+`--search`, of the whole message) and ignores case, but some servers match
+only whole words, and some refuse text that is not ASCII. `--since` and `--before`
 compare days, not times: the server uses the day it received the message
 and ignores the time and the time zone. That day can be different from the
 `DATE` column, which shows the sender's `Date:` header.

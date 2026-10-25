@@ -106,7 +106,7 @@ Next:
 
 ## Later, maybe
 
-- More `list` filters (body text, To, Cc), archive/move.
+- More `list` filters (Cc), archive/move.
 - A live smoke test (`iris test`) against a real account, like graham's.
 - A file log (FellerBuncher) like graham's.
 - `skill/iris/SKILL.md` for agents.

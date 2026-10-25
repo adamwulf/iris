@@ -137,14 +137,16 @@ final class MailModelsTests: XCTestCase {
             unread: true,
             flagged: true,
             from: "jane@example.com",
+            to: "bob@example.com",
             subject: "Bob's plan",
+            search: "Q4 budget",
             since: try day("2026-01-05"),
             before: try day("2026-02-01")
         )
         XCTAssertEqual(
             MessagePage.listCommand(account: nil, mailbox: "Sent", filter: filter, page: 3, limit: 10, format: .id),
-            "iris list --mailbox Sent --unread --flagged --from jane@example.com --subject 'Bob'\\''s plan' "
-                + "--since 2026-01-05 --before 2026-02-01 --page 3 --limit 10 --format id"
+            "iris list --mailbox Sent --unread --flagged --from jane@example.com --to bob@example.com "
+                + "--subject 'Bob'\\''s plan' --search 'Q4 budget' --since 2026-01-05 --before 2026-02-01 --page 3 --limit 10 --format id"
         )
     }
 

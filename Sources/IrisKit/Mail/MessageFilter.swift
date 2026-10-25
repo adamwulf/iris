@@ -10,8 +10,13 @@ public struct MessageFilter: Sendable, Equatable {
     public var flagged: Bool
     /// Only messages whose `From:` header has this text.
     public var from: String?
+    /// Only messages whose `To:` header has this text.
+    public var to: String?
     /// Only messages whose `Subject:` header has this text.
     public var subject: String?
+    /// Only messages that have this text anywhere: in a header (such as
+    /// `From:`, `To:`, or `Subject:`) or in the body. Sent as IMAP TEXT.
+    public var search: String?
     /// Only messages that the server received on this day or later.
     public var since: CalendarDay?
     /// Only messages that the server received before this day.
@@ -21,14 +26,18 @@ public struct MessageFilter: Sendable, Equatable {
         unread: Bool = false,
         flagged: Bool = false,
         from: String? = nil,
+        to: String? = nil,
         subject: String? = nil,
+        search: String? = nil,
         since: CalendarDay? = nil,
         before: CalendarDay? = nil
     ) {
         self.unread = unread
         self.flagged = flagged
         self.from = from
+        self.to = to
         self.subject = subject
+        self.search = search
         self.since = since
         self.before = before
     }
@@ -51,8 +60,14 @@ public struct MessageFilter: Sendable, Equatable {
         if let from {
             words += ["--from", MessagePage.shellQuoted(from)]
         }
+        if let to {
+            words += ["--to", MessagePage.shellQuoted(to)]
+        }
         if let subject {
             words += ["--subject", MessagePage.shellQuoted(subject)]
+        }
+        if let search {
+            words += ["--search", MessagePage.shellQuoted(search)]
         }
         if let since {
             words += ["--since", since.description]
