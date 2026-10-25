@@ -59,6 +59,7 @@ Sources/IrisKit/
                TransferEncoding (base64 and quoted-printable of one downloaded part)
   Draft/       DraftBody (the reply's one source: argument, -F, stdin),
                DraftAttachment (a file of --attach: name, MIME type, bytes),
+               DraftComposer (standalone recipients and Markdown -> DraftMessage),
                ReplyComposer (MessageDocument -> DraftMessage), DraftMessage
                (headers, parts, attachments, References folding),
                DraftUpdater (preserves a saved draft while replacing its body),
@@ -163,6 +164,14 @@ plain `MailClient`, so it cannot reach them. `SwiftMailClient` and
 like EXAMINE), fetches the envelope by UID to check that the message exists
 (STORE answers OK for a missing UID), then STOREs. `read` always adds
 `\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
+
+`iris draft new` resolves `--account` (or the default), reads its body and
+attachments locally, and builds a `DraftMessage` with `DraftComposer.new`.
+Each `--to`, `--cc`, and `--bcc` takes one address parsed by SwiftMail; at
+least one To recipient and a nonempty subject are required. Control
+characters in those headers are refused before login. The draft has Markdown
+and rendered HTML, with no reply quote or threading headers. It uses the
+same `MailWriter.saveDraft` as replies, in one session without reading mail.
 
 `MailWriter.saveReply` takes two sessions: a `MailReader` reads the original
 (`message(_:)`, so a large one in parts, decoded with
@@ -496,7 +505,7 @@ enforces it:
   `sharedCommands`) whose children are typed `[any ReadOnlyCommand.Type]`
   (only `Auth.Status`). Both use the same leaf types, so `iris ro auth status`
   behaves like `iris auth status`, and `iris ro auth login` fails to parse.
-  `draft` is a write-only group with `reply` and `update`; neither leaf nor
+  `draft` is a write-only group with `new`, `reply`, and `update`; no leaf nor
   the group belongs under `ro`. A future mixed group would work like `auth`.
 - A **write command whose ro form drops the options that write** cannot
   be a `ReadOnlyCommand` either. `download` is one: `-o` writes a file

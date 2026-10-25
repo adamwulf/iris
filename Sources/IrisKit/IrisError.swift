@@ -23,6 +23,9 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case htmlNotConverted(reason: String, hasTextPart: Bool)
 
     // Drafts
+    case draftRecipientsMissing
+    case draftRecipientInvalid(option: String)
+    case draftSubjectInvalid
     /// Only a live message with the Draft flag can be updated.
     case notADraft(IrisID)
     /// Safe replacement needs targeted UID EXPUNGE, never mailbox-wide EXPUNGE.
@@ -177,6 +180,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 : problem + ", and the message has no text part. "
                     + "Run the command again with --format raw to see the message source."
         // Drafts
+        case .draftRecipientsMissing:
+            return "No To recipient was given. Pass --to <address> once for each recipient."
+        case .draftRecipientInvalid(let option):
+            return "Each \(option) must contain one email address, optionally with a display name, "
+                + "such as 'Jane Doe <jane@example.com>', without control characters. Repeat \(option) for each recipient."
+        case .draftSubjectInvalid:
+            return "The draft subject must contain text and no control characters. Pass --subject 'Your subject' on one line."
         case .notADraft(let id):
             return "\(id) is not an editable draft (it needs the \\Draft flag and must not be deleted). "
                 + "Use `iris draft reply \(MessagePage.shellQuoted(id.description)) 'Your reply'` to create a reply, "
@@ -200,7 +210,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "Give it one way: as an argument, with -F <path>, or on stdin."
         case .draftBodyMissing:
             return "No draft body was given. Give the body in Markdown as an argument "
-                + "(iris draft reply '<iris-id>' 'Thanks!' or iris draft update '<iris-id>' 'Updated text'), "
+                + "after the command's options, "
                 + "with -F <path> (-F - reads stdin), or on stdin."
         case .draftBodyEmpty(let source):
             return "The draft body from \(source) is empty. Write the body in Markdown, "

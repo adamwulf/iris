@@ -2,7 +2,7 @@ import Foundation
 
 /// A draft ready to save: the headers iris chooses, the two body parts, and
 /// the attachments. SwiftMail adds the rest when it writes the message: Date
-/// (now), a Message-ID for a new reply, and the multipart/alternative structure, inside
+/// (now), a Message-ID for a new draft, and the multipart/alternative structure, inside
 /// multipart/mixed with the attachments when there are any.
 public struct DraftMessage: Sendable, Equatable {
     public let from: MailAddress
@@ -10,20 +10,20 @@ public struct DraftMessage: Sendable, Equatable {
     public let cc: [MailAddress]
     public let bcc: [MailAddress]
     public let replyTo: [MailAddress]
-    /// Updating a draft keeps its Message-ID; a new reply gets a new one.
+    /// Updating a draft keeps its Message-ID; a new draft gets a new one.
     public let messageID: String?
     public let subject: String
     /// The message ID that this draft replies to, with angle brackets. Nil when
-    /// the original has no Message-ID.
+    /// the original has no Message-ID, or for a standalone draft.
     public let inReplyTo: String?
     /// The message IDs of the thread, oldest first, with angle brackets.
     public let references: [String]
-    /// The text/plain part: the reply and the quote, as Markdown.
+    /// The text/plain part: the body and any reply quote, as Markdown.
     public let markdown: String
     /// The text/html part: the reply's Markdown rendered, then the quote
     /// (see `ReplyComposer.quotation(of:timeZone:)`).
     public let html: String
-    /// Files attached to a new reply, or the original draft's attachments,
+    /// Files attached to a new draft, or the original draft's attachments,
     /// including inline parts, when updating.
     public let attachments: [DraftAttachment]
 

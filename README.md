@@ -2,10 +2,10 @@
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
 at a time, shows a message, or a whole thread, as Markdown, downloads an
-attachment, saves a reply as a draft, and updates draft bodies. Reading changes
+attachment, saves new messages and replies as drafts, and updates draft bodies. Reading changes
 nothing: iris opens mailboxes read-only and never marks a message as read. The only
 commands that change mail are `iris read` and `iris unread`, which mark one
-message as read or unread, and `iris draft`, whose `reply` and `update`
+message as read or unread, and `iris draft`, whose `new`, `reply`, and `update`
 subcommands save drafts. iris never sends mail: you review and send the draft
 in your mail app.
 
@@ -55,7 +55,7 @@ IRIS_PERSONAL_IMAP_PASSWORD=abcdabcdabcdabcd
 IRIS_WORK_IMAP_HOST=imappro.zoho.com
 IRIS_WORK_IMAP_USERNAME=me@example.com
 IRIS_WORK_IMAP_PASSWORD=app-specific-password
-# The From line of drafts (optional; only `iris draft reply` reads it).
+# The From line of drafts (optional; `iris draft new` and `iris draft reply` read it).
 IRIS_WORK_FROM=Jane Doe <jane@example.com>
 
 # Which account to use when --account is not given.
@@ -66,9 +66,9 @@ IRIS_DEFAULT_ACCOUNT=personal
 Run `iris accounts` to see the accounts and any missing keys, and
 `iris check` to log in once and confirm the settings.
 
-`IRIS_<NAME>_FROM` is the From line of the drafts that `iris draft reply` saves:
+`IRIS_<NAME>_FROM` is the From line of the drafts that `iris draft new` and `iris draft reply` save:
 `Name <address>`, or the address alone. Reading mail does not need it, so
-`iris accounts` does not check it. Without it, `iris draft reply` uses the username
+`iris accounts` does not check it. Without it, both commands use the username
 when the username is an address (for an account that signs in with Google,
 the address you sign in as). iCloud's username is not (`emily`, not
 `emily@icloud.com`), so an iCloud account needs `IRIS_<NAME>_FROM` to save
@@ -205,6 +205,9 @@ client ID but no refresh token yet.
 - `iris read` and `iris unread`: mark one message, by its iris ID, as read
   or unread (they add or remove the `\Seen` flag). Each one sets the state,
   so running it again changes nothing. They print nothing when they succeed.
+- `iris draft new`: save a standalone draft with `--to`, `--subject`, optional
+  `--cc` and `--bcc`, and Markdown from an argument, `-F`, or stdin.
+  Repeat recipient options and `--attach` for multiple recipients and files.
 - `iris draft reply`: save a reply to a message, by its iris ID, as a draft in the
   `\Drafts` mailbox. The reply is Markdown; the draft has it as plain text
   and as HTML, with the original quoted below it. `--all` replies to all,
@@ -271,6 +274,8 @@ iris download 'work/INBOX/4821' 1.2 -o ~/Downloads/scan.png  # saved as that fil
 iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
 
+iris draft new --account work --to jane@example.com --subject 'Q4 plan' 'Here is the plan.'
+iris draft new --to jane@example.com --subject 'Q4 plan' -F plan.md --attach q4.pdf
 iris draft reply 'work/INBOX/4821' 'Thanks, that works for me.'   # a reply, as a draft
 iris draft reply 'work/INBOX/4821' -F reply.md --all              # reply to all, from a file
 pbpaste | iris draft reply 'work/INBOX/4821' --no-quote           # from stdin, without the quote
@@ -606,6 +611,10 @@ message. Any whole-message download can time out after 10 seconds, even
 one under 1 MiB on a slow connection. That is a known limit of SwiftMail.
 
 ### Drafts
+
+To start a new message, use `iris draft new --to jane@example.com --subject "Q4 plan" "Here is the plan."`. Choose the account with `--account` (or use the configured default). At least one `--to` and a nonempty, single-line `--subject` are required. Each `--to`, `--cc`, or `--bcc` takes one address, optionally with a display name such as `"Jane Doe <jane@example.com>"`; repeat the option for more recipients instead of giving a comma-separated list.
+
+New drafts accept the same Markdown body sources and `--attach` options described below for replies. For example: `iris draft new --account work --to jane@example.com --cc bob@example.com --bcc me@example.com --subject "Q4 plan" -F plan.md --attach q4.pdf`. The body becomes plain text and rendered HTML, with no automatic quote, In-Reply-To, or References. Saving and iris ID output work the same as for replies; iris never sends the message.
 
 `iris draft reply <iris-id>` saves a reply to that message as a draft. It never
 sends anything: open the draft in your mail app, check it, and send it from

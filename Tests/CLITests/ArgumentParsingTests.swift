@@ -3,6 +3,46 @@ import XCTest
 @testable import iris
 
 final class ArgumentParsingTests: XCTestCase {
+    func testNewDraftParsesEveryOption() throws {
+        let command = try Draft.New.parse([
+            "--account", "work", "--to", "Jane <jane@example.com>", "--to", "bob@example.com",
+            "--cc", "cc@example.com", "--cc", "cc2@example.com",
+            "--bcc", "private@example.com", "--bcc", "private2@example.com",
+            "--subject", "Q4 plan", "-F", "plan.md", "--attach", "a.pdf", "--attach", "b.pdf",
+        ])
+        XCTAssertEqual(command.accountOptions.account, "work")
+        XCTAssertEqual(command.to, ["Jane <jane@example.com>", "bob@example.com"])
+        XCTAssertEqual(command.cc, ["cc@example.com", "cc2@example.com"])
+        XCTAssertEqual(command.bcc, ["private@example.com", "private2@example.com"])
+        XCTAssertEqual(command.subject, "Q4 plan")
+        XCTAssertEqual(command.file, "plan.md")
+        XCTAssertEqual(command.attach, ["a.pdf", "b.pdf"])
+        XCTAssertNil(command.body)
+    }
+
+    func testNewDraftBodySourcesAndDefaults() throws {
+        let options = ["--to", "jane@example.com", "--subject", "Hello"]
+        let command = try Draft.New.parse(options + ["Body"])
+        XCTAssertEqual(command.body, "Body")
+        XCTAssertNil(command.file)
+        XCTAssertNil(command.accountOptions.account)
+        XCTAssertEqual(command.cc, [])
+        XCTAssertEqual(command.bcc, [])
+        XCTAssertEqual(command.attach, [])
+        XCTAssertNil(try Draft.New.parse(options).body, "stdin")
+        XCTAssertEqual(try Draft.New.parse(options + ["-F", "-"]).file, "-")
+        XCTAssertEqual(try Draft.New.parse(options + ["--", "- yes"]).body, "- yes")
+        XCTAssertEqual(try Draft.New.parse(options + ["--attach", "a.pdf", "Body"]).body, "Body")
+    }
+
+    func testNewDraftRequiresToAndSubjectAndRejectsReplyOptions() {
+        XCTAssertThrowsError(try Draft.New.parse(["--subject", "Hello", "Body"]))
+        XCTAssertThrowsError(try Draft.New.parse(["--to", "jane@example.com", "Body"]))
+        for option in ["--all", "--no-quote"] {
+            XCTAssertThrowsError(try Draft.New.parse(["--to", "jane@example.com", "--subject", "Hello", option]))
+        }
+    }
+
     func testAccountsDefaultsToTableFormat() throws {
         XCTAssertEqual(try Accounts.parse([]).format, .table)
     }

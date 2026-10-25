@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads the Markdown body of `iris draft reply` or `iris draft update` from
+/// Reads the Markdown body of `iris draft new`, `reply`, or `update` from
 /// its one source: the argument, a file (`-F <path>`), or stdin (`-F -`, or no
 /// argument and no `-F` while stdin is not a terminal).
 public enum DraftBody {
