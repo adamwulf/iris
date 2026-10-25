@@ -289,7 +289,9 @@ account (`--account <name>`).
   Google password changes). The refresh then answers HTTP 400
   `invalid_grant`, which `GoogleTokenEndpoint` turns into
   `googleSignInExpired` (sign in again). `invalid_grant` from the code
-  exchange is a failed sign-in, not an expired one.
+  exchange is a failed sign-in, not an expired one. `invalid_client`,
+  `unauthorized_client`, and `deleted_client` (the client, or its Cloud
+  project, was deleted) are `googleClientRejected`, which names the client keys.
 - **Refresh token only with consent:** Google sends a refresh token only
   with `access_type=offline`, and on a later sign-in only with
   `prompt=consent`, so the sign-in URL has both. No refresh token is

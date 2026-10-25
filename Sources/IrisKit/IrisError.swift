@@ -58,7 +58,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case googleNotSignedIn(account: String)
     /// Google refused the refresh token (`invalid_grant`): the sign-in expired or was revoked.
     case googleSignInExpired(account: String)
-    /// Google refused the OAuth client (`invalid_client` or `unauthorized_client`).
+    /// Google refused the OAuth client (`invalid_client`, `unauthorized_client`, or `deleted_client`).
     case googleClientRejected(account: String, reason: String)
     /// Getting a token from Google failed for another reason: another answer,
     /// an answer iris cannot read, or a network error.

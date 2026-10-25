@@ -119,7 +119,8 @@ struct GoogleTokenEndpoint: Sendable {
         switch (response.statusCode, answer?.error, grant) {
         case (400, "invalid_grant", .refreshToken):
             return .googleSignInExpired(account: account)
-        case (_, "invalid_client", _), (_, "unauthorized_client", _):
+        case (_, "invalid_client", _), (_, "unauthorized_client", _), (_, "deleted_client", _):
+            // deleted_client: the OAuth client is gone, for example with its Cloud project.
             return .googleClientRejected(account: account, reason: redacted)
         default:
             return .googleTokenFailed(account: account, reason: redacted)

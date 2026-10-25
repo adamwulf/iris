@@ -72,6 +72,18 @@ final class GoogleTokenEndpointTests: XCTestCase {
         )
     }
 
+    func testADeletedClientAlsoPointsAtTheClientKeys() async {
+        // Google answers this after the OAuth client, or its Cloud project, was deleted.
+        let transport = StubTransport(
+            status: 401, json: #"{"error":"deleted_client","error_description":"The OAuth client was deleted."}"#
+        )
+        let error = await refreshError(with: transport)
+        XCTAssertEqual(
+            error,
+            .googleClientRejected(account: "personal", reason: "HTTP 401, deleted_client: The OAuth client was deleted.")
+        )
+    }
+
     func testUnauthorizedClientAlsoPointsAtTheClientKeys() async {
         let transport = StubTransport(status: 400, json: #"{"error":"unauthorized_client"}"#)
         let error = await refreshError(with: transport)
