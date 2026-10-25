@@ -189,6 +189,22 @@ final class MailErrorTests: XCTestCase {
         )
     }
 
+    func testAttachmentErrorsNameThePathAndSayWhatToDo() {
+        XCTAssertEqual(
+            IrisError.draftAttachmentNotRead(
+                path: "docs/q4.pdf", reason: "The file “q4.pdf” couldn’t be opened because there is no such file."
+            ).errorDescription,
+            "Could not read the file \"docs/q4.pdf\" to attach it "
+                + "(The file “q4.pdf” couldn’t be opened because there is no such file.). "
+                + "Check the path (a relative path starts in the current directory) and that you can read the file."
+        )
+        XCTAssertEqual(
+            IrisError.draftAttachmentIsAFolder(path: "docs").errorDescription,
+            "\"docs\" is a folder, and --attach takes a file. "
+                + "Give --attach once for each file in the folder, or attach a .zip of it."
+        )
+    }
+
     func testRedactingRemovesEveryCopyOfEverySecret() {
         XCTAssertEqual(
             Redaction.redacting(["hunter2"], in: "LOGIN me hunter2 failed: hunter2"),

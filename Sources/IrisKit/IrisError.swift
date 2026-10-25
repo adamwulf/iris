@@ -45,6 +45,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// have saved the draft. `mailbox` is the Drafts mailbox: the wire name
     /// from `SwiftMailClient`, and the decoded name after `MailWriter`.
     case draftMayBeSaved(account: String, mailbox: String, reason: String)
+    /// A file given with `iris draft --attach` is missing or cannot be read.
+    case draftAttachmentNotRead(path: String, reason: String)
+    /// A path given with `iris draft --attach` is a folder, not a file.
+    case draftAttachmentIsAFolder(path: String)
 
     // IMAP
 
@@ -162,6 +166,13 @@ public enum IrisError: Error, Equatable, LocalizedError {
             )
             return "Saving the draft did not finish (account \"\(account)\"): \(reason). "
                 + "The server may have saved it in \"\(mailbox)\" anyway: look in it (`\(list)`) before you try again."
+        case .draftAttachmentNotRead(let path, let reason):
+            // In parentheses: Foundation's reasons end with a period.
+            return "Could not read the file \"\(path)\" to attach it (\(reason)). "
+                + "Check the path (a relative path starts in the current directory) and that you can read the file."
+        case .draftAttachmentIsAFolder(let path):
+            return "\"\(path)\" is a folder, and --attach takes a file. "
+                + "Give --attach once for each file in the folder, or attach a .zip of it."
         // IMAP
         case .loginFailed(let account, let username, let host, let reason):
             return "The server \(host) refused the login for \(username) (account \"\(account)\"): \(reason). "
