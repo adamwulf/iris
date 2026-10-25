@@ -166,10 +166,10 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 `\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
 
 `iris draft new` resolves `--account` (or the default), reads its body and
-attachments locally, and builds a `DraftMessage` with `DraftComposer.new`.
+attachments locally, and builds a `DraftMessage` with `DraftComposer`.
 Each `--to`, `--cc`, and `--bcc` takes one address parsed by SwiftMail; at
 least one To recipient and a nonempty subject are required. Control
-characters in those headers are refused before login. The draft has Markdown
+characters in those headers are refused before reading the body or logging in. The draft has Markdown
 and rendered HTML, with no reply quote or threading headers. It uses the
 same `MailWriter.saveDraft` as replies, in one session without reading mail.
 

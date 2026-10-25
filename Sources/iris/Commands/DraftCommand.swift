@@ -55,13 +55,12 @@ extension Draft {
             let settings = AccountResolver.settings()
             let account = try AccountResolver.resolve(name: accountOptions.account, settings: settings)
             let from = try AccountResolver.fromAddress(for: account, in: settings)
+            let composer = try DraftComposer(from: from, to: to, cc: cc, bcc: bcc, subject: subject)
             let attachments = try attach.map(DraftAttachment.read(path:))
             let body = try DraftBody.read(
                 argument: body, file: file, attaching: !attach.isEmpty, stdinIsTerminal: isatty(STDIN_FILENO) == 1
             )
-            let draft = try DraftComposer.new(
-                from: from, to: to, cc: cc, bcc: bcc, subject: subject, body: body, attachments: attachments
-            )
+            let draft = composer.message(body: body, attachments: attachments)
             Draft.printSavedDraft(try await MailWriter(account: account).saveDraft(draft))
         }
     }

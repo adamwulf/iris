@@ -24,7 +24,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
 
     // Drafts
     case draftRecipientsMissing
-    case draftRecipientInvalid(option: String)
+    case draftRecipientInvalid(option: String, value: String)
     case draftSubjectInvalid
     /// Only a live message with the Draft flag can be updated.
     case notADraft(IrisID)
@@ -182,8 +182,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
         // Drafts
         case .draftRecipientsMissing:
             return "No To recipient was given. Pass --to <address> once for each recipient."
-        case .draftRecipientInvalid(let option):
-            return "Each \(option) must contain one email address, optionally with a display name, "
+        case .draftRecipientInvalid(let option, let value):
+            // Escape controls so a pasted newline cannot add a log line.
+            return "The recipient \(String(reflecting: value)) for \(option) is not one email address. "
+                + "Give one address, optionally with a display name, "
                 + "such as 'Jane Doe <jane@example.com>', without control characters. Repeat \(option) for each recipient."
         case .draftSubjectInvalid:
             return "The draft subject must contain text and no control characters. Pass --subject 'Your subject' on one line."
@@ -210,7 +212,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 + "Give it one way: as an argument, with -F <path>, or on stdin."
         case .draftBodyMissing:
             return "No draft body was given. Give the body in Markdown as an argument "
-                + "after the command's options, "
+                + "(iris draft new --to you@example.com --subject 'Hello' 'Body', "
+                + "iris draft reply '<iris-id>' 'Thanks!', or iris draft update '<iris-id>' 'Updated text'), "
                 + "with -F <path> (-F - reads stdin), or on stdin."
         case .draftBodyEmpty(let source):
             return "The draft body from \(source) is empty. Write the body in Markdown, "

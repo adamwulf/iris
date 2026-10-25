@@ -141,6 +141,18 @@ final class MailErrorTests: XCTestCase {
 
     // MARK: - Drafts
 
+    func testStandaloneDraftHeaderErrorsExplainTheCorrection() throws {
+        let missing = try XCTUnwrap(IrisError.draftRecipientsMissing.errorDescription)
+        XCTAssertTrue(missing.contains("--to <address>"), missing)
+        let invalid = try XCTUnwrap(IrisError.draftRecipientInvalid(option: "--cc", value: "bad\nname").errorDescription)
+        XCTAssertTrue(invalid.contains("bad\\nname"), invalid)
+        XCTAssertFalse(invalid.contains("\n"), invalid)
+        XCTAssertTrue(invalid.contains("Repeat --cc"), invalid)
+        let subject = try XCTUnwrap(IrisError.draftSubjectInvalid.errorDescription)
+        XCTAssertTrue(subject.contains("--subject"), subject)
+        XCTAssertTrue(subject.contains("one line"), subject)
+    }
+
     func testDraftBodyErrorsSayHowToGiveTheBodyForReplyOrUpdate() throws {
         let twice = try XCTUnwrap(IrisError.draftBodyGivenTwice.errorDescription)
         XCTAssertEqual(
@@ -153,6 +165,7 @@ final class MailErrorTests: XCTestCase {
         XCTAssertTrue(missing.contains("-F <path> (-F - reads stdin)"), missing)
         XCTAssertTrue(missing.contains("iris draft reply '<iris-id>' 'Thanks!'"), missing)
         XCTAssertTrue(missing.contains("iris draft update '<iris-id>' 'Updated text'"), missing)
+        XCTAssertTrue(missing.contains("iris draft new --to you@example.com --subject 'Hello' 'Body'"), missing)
 
         XCTAssertEqual(
             IrisError.draftBodyEmpty(source: "stdin").errorDescription,

@@ -10,7 +10,7 @@ subcommands save drafts. iris never sends mail: you review and send the draft
 in your mail app.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. Adam confirms that all
-functionality works well with agents on his Zoho and Gmail accounts.
+previously validated functionality works well with agents on his Zoho and Gmail accounts.
 Direct iCloud testing is outside the current validation scope. See
 [Validation status](#validation-status-2026-10-25) for the recorded coverage.
 
@@ -223,6 +223,9 @@ Adam considers validation complete for his use. Iris works successfully
 with agents on his Zoho and Gmail accounts; `read`, `unread`, and `draft`
 are explicitly confirmed. He believes an agent has also used attachment
 download.
+
+Standalone drafts (`iris draft new`) were added after that validation;
+their coverage is offline tests, with no live provider check recorded.
 
 Direct iCloud testing is not planned and is outside the current validation
 scope. Known limits remain documented below and in

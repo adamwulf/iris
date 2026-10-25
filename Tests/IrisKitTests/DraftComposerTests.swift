@@ -6,9 +6,40 @@ import XCTest
 final class DraftComposerTests: XCTestCase {
     private let from = MailAddress(name: "Me", address: "me@example.com")
 
+    private func newDraft(
+        from: MailAddress, to: [String], cc: [String] = [], bcc: [String] = [],
+        subject: String, body: String, attachments: [DraftAttachment] = []
+    ) throws -> DraftMessage {
+        try DraftComposer(from: from, to: to, cc: cc, bcc: bcc, subject: subject)
+            .message(body: body, attachments: attachments)
+    }
+
+    func testHeadersAcceptUnicodeFormattingCharactersAndSerializeNamesSafely() throws {
+        let name = "می\u{200C}خواهم"
+        let draft = try newDraft(
+            from: from, to: ["Doe, Jane <jane@example.com>"],
+            cc: ["\(name) <cc@example.com>"], bcc: ["Doe, Jane <hidden@example.com>", "José <jose@example.com>"],
+            subject: "👩‍💻 Dev sync", body: "Hello"
+        )
+        XCTAssertEqual(draft.subject, "👩‍💻 Dev sync")
+        XCTAssertEqual(draft.cc.first?.name, name)
+        let content = Email(draft: draft).constructContent(use8BitMIME: true)
+        XCTAssertTrue(content.contains("To: \"Doe, Jane\" <jane@example.com>\r\n"), content)
+        XCTAssertTrue(content.contains("Bcc: \"Doe, Jane\" <hidden@example.com>, =?UTF-8?"), content)
+        XCTAssertTrue(content.contains("Cc: =?UTF-8?"), content)
+        XCTAssertTrue(content.contains("Subject: =?UTF-8?"), content)
+        // Decode what SwiftMail wrote, so the assertions cover the encoded names too.
+        let parsed = try EMLParser.parse(Data(content.utf8))
+        let headers = MessageDecoder.headers(of: parsed, rawMessage: Data(content.utf8))
+        XCTAssertEqual(headers.to, draft.to)
+        XCTAssertEqual(headers.cc, draft.cc)
+        XCTAssertEqual(MessageDecoder.addresses(parsed.header.bccAddresses), draft.bcc)
+        XCTAssertEqual(headers.subject, draft.subject)
+    }
+
     func testNewDraftHasRecipientsBodyAndAttachmentsWithoutReplyHeaders() throws {
         let files = [DraftAttachment(filename: "plan.txt", mimeType: "text/plain", data: Data("plan".utf8))]
-        let draft = try DraftComposer.new(
+        let draft = try newDraft(
             from: from, to: ["\"Doe, Jane\" <jane@example.com>", "bob@example.com"],
             cc: ["José <jose@example.com>"], bcc: ["private@example.com"],
             subject: "Café plans", body: "Hello **everyone**!\r\nNext line.", attachments: files
@@ -33,7 +64,7 @@ final class DraftComposerTests: XCTestCase {
     }
 
     func testNewDraftUsesTheSafeMarkdownRenderer() throws {
-        let draft = try DraftComposer.new(
+        let draft = try newDraft(
             from: from, to: ["jane@example.com"], subject: "Hello",
             body: "<script>alert('hello')</script>"
         )
@@ -45,13 +76,13 @@ final class DraftComposerTests: XCTestCase {
     }
 
     func testRequiresAToRecipient() {
-        XCTAssertThrowsError(try DraftComposer.new(from: from, to: [], subject: "Hello", body: "Body")) {
+        XCTAssertThrowsError(try newDraft(from: from, to: [], subject: "Hello", body: "Body")) {
             XCTAssertEqual($0 as? IrisError, .draftRecipientsMissing)
         }
     }
 
     func testSerializedNewDraftKeepsBccAndBothBodiesWithoutThreading() throws {
-        let draft = try DraftComposer.new(
+        let draft = try newDraft(
             from: from, to: ["jane@example.com"], cc: ["cc@example.com"],
             bcc: ["Hidden <hidden@example.com>", "other@example.com"], subject: "New conversation",
             body: "Hello **Jane**.",
@@ -75,12 +106,12 @@ final class DraftComposerTests: XCTestCase {
     func testRejectsInvalidRecipientsInEachHeader() {
         for value in ["", "not an address", "user@", "@example.com", "a@example.com, b@example.com", "a@example.com\r\nBcc: b@example.com"] {
             for option in ["--to", "--cc", "--bcc"] {
-                XCTAssertThrowsError(try DraftComposer.new(
+                XCTAssertThrowsError(try newDraft(
                     from: from, to: option == "--to" ? [value] : ["a@example.com"],
                     cc: option == "--cc" ? [value] : [], bcc: option == "--bcc" ? [value] : [],
                     subject: "Hello", body: "Body"
                 ), "\(option): \(value)") {
-                    XCTAssertEqual($0 as? IrisError, .draftRecipientInvalid(option: option))
+                    XCTAssertEqual($0 as? IrisError, .draftRecipientInvalid(option: option, value: value))
                 }
             }
         }
@@ -88,14 +119,14 @@ final class DraftComposerTests: XCTestCase {
 
     func testRejectsEmptyOrMultilineSubjects() {
         for subject in ["", " \t", "Hello\r\nBcc: b@example.com", "Hello\nworld", "Hello\0world"] {
-            XCTAssertThrowsError(try DraftComposer.new(from: from, to: ["a@example.com"], subject: subject, body: "Body")) {
+            XCTAssertThrowsError(try newDraft(from: from, to: ["a@example.com"], subject: subject, body: "Body")) {
                 XCTAssertEqual($0 as? IrisError, .draftSubjectInvalid)
             }
         }
     }
 
     func testNewDraftSavesInOneSessionWithoutReadingAMessage() async throws {
-        let draft = try DraftComposer.new(from: from, to: ["jane@example.com"], subject: "Hello", body: "Body")
+        let draft = try newDraft(from: from, to: ["jane@example.com"], subject: "Hello", body: "Body")
         let fake = FakeMailClient(mailboxes: [MailboxInfo(name: "Drafts", attributes: [#"\Drafts"#])], appendedUID: 42)
         let account = Account(name: "work", host: "imap.example.com", port: 993, username: from.address, authentication: .password("secret"))
         let saved = try await MailWriter(account: account, makeClient: { _ in fake }).saveDraft(draft)
