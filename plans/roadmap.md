@@ -37,12 +37,10 @@ done; README.md describes it.
 
 ## Milestone 2: threads
 
-- `iris thread <iris-id>`: every message in the thread, oldest first, as
-  Markdown. Each message shows its own iris ID, so a reply in Sent shows a
-  Sent iris ID.
-- Find the thread the same way on every server: walk `Message-ID` /
-  `In-Reply-To` / `References` with header searches (SwiftMail's
-  `SearchCriteria.header`). The shortcuts are not available:
+`iris thread` (step 1) is done; README.md describes it, and AGENTS.md
+describes the walk. Why it works the way it does:
+
+- The shortcuts are not available, so every server gets the same walk:
   - Gmail `X-GM-THRID`: SwiftMail can FETCH it but not SEARCH by it. The
     swift-nio-imap revision it pins has no Gmail SEARCH keys (they came in
     swift-nio-imap PR #853), and 1.16.0 is SwiftMail's latest release.
@@ -50,19 +48,33 @@ done; README.md describes it.
     does not advertise it.
   - One search over the whole account: MULTISEARCH (RFC 7377) is not
     advertised by Zoho or Gmail, and SwiftMail has no API for it.
-- Search these mailboxes, each that the server has: INBOX, every `\Sent`,
-  `\Archive`, `\Drafts`, and `\All` mailbox, and the input message's
-  mailbox. Gmail's `\All` holds every message except Spam and Trash; Zoho
-  has no `\All`, so a reply filed only in another folder is not found.
-- Repeat the search with the new IDs until no new message appears. Apple
-  Mail on iPhone puts only the parent in `References`, so one search for
-  the first message's ID misses most of a thread (seen live on Zoho).
-- Show each `Message-ID` once. Zoho's Sent held two copies of one sent
-  message, and on Gmail one message is in many mailboxes.
-- A subject change (ignoring `Re:`/`Fwd:`) starts a new thread, as in
+- The first plan, HEADER searches on `In-Reply-To` and `References`, cannot
+  find replies on Zoho. Probes on 2026-10-24 (read-only): HEADER
+  `Message-ID` matches the whole ID, with or without `< >`; HEADER
+  `In-Reply-To` and `References` never match, in any form, even when the
+  header holds the ID; TEXT with an ID matches nothing; SUBJECT matches
+  whole words ("Champ" does not find "Champion"); SEARCH text that is not
+  ASCII is refused; and an OR tree that mixed in the dead keys gave wrong
+  answers (the same matching key found the message with 3, 6, and 12 keys,
+  but not with 9 or 15 to 18). So replies are found through the subject,
+  which every member must share, and HEADER `Message-ID` searches (at most
+  10 IDs each) find what the subject search missed.
+- Apple Mail on iPhone puts only the parent in `References`, so the walk
+  links messages round after round (seen live on Zoho).
+- A subject change (ignoring `Re:`/`Fwd:`/`Fw:`) starts a new thread, as in
   Gmail. Outlook users reply to an old email and change the subject, so
   `References` links the new conversation to the old one (seen live on
   Zoho).
+- Each `Message-ID` is shown once, from a fixed mailbox order, so every
+  message of a thread gives the same thread with the same iris IDs. Zoho's
+  Sent held two copies of one sent message, and on Gmail one message is in
+  many mailboxes.
+
+Next:
+
+- Check `iris thread` on Gmail and iCloud. Gmail's SEARCH is also
+  index-based: confirm that SUBJECT finds the replies there, and how it
+  matches words.
 - Trim repeated history. Each reply usually quotes the whole chain under it,
   so the thread view shows only the new text of each message, with a
   `--full` flag to turn trimming off. This is a heuristic, but the common
@@ -87,7 +99,6 @@ done; README.md describes it.
 - `draft` is a write command: it is never under `iris ro` (see AGENTS.md,
   "Read-only and write commands"), and its APPEND call lives outside
   `MailReader` (in `MailWriter` and `MailWriteClient`, as for `iris read`).
-  `iris thread` (milestone 2) is read-only and goes in both.
 - Probably needs a new optional key for the From address and display name
   (for example `IRIS_<NAME>_FROM`), because the username is not always the
   address.
@@ -130,6 +141,13 @@ done; README.md describes it.
 - Table columns are padded by `Character`, so emoji and CJK text are never
   cut, but a value with 2-column-wide characters (for example an emoji in a
   subject or a CJK sender name) pushes the columns after it out of line.
+- `iris thread` finds replies only through the SUBJECT search. When the
+  server refuses it (Zoho, for a subject that is not ASCII), only the
+  messages that the named message links to are found, round after round, so
+  the newest message gives the whole thread and the oldest gives only
+  itself. A generic subject ("Hi") makes many candidates; each costs a few
+  hundred header bytes, but a large `\All` mailbox could take a while.
+  A reply filed only in a folder that is not searched is not found.
 - A server that sends a mailbox name that is not valid modified UTF-7 (raw
   `R&D` instead of `R&-D`) shows it unchanged, but typing it sends `R&-D`,
   so that mailbox cannot be opened. RFC 3501 servers do not do this.

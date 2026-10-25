@@ -1,10 +1,10 @@
 # iris
 
 A command-line tool for reading email over IMAP. It lists a mailbox one page
-at a time and shows a full message as Markdown. Reading changes nothing: iris
-opens mailboxes read-only and never marks a message as read. The only
-commands that change mail are `iris read` and `iris unread`, which mark one
-message as read or unread.
+at a time and shows a full message, or a whole thread, as Markdown. Reading
+changes nothing: iris opens mailboxes read-only and never marks a message as
+read. The only commands that change mail are `iris read` and `iris unread`,
+which mark one message as read or unread.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. It has not yet been tested
 against a live server.
@@ -170,6 +170,10 @@ client ID but no refresh token yet.
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
   source. Markdown and JSON include a `message:` URL that opens the message
   in Apple Mail.
+- `iris thread`: every message in the thread of one message, oldest first,
+  by the iris ID of any message in it. Each message is shown in full, as
+  `iris show` shows it, with its own iris ID (a reply you sent shows its
+  Sent iris ID). Also as JSON.
 - `iris read` and `iris unread`: mark one message, by its iris ID, as read
   or unread (they add or remove the `\Seen` flag). Each one sets the state,
   so running it again changes nothing. They print nothing when they succeed.
@@ -192,6 +196,9 @@ iris show 'work/INBOX/4821'                # one message, as Markdown
 iris show 'work/INBOX/4821' --body text    # the plain-text part instead of the HTML
 iris show 'work/INBOX/4821' --format raw > message.eml
 iris show 'personal/[Gmail]/Sent Mail/77'
+
+iris thread 'work/INBOX/4821'                 # the whole thread, oldest first
+iris thread 'work/INBOX/4821' --format json   # an array of `iris show --format json` objects
 
 iris read 'work/INBOX/4821'                # mark as read
 iris unread 'work/INBOX/4821'              # mark as unread
@@ -228,6 +235,39 @@ case, but some servers match only whole words, and some refuse `--from` or
 compare days, not times: the server uses the day it received the message
 and ignores the time and the time zone. That day can be different from the
 `DATE` column, which shows the sender's `Date:` header.
+
+### Threads
+
+`iris thread <iris-id>` shows every message of the thread that the message
+is in: the messages before it and the replies after it, oldest first (by
+the `Date:` header, else the date the server received the message). It
+takes `--body` like `iris show`, and `--format markdown` (the default:
+each message as `iris show` prints it, with a `* * *` line between
+messages) or `--format json` (an array of the objects that
+`iris show --format json` prints).
+
+iris looks in INBOX, the Sent, Drafts, Archive, and All Mail mailboxes,
+and the message's own mailbox. A message is in the thread when it has the
+same subject (ignoring `Re:`, `Fwd:`, and `Fw:`, and case) and its
+`Message-ID`, `In-Reply-To`, or `References` header links it to another
+message of the thread. So a subject change starts a new thread, as in Gmail,
+even when the reply's `References` names the old conversation. A message in
+several mailboxes (on Gmail, INBOX and All Mail; on Zoho, two copies in
+Sent) is shown once, from INBOX, else Sent, Drafts, Archive, All Mail, then
+the message's own mailbox, so every message of a thread gives the same
+thread and the same iris IDs.
+
+Limits:
+
+- A reply filed only in another folder (not INBOX, Sent, Drafts, Archive,
+  or All Mail, and not the folder of the message you named) is not found.
+  Zoho has no All Mail.
+- iris finds replies by searching for the subject. Zoho refuses a search
+  for text that is not ASCII, so for a subject such as "Café", iris finds
+  only the messages that the named message links to, and says so on
+  stderr. Name the newest message to get the whole thread.
+- Each message is shown in full, with the quoted history of the messages
+  before it.
 
 ### Iris IDs
 
@@ -284,9 +324,10 @@ Gmail labels), Mail opens one of the copies.
 
 `iris ro <command>` runs the same command as `iris <command>`, but only the
 read-only commands exist under `ro`: `accounts`, `check`, `mailboxes`,
-`list`, `show`, and `auth status`. Commands that change mail (`read`,
-`unread`, and drafts, when they come) are not there, so `iris ro read ...`
-fails. Neither is `iris auth login`, which opens a browser and writes `.env`.
+`list`, `show`, `thread`, and `auth status`. Commands that change mail
+(`read`, `unread`, and drafts, when they come) are not there, so
+`iris ro read ...` fails. Neither is `iris auth login`, which opens a browser
+and writes `.env`.
 
 To let an agent read your mail but never change it, allow only that prefix.
 For Claude Code, in `.claude/settings.json`:

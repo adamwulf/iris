@@ -144,16 +144,14 @@ public struct MailReader: Sendable {
     ///    only the parent in References, so the links go one step at a time.
     ///    Step 2 runs again with the new IDs until there are none.
     ///
-    /// The candidates do not depend on which message of the thread `id` is,
-    /// so every message of the thread gives the same thread.
-    ///
     /// A message in several mailboxes is shown once, by its Message-ID, from
     /// the first mailbox in the order of `threadMailboxes(listed:inputMailbox:)`
-    /// (the lowest UID, when a mailbox has two copies). That order does not
-    /// depend on `id`, so every message of a thread gives the same thread,
-    /// with the same iris IDs. The order is the `Date:` header, else the date the server
-    /// received the message, as in `list`. Other messages cannot name a message
-    /// that has no Message-ID header, so its thread is that message alone.
+    /// (the lowest UID, when a mailbox has two copies). Neither the candidates
+    /// nor that order depend on which message of the thread `id` is, so every
+    /// message of a thread gives the same thread, with the same iris IDs. The
+    /// order is the `Date:` header, else the date the server received the
+    /// message, as in `list`. Other messages cannot name a message that has no
+    /// Message-ID header, so its thread is that message alone.
     ///
     /// Only EXAMINE, SEARCH, and `BODY.PEEK` fetches: no message is marked as read.
     public func thread(_ id: IrisID) async throws -> [ThreadMessage] {

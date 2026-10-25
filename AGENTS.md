@@ -33,13 +33,15 @@ Sources/IrisKit/
                GoogleURL (query escaping), GoogleSignInStatus (`iris auth
                status`: the keys set and one refresh per account)
   Mail/        MailClient (the IMAP seam), SwiftMailClient (the real one),
-               MailReader (sessions, paging, errors), MailModels (rows, pages),
+               MailReader (sessions, paging, the thread walk, errors),
+               MailModels (rows, pages, ThreadMessage),
                MailWriter (the calls that change mail: read and unread),
                MessageFilter (the `list` filter options, sent as UID SEARCH),
-               IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>)
+               IrisID (the iris ID, the one message name, <account>/<mailbox>/<UID>),
+               ThreadSubject (the subject rule of `thread`)
   Message/     MessageDecoder (raw RFC 822 -> MessageDocument), FlowedText,
-               BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw),
-               AppleMailURL (the message: URL from the Message-ID header)
+               BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw,
+               and a thread), AppleMailURL (the message: URL from the Message-ID header)
   Helpers/     OutputFormatter (table/json/jsonl/id for list commands),
                MailAddress (the one address type), DateText, ModifiedUTF7,
                CalendarDay (a YYYY-MM-DD day for --since and --before),
@@ -52,8 +54,8 @@ Sources/iris/
                     ArgumentHelp.irisID (the help for every iris ID argument)
   Commands/         one file per command
 Tests/IrisKitTests/ offline library tests (LoopbackServerTests binds 127.0.0.1);
-                    Support/ has FakeMailClient, StubTransport (HTTP), and
-                    FakeRedirectReceiver (sign-in)
+                    Support/ has FakeMailClient, LogRecorder, StubTransport
+                    (HTTP), and FakeRedirectReceiver (sign-in)
 Tests/CLITests/     argument parsing only, never run()
 ```
 
@@ -76,8 +78,9 @@ sends AUTHENTICATE XOAUTH2 (`Command.authenticate`) instead of LOGIN. Its
 parts that need no server are static and tested in `SwiftMailClientTests`:
 the error mapping (`irisError(for:command:account:accessToken:)`), the TLS choice
 (`transportSecurity(forPort:)`), the SEARCH keys
-(`searchCriteria(for:)`), the STORE operation (`storeOperation(seen:)`),
-`MailboxInfo(swiftMail:)`, and `MessageEnvelope(swiftMail:)`.
+(`searchCriteria(for:)`, `headerSearchCriteria(field:values:)`), the STORE
+operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
+`MessageEnvelope(swiftMail:)`, and `ThreadHeaders(swiftMail:)`.
 
 `MailWriteClient` refines `MailClient` with the calls that change mail:
 `select(mailbox:)` (SELECT, read-write) and `setSeen(_:uid:)` (UID STORE
@@ -88,13 +91,32 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 (STORE answers OK for a missing UID), then STOREs. `read` always adds
 `\Seen` and `unread` always removes it, never a toggle, so both are idempotent.
 
+`thread` (`MailReader.thread`) is one session too. It reads only headers
+until it knows the thread: `fetchThreadHeaders` (UID FETCH of
+`BODY.PEEK[HEADER.FIELDS (Message-ID In-Reply-To References Subject Date)]`
+and INTERNALDATE). It searches INBOX, each `\Sent`, `\Drafts`, `\Archive`,
+and `\All` mailbox, and the input mailbox, in that order (each kind in LIST
+order). The candidates come from one SUBJECT search per mailbox (the
+existing `searchUIDs(matching:)` with `MessageFilter(subject:)`), with the
+input subject without `Re:`/`Fwd:`/`Fw:`; HEADER Message-ID searches
+(`searchUIDs(header:containingAny:)`, at most
+`messageIDSearchChunkSize` IDs each) find what that missed. Candidates with
+the input's subject (`ThreadSubject`) that name a known ID join, round after
+round, until none joins. Each Message-ID is shown once, from the first
+mailbox in the order above (lowest UID), so every message of a thread gives
+the same iris IDs. Only those copies are downloaded with `fetchRawMessage`.
+A refused SUBJECT search (`searchFailed`) is logged and skipped; every other
+error fails the command.
+
 Tests never touch the network: no test reaches another host. They use
-`FakeMailClient`, which returns scripted results and records the calls. The
-Google code has its own seams: `HTTPTransport` (tests use `StubTransport`)
-and `RedirectReceiver` (tests use `FakeRedirectReceiver`, whose `open` is the
-browser opener). One test opens a socket: `LoopbackServerTests` runs the
-real `LoopbackServer`, which binds 127.0.0.1 only, and sends it the
-favicon request and the redirect over loopback.
+`FakeMailClient`, which returns scripted results and records the calls. For
+`thread` it holds whole mailboxes (`mailboxMessages`) and searches them the
+way Zoho did in the 2026-10-24 probes (`SearchRules.zoho`), or by RFC 3501
+(`.rfc3501`). The Google code has its own seams: `HTTPTransport` (tests use
+`StubTransport`) and `RedirectReceiver` (tests use `FakeRedirectReceiver`,
+whose `open` is the browser opener). One test opens a socket:
+`LoopbackServerTests` runs the real `LoopbackServer`, which binds 127.0.0.1
+only, and sends it the favicon request and the redirect over loopback.
 
 ### Accounts
 
@@ -103,7 +125,7 @@ Each account is a group of keys, `IRIS_<NAME>_IMAP_HOST`, `_PORT` (optional,
 underscores because the suffix is fixed. The process environment wins over
 `.env`; the nearest `.env` wins over a parent's. Commands resolve the account
 once, at the start, through `AccountOptions.resolve()`. A command that takes
-an `IrisID` (such as `show` and `read`) has no `--account`: it resolves the account that
+an `IrisID` (such as `show`, `thread`, and `read`) has no `--account`: it resolves the account that
 the ID names, with `AccountResolver.resolve(name:settings:)`. `auth status`
 has its own `--account`: leaving it out checks every Google account, not the
 default one, through `GoogleSignInStatus.check`. Resolver functions take
@@ -169,6 +191,10 @@ for the user to save.
   Markdown and JSON also show `appleMailURL`, the `message:` URL that opens
   the message in Apple Mail. `MessageDocument` makes it from `messageID` with
   `AppleMailURL`, so it is nil when there is no `Message-ID` header.
+- `thread` takes `--format markdown|json` (`ThreadOutputFormat`), default
+  `markdown`, through `MessageFormatter.render(thread:format:body:timeZone:)`:
+  each message as `show` prints it, oldest first, with a `* * *` line
+  between messages, or a JSON array of the `show --format json` objects.
 - Hints (such as the next-page command) and errors go to stderr. stdout holds
   only data.
 
@@ -186,7 +212,9 @@ for the user to save.
    has no `--account`, and `auth status` has its own, where leaving it out
    means every Google account; see "Accounts"), options (a list command uses
    `var format: OutputFormat = .listDefault`), and a `run()` of a few lines.
-   Register it (see "Read-only and write commands").
+   Register it (see "Read-only and write commands"). When the command's name
+   is also a Foundation type (`Thread`), name the struct `<Name>Command` and
+   set `commandName`, or the tests cannot tell the two apart.
 4. Add parse tests in `Tests/CLITests/ArgumentParsingTests.swift`.
 5. Update README.md ("What works today", "Usage") and remove the item from
    `plans/roadmap.md`.
@@ -272,6 +300,18 @@ account (`--account <name>`).
 - **Quoted ENVELOPE names:** Zoho keeps the header's quotes in the ENVELOPE
   name (`"\"Doe, Jane\""`), and SwiftMail passes them on. `MailAddress.init`
   removes the quotes of a name that is one quoted-string, for every address.
+- **Servers search a word index, not the text** (Zoho probes, 2026-10-24).
+  HEADER Message-ID matches the whole ID, with or without `< >`. HEADER
+  In-Reply-To and HEADER References never match, in any form, even when the
+  header holds the ID, so a header walk finds only the ancestors that a
+  known message names, never the replies; `thread` finds replies through
+  SUBJECT. SUBJECT matches whole words ("Champ" does not find "Champion").
+  SEARCH text that is not ASCII is refused (`searchFailed`). An OR tree of
+  HEADER keys that mixed in In-Reply-To/References keys gave wrong answers
+  (the same matching key found the message with 3, 6, and 12 keys but not
+  with 9 or 15 to 18), so `thread` sends only Message-ID keys, at most 10
+  per SEARCH. Gmail's SEARCH is also index-based; check it before relying on
+  RFC 3501 substring matching anywhere.
 - **Special-use:** a plain LIST may leave out the attributes, so
   `SwiftMailClient.listMailboxes` merges LIST with LIST RETURN (SPECIAL-USE).
   Servers without SPECIAL-USE get SwiftMail's guess from mailbox names.
