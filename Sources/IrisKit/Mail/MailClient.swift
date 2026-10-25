@@ -23,6 +23,11 @@ protocol MailClient: Sendable {
     /// The UIDs of the messages in the open mailbox that match every condition
     /// of `filter` (UID SEARCH), in any order. `filter` is not empty.
     func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32]
+    /// The UIDs of the messages in the open mailbox whose subject has every one
+    /// of `texts`, in any order: one UID SEARCH with a SUBJECT key per text.
+    /// A server that refuses the search (NO, BAD, or NO [BADCHARSET]) gives
+    /// `searchFailed`. `texts` is not empty.
+    func searchUIDs(subjectContainingAll texts: [String]) async throws -> [UInt32]
     /// The UIDs of the messages in the open mailbox whose Message-ID is one of
     /// `messageIDs`, in any order: one UID SEARCH with a HEADER Message-ID key
     /// per ID, joined by OR. `messageIDs` is not empty, and `MailReader` sends

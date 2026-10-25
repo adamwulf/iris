@@ -29,7 +29,7 @@ struct SwiftMailClient: MailWriteClient {
         case list
         /// `mailbox` is the wire name, in modified UTF-7.
         case examine(mailbox: String)
-        /// The SEARCH for a `MessageFilter`: the `list` filter options, and the subject search of `thread`.
+        /// The SEARCH for the `list` filter options, and the SUBJECT search of `thread`.
         case search
         /// The Message-ID SEARCH of `thread`.
         case headerSearch
@@ -170,6 +170,19 @@ struct SwiftMailClient: MailWriteClient {
             criteria.append(.before(before.start))
         }
         return criteria
+    }
+
+    func searchUIDs(subjectContainingAll texts: [String]) async throws -> [UInt32] {
+        // .search, so a refusal is searchFailed, which thread catches.
+        let result: ExtendedSearchResult<UID> = try await run(.search) {
+            try await server.extendedSearch(criteria: Self.subjectSearchCriteria(texts))
+        }
+        return result.all?.toArray().map(\.value) ?? []
+    }
+
+    /// The SEARCH keys for `texts`: a SUBJECT key per text. SEARCH needs all of them to match.
+    static func subjectSearchCriteria(_ texts: [String]) -> [SearchCriteria] {
+        texts.map { .subject($0) }
     }
 
     func searchUIDs(messageIDs: [String]) async throws -> [UInt32] {

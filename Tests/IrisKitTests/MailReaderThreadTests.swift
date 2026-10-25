@@ -49,12 +49,29 @@ final class MailReaderThreadTests: XCTestCase {
         _ messages: [String: [UInt32: Message]],
         mailboxes: [MailboxInfo]? = nil,
         rules: SearchRules = .zoho,
+        refusesNonASCII: Bool = false,
         errors: [FakeMailClient.Method: any Error] = [:]
     ) -> FakeMailClient {
         let listed = mailboxes ?? zohoMailboxes
         var all = Dictionary(uniqueKeysWithValues: listed.map { ($0.name, [UInt32: Message]()) })
         all.merge(messages) { _, filled in filled }
-        return FakeMailClient(mailboxes: listed, mailboxMessages: all, searchRules: rules, errors: errors)
+        return FakeMailClient(
+            mailboxes: listed, mailboxMessages: all, searchRules: rules, refusesNonASCII: refusesNonASCII, errors: errors
+        )
+    }
+
+    /// The texts of each SUBJECT search in `calls`, in order.
+    private func subjectSearches(_ calls: [FakeMailClient.Call]) -> [[String]] {
+        calls.compactMap { call in
+            if case .searchSubject(let texts) = call { return texts } else { return nil }
+        }
+    }
+
+    /// The IDs of each Message-ID search in `calls`, in order.
+    private func messageIDSearches(_ calls: [FakeMailClient.Call]) -> [[String]] {
+        calls.compactMap { call in
+            if case .searchMessageIDs(let ids) = call { return ids } else { return nil }
+        }
     }
 
     /// `<name@example.com>`.
@@ -92,12 +109,11 @@ final class MailReaderThreadTests: XCTestCase {
         try await reader(fake).thread(try IrisID(parsing: start)).map(\.irisID.description)
     }
 
-    /// The mailboxes of the first search round, in order: the EXAMINEs after
-    /// LIST, until one repeats.
+    /// The mailboxes of the first search round, in order: the EXAMINEs, the
+    /// one of the input mailbox first, until one repeats.
     private func firstRoundMailboxes(_ calls: [FakeMailClient.Call]) -> [String] {
-        let afterList = calls.drop { $0 != .listMailboxes }
         var names: [String] = []
-        for case .examine(let name) in afterList {
+        for case .examine(let name) in calls {
             if names.contains(name) {
                 break
             }
@@ -125,25 +141,38 @@ final class MailReaderThreadTests: XCTestCase {
     /// The thread tests are only as good as the fake, so check that it answers as Zoho did.
     func testTheFakeSearchesAsZohoDid() async throws {
         let fake = server(["INBOX": [
-            1: message("a", subject: "Impact Champion Role", day: 1),
-            2: message("b", subject: "Re: Impact Champion Role", day: 2, replyTo: "a", references: ["a"]),
+            1: message("a", subject: "Josh ←→ Anthony: Introduction for AI application work", day: 1),
+            2: message("b", subject: "Re: Josh ←→ Anthony: Introduction for AI application work", day: 2),
+            3: message("c", subject: "Don't lose your bill’s Vanguard's single-use code", day: 3),
         ]])
         _ = try await fake.examine(mailbox: "INBOX")
 
+        func subject(_ texts: String...) async throws -> Set<UInt32> {
+            Set(try await fake.searchUIDs(subjectContainingAll: texts))
+        }
         let byMessageID = try await fake.searchUIDs(messageIDs: [id("a")])
         let withoutBrackets = try await fake.searchUIDs(messageIDs: ["a@example.com"])
         let partOfAnID = try await fake.searchUIDs(messageIDs: ["a@example"])
-        let wholeWords = try await fake.searchUIDs(matching: MessageFilter(subject: "champion role"))
-        let partOfAWord = try await fake.searchUIDs(matching: MessageFilter(subject: "Champ"))
 
         XCTAssertEqual(byMessageID, [1])
         XCTAssertEqual(withoutBrackets, [1])
         XCTAssertEqual(partOfAnID, [], "Zoho matches the whole ID")
-        XCTAssertEqual(Set(wholeWords), [1, 2])
-        XCTAssertEqual(partOfAWord, [], "Zoho matches whole words")
-        await assertThrows(.searchFailed(account: "work", reason: "NO [BADCHARSET (US-ASCII)] Unsupported charset")) {
-            try await fake.searchUIDs(matching: MessageFilter(subject: "Café"))
-        }
+        let whole = try await subject("josh ←→ anthony: introduction for ai application work")
+        XCTAssertEqual(whole, [1, 2], "text that is not ASCII is accepted; the short word is ignored")
+        let wordsAnded = try await subject("introduction", "application", "anthony", "josh", "work")
+        XCTAssertEqual(wordsAnded, [1, 2])
+        let withAShortWord = try await subject("introduction", "ai")
+        XCTAssertEqual(withAShortWord, [], "a key of only a short word finds nothing")
+        let partOfAWord = try await subject("introduct")
+        XCTAssertEqual(partOfAWord, [], "whole words only")
+        let curly = try await subject("bill")
+        XCTAssertEqual(curly, [3], "the curly apostrophe ends a word")
+        let contraction = try await subject("don")
+        XCTAssertEqual(contraction, [], "a word with an ASCII apostrophe stays whole")
+        let possessive = try await subject("vanguard")
+        XCTAssertEqual(possessive, [3])
+        let hyphen = try await subject("single", "use")
+        XCTAssertEqual(hyphen, [3])
     }
 
     // MARK: - The walk
@@ -347,7 +376,9 @@ final class MailReaderThreadTests: XCTestCase {
         }
     }
 
-    func testSearchesTheInputMailboxLast() async throws {
+    func testSearchesTheInputMailboxFirstWithoutOpeningItAgain() async throws {
+        // It is open already, and its answer must have the input message. (Its
+        // copies still come last when iris picks a copy to show.)
         let fake = server(["Projects": [3: message("a", subject: "Budget", day: 1)]], mailboxes: gmailMailboxes)
 
         _ = try await thread(fake, from: "work/Projects/3")
@@ -355,8 +386,11 @@ final class MailReaderThreadTests: XCTestCase {
         let calls = await fake.calls
         XCTAssertEqual(
             firstRoundMailboxes(calls),
-            ["INBOX", "[Gmail]/Sent Mail", "[Gmail]/Drafts", "[Gmail]/All Mail", "Projects"]
+            ["Projects", "INBOX", "[Gmail]/Sent Mail", "[Gmail]/Drafts", "[Gmail]/All Mail"]
         )
+        XCTAssertEqual(Array(calls.prefix(5)), [
+            .login, .examine("Projects"), .fetchThreadHeaders([3]), .listMailboxes, .searchSubject(["budget"]),
+        ])
     }
 
     func testSearchesAMailboxWithTwoAttributesOnceInItsFirstPlace() async throws {
@@ -441,17 +475,17 @@ final class MailReaderThreadTests: XCTestCase {
 
     // MARK: - Searches
 
-    func testSearchesOnlyTheMessageIDHeaderInChunksOfTenIDs() async throws {
-        // Zoho never matched In-Reply-To or References, and gave wrong answers for large OR trees.
+    func testSearchesTheMessageIDsInChunksOfTenIDs() async throws {
+        // Zoho gave wrong answers for large OR trees. An empty subject means no SUBJECT search.
         let references = (1...23).map { "r\($0)" }
-        let fake = server(["INBOX": [1: message("a", subject: "Budget", day: 1, replyTo: "r23", references: references)]])
+        let fake = server(["INBOX": [1: message("a", subject: "", day: 1, replyTo: "r23", references: references)]])
 
         _ = try await thread(fake, from: "work/INBOX/1")
 
         let calls = await fake.calls
         var searches: [String: [[String]]] = [:]
         var mailbox = ""
-        for call in calls.drop(while: { $0 != .listMailboxes }) {
+        for call in calls {
             switch call {
             case .examine(let name):
                 mailbox = name
@@ -471,8 +505,8 @@ final class MailReaderThreadTests: XCTestCase {
         }
     }
 
-    func testAMessageAlreadyReadIsNotSearchedByItsMessageID() async throws {
-        // The SUBJECT search finds b, c, and d, so only a's ID is ever searched.
+    func testNoMessageIDSearchesRunWhereTheSubjectSearchRan() async throws {
+        // Every member has the subject, so the SUBJECT search finds them all.
         let fake = server([
             "INBOX": [
                 10: message("a", subject: "Budget", day: 1),
@@ -484,16 +518,17 @@ final class MailReaderThreadTests: XCTestCase {
             ],
         ])
 
-        _ = try await thread(fake, from: "work/INBOX/10")
+        let found = try await thread(fake, from: "work/INBOX/10")
 
+        XCTAssertEqual(found, ["work/INBOX/10", "work/Sent/20", "work/INBOX/12", "work/Sent/21"])
         let calls = await fake.calls
-        let headerSearches = calls.filter { if case .searchMessageIDs = $0 { return true } else { return false } }
-        XCTAssertEqual(headerSearches, Array(repeating: .searchMessageIDs([id("a")]), count: 5))
+        XCTAssertEqual(messageIDSearches(calls), [])
+        XCTAssertEqual(subjectSearches(calls), Array(repeating: ["budget"], count: 5))
     }
 
     func testWithoutTheSubjectSearchTheMessageIDSearchesWalkAChainOneParentAtATime() async throws {
-        // Zoho refuses the subject, and each reply names only its parent, so
-        // each round finds one more parent.
+        // A server that refuses "Café", which has no ASCII word, and each reply
+        // names only its parent, so each round finds one more parent.
         let fake = server([
             "INBOX": [
                 10: message("a", subject: "Café", day: 1),
@@ -503,7 +538,7 @@ final class MailReaderThreadTests: XCTestCase {
                 20: message("b", subject: "Re: Café", day: 2, replyTo: "a", references: ["a"]),
                 21: message("d", subject: "Re: Café", day: 4, replyTo: "c", references: ["c"]),
             ],
-        ])
+        ], refusesNonASCII: true)
         IrisLog.handler = { _ in }
         defer { IrisLog.handler = nil }
 
@@ -511,10 +546,8 @@ final class MailReaderThreadTests: XCTestCase {
 
         XCTAssertEqual(found, ["work/INBOX/10", "work/Sent/20", "work/INBOX/12", "work/Sent/21"])
         let calls = await fake.calls
-        let searchedIDs = calls.compactMap { call -> [String]? in
-            if case .searchMessageIDs(let values) = call { return values } else { return nil }
-        }
-        XCTAssertEqual(searchedIDs, [
+        XCTAssertEqual(subjectSearches(calls), [["café"]], "refused once, then never tried again")
+        XCTAssertEqual(messageIDSearches(calls), [
             [id("d"), id("c")], [id("d"), id("c")], [id("d"), id("c")], [id("d"), id("c")], [id("d"), id("c")],
             [id("b")], [id("b")], [id("b")], [id("b")], [id("b")],
             [id("a")], [id("a")], [id("a")], [id("a")], [id("a")],
@@ -530,8 +563,7 @@ final class MailReaderThreadTests: XCTestCase {
         _ = try await thread(fake, from: "work/Sent/2")
 
         let calls = await fake.calls
-        let subjectSearches = calls.filter { if case .searchUIDs = $0 { return true } else { return false } }
-        XCTAssertEqual(subjectSearches, Array(repeating: .searchUIDs(MessageFilter(subject: "budget")), count: 5))
+        XCTAssertEqual(subjectSearches(calls), Array(repeating: ["budget"], count: 5))
     }
 
     func testAMessageWithoutASubjectIsNotSearchedBySubject() async throws {
@@ -545,37 +577,124 @@ final class MailReaderThreadTests: XCTestCase {
 
         XCTAssertEqual(found, ["work/INBOX/1", "work/Sent/2"])
         let calls = await fake.calls
-        XCTAssertFalse(calls.contains { if case .searchUIDs = $0 { return true } else { return false } })
+        XCTAssertEqual(subjectSearches(calls), [])
     }
 
-    func testARefusedSubjectSearchFallsBackToTheMessageIDSearches() async throws {
-        // Zoho refuses SEARCH text that is not ASCII. Without the subject, only
-        // the messages that a known message names can be found, so a start that
-        // names the others still finds them, and the first message finds only itself.
+    func testARefusedSubjectIsSearchedByItsASCIIWordsForTheRestOfTheWalk() async throws {
+        // A server that refuses SEARCH text that is not ASCII (Apple smart
+        // punctuation puts a curly apostrophe in subjects).
+        let expected = ["work/INBOX/1", "work/Sent/2", "work/INBOX/3"]
+        for rules in SearchRules.allCases {
+            let fake = server([
+                "INBOX": [
+                    1: message("a", subject: "Adam’s plan for 2026", day: 1),
+                    3: message("c", subject: "Re: Adam’s plan for 2026", day: 3, replyTo: "b", references: ["a", "b"]),
+                ],
+                "Sent": [2: message("b", subject: "Re: Adam’s plan for 2026", day: 2, replyTo: "a", references: ["a"])],
+            ], rules: rules, refusesNonASCII: true)
+            let recorder = LogRecorder()
+            IrisLog.handler = { recorder.record($0) }
+            defer { IrisLog.handler = nil }
+
+            let found = try await thread(fake, from: "work/INBOX/1")
+
+            XCTAssertEqual(found, expected, "\(rules) rules")
+            let calls = await fake.calls
+            XCTAssertEqual(
+                subjectSearches(calls),
+                [["adam’s plan for 2026"]] + Array(repeating: ["adam", "plan", "2026", "for"], count: 5),
+                "\(rules) rules: the whole subject is tried once"
+            )
+            XCTAssertEqual(messageIDSearches(calls), [], "\(rules) rules")
+            XCTAssertEqual(recorder.lines, [], "\(rules) rules")
+        }
+    }
+
+    func testWithNoSubjectSearchOnlyTheLinkedMessagesAreFoundAndOneLineIsLogged() async throws {
+        // "Café" has no ASCII word, so a server that refuses it gets no SUBJECT
+        // search. The Message-ID searches find only the messages that a known
+        // message names: the newest finds its ancestors, but not a sibling
+        // branch, and the first message finds only itself.
         let messages: [String: [UInt32: Message]] = [
             "INBOX": [
-                1: message("a", subject: "Café plans", day: 1),
-                3: message("c", subject: "Re: Café plans", day: 3, replyTo: "b", references: ["a", "b"]),
+                1: message("a", subject: "Café", day: 1),
+                3: message("c", subject: "Re: Café", day: 3, replyTo: "b", references: ["a", "b"]),
+                4: message("d", subject: "Re: Café", day: 4, replyTo: "a", references: ["a"]),
             ],
-            "Sent": [2: message("b", subject: "Re: Café plans", day: 2, replyTo: "a", references: ["a"])],
+            "Sent": [2: message("b", subject: "Re: Café", day: 2, replyTo: "a", references: ["a"])],
         ]
         let recorder = LogRecorder()
         IrisLog.handler = { recorder.record($0) }
         defer { IrisLog.handler = nil }
 
-        let fromLast = try await thread(server(messages), from: "work/INBOX/3")
-        let fromFirst = try await thread(server(messages), from: "work/INBOX/1")
+        let fromC = try await thread(server(messages, refusesNonASCII: true), from: "work/INBOX/3")
+        let fromA = try await thread(server(messages, refusesNonASCII: true), from: "work/INBOX/1")
 
-        XCTAssertEqual(fromLast, ["work/INBOX/1", "work/Sent/2", "work/INBOX/3"])
-        XCTAssertEqual(fromFirst, ["work/INBOX/1"])
-        XCTAssertEqual(recorder.lines.count, 10, "one line per searched mailbox, in each of the two threads")
+        XCTAssertEqual(fromC, ["work/INBOX/1", "work/Sent/2", "work/INBOX/3"], "d, on another branch, is not found")
+        XCTAssertEqual(fromA, ["work/INBOX/1"])
+        XCTAssertEqual(recorder.lines.count, 2, "one line per walk")
         XCTAssertEqual(
             recorder.lines.first,
-            "The server refused to search \"INBOX\" by subject (NO [BADCHARSET (US-ASCII)] Unsupported charset), "
-                + "so the thread may miss replies in it."
+            "The server could not search by subject (NO [BADCHARSET (US-ASCII)] Unsupported charset), so iris followed "
+                + "only the message IDs that the messages name, and the thread may miss replies."
         )
-        let fromFirstOnAnRFCServer = try await thread(server(messages, rules: .rfc3501), from: "work/INBOX/1")
-        XCTAssertEqual(fromFirstOnAnRFCServer, ["work/INBOX/1", "work/Sent/2", "work/INBOX/3"])
+        let fromAOnAServerThatTakesUTF8 = try await thread(server(messages), from: "work/INBOX/1")
+        XCTAssertEqual(fromAOnAServerThatTakesUTF8, ["work/INBOX/1", "work/Sent/2", "work/INBOX/3", "work/INBOX/4"])
+    }
+
+    func testWhenTheASCIIWordsAreRefusedTooTheSubjectSearchesStop() async throws {
+        let refused = IrisError.searchFailed(account: "work", reason: "NO busy")
+        let fake = server([
+            "INBOX": [1: message("a", subject: "Budget plan", day: 1)],
+            "Sent": [2: message("b", subject: "Re: Budget plan", day: 2, replyTo: "a", references: ["a"])],
+        ], errors: [.searchSubject: refused])
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+
+        let found = try await thread(fake, from: "work/Sent/2")
+
+        XCTAssertEqual(found, ["work/INBOX/1", "work/Sent/2"])
+        let calls = await fake.calls
+        XCTAssertEqual(subjectSearches(calls), [["budget plan"], ["budget", "plan"]], "both tried once, in Sent")
+        XCTAssertEqual(messageIDSearches(calls).count, 5, "every mailbox is searched by Message-ID instead")
+        XCTAssertEqual(recorder.lines.count, 1)
+    }
+
+    func testASubjectSearchThatMissesTheMessageItselfIsNotUsed() async throws {
+        // An RFC 3501 server matches text inside the subject, so "budget plan"
+        // misses a subject with two spaces in it. In the input's own mailbox the
+        // answer must have the input, so iris tries the words instead.
+        let fake = server([
+            "INBOX": [1: message("a", subject: "Budget  plan", day: 1)],
+            "Sent": [2: message("b", subject: "Re: Budget  plan", day: 2, replyTo: "a", references: ["a"])],
+        ], rules: .rfc3501)
+
+        let found = try await thread(fake, from: "work/Sent/2")
+
+        XCTAssertEqual(found, ["work/INBOX/1", "work/Sent/2"])
+        let calls = await fake.calls
+        XCTAssertEqual(subjectSearches(calls), [["budget plan"]] + Array(repeating: ["budget", "plan"], count: 5))
+    }
+
+    func testASubjectThatTheServerCannotFindFallsBackToTheMessageIDs() async throws {
+        // Zoho finds nothing for a word shorter than 3, so the search for "ai"
+        // misses the input message, and "ai" has no word to try instead.
+        let recorder = LogRecorder()
+        IrisLog.handler = { recorder.record($0) }
+        defer { IrisLog.handler = nil }
+        let fake = server([
+            "INBOX": [1: message("a", subject: "AI", day: 1)],
+            "Sent": [2: message("b", subject: "Re: AI", day: 2, replyTo: "a", references: ["a"])],
+        ])
+
+        let found = try await thread(fake, from: "work/Sent/2")
+
+        XCTAssertEqual(found, ["work/INBOX/1", "work/Sent/2"])
+        XCTAssertEqual(recorder.lines, [
+            "The server could not search by subject (the search did not find the message itself), so iris followed "
+                + "only the message IDs that the messages name, and the thread may miss replies.",
+        ])
     }
 
     // MARK: - Errors
@@ -611,7 +730,7 @@ final class MailReaderThreadTests: XCTestCase {
 
     func testOtherSubjectSearchErrorsStillFailAndLogOut() async {
         let failure = IrisError.serverTimedOut(account: "work", command: "SEARCH")
-        let fake = server(["INBOX": [1: message("a", subject: "Budget", day: 1)]], errors: [.searchUIDs: failure])
+        let fake = server(["INBOX": [1: message("a", subject: "Budget", day: 1)]], errors: [.searchSubject: failure])
 
         await assertThrows(failure) { try await self.thread(fake, from: "work/INBOX/1") }
 
@@ -621,11 +740,15 @@ final class MailReaderThreadTests: XCTestCase {
 
     func testEachFailingCallLogsOut() async {
         let failure = IrisError.connectionLost(account: "work", command: "FETCH", reason: "reset")
-        let methods: [FakeMailClient.Method] = [.listMailboxes, .searchMessageIDs, .fetchThreadHeaders, .fetchRawMessage]
+        let methods: [FakeMailClient.Method] = [
+            .listMailboxes, .searchSubject, .searchMessageIDs, .fetchThreadHeaders, .fetchRawMessage,
+        ]
         for method in methods {
+            // The Message-ID searches run only when no SUBJECT search does: for an empty subject.
+            let subject = method == .searchMessageIDs ? "" : "Budget"
             let fake = server([
-                "INBOX": [1: message("a", subject: "Budget", day: 1)],
-                "Sent": [2: message("b", day: 2, replyTo: "a", references: ["a"])],
+                "INBOX": [1: message("a", subject: subject, day: 1)],
+                "Sent": [2: message("b", subject: subject, day: 2, replyTo: "a", references: ["a"])],
             ], errors: [method: failure])
 
             await assertThrows(failure) { try await self.thread(fake, from: "work/INBOX/1") }

@@ -10,6 +10,7 @@ actor FakeMailClient: MailWriteClient {
         case listMailboxes
         case examine(String)
         case searchUIDs(MessageFilter)
+        case searchSubject([String])
         case searchMessageIDs([String])
         case fetchEnvelopes(ClosedRange<Int>)
         case fetchEnvelopesByUID([UInt32])
@@ -22,8 +23,8 @@ actor FakeMailClient: MailWriteClient {
 
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
-        case login, capabilities, listMailboxes, examine, searchUIDs, searchMessageIDs, fetchEnvelopes, fetchThreadHeaders,
-             fetchRawMessage, select, setSeen
+        case login, capabilities, listMailboxes, examine, searchUIDs, searchSubject, searchMessageIDs, fetchEnvelopes,
+             fetchThreadHeaders, fetchRawMessage, select, setSeen
     }
 
     /// How the fake answers a search in a mailbox of `mailboxMessages`.
@@ -96,6 +97,7 @@ actor FakeMailClient: MailWriteClient {
     private let rawMessages: [UInt32: Data]
     private let mailboxMessages: [String: [UInt32: Message]]
     private let searchRules: SearchRules
+    private let refusesNonASCII: Bool
     private let errors: [Method: any Error]
     /// The wire name of the mailbox that the last EXAMINE opened.
     private var openMailbox: String?
@@ -112,9 +114,11 @@ actor FakeMailClient: MailWriteClient {
     ///
     /// `mailboxMessages` holds whole mailboxes for `thread`, by wire name and
     /// UID. A mailbox in it can be examined without a status. In such a
-    /// mailbox the header search and the subject search (`searchUIDs(matching:)`
-    /// with only `subject` set) answer by `searchRules`, `fetchThreadHeaders`
-    /// returns the messages' headers, and `fetchRawMessage` returns their raw text.
+    /// mailbox the SUBJECT and Message-ID searches answer by `searchRules`,
+    /// `fetchThreadHeaders` returns the messages' headers, and
+    /// `fetchRawMessage` returns their raw text. With `refusesNonASCII`, the
+    /// SUBJECT search refuses text that is not ASCII, as a server without
+    /// UTF-8 SEARCH does (NO [BADCHARSET]); Zoho accepted it in the probes.
     init(
         accountName: String = "work",
         capabilities: [String] = [],
@@ -125,6 +129,7 @@ actor FakeMailClient: MailWriteClient {
         rawMessages: [UInt32: Data] = [:],
         mailboxMessages: [String: [UInt32: Message]] = [:],
         searchRules: SearchRules = .zoho,
+        refusesNonASCII: Bool = false,
         errors: [Method: any Error] = [:]
     ) {
         self.accountName = accountName
@@ -136,6 +141,7 @@ actor FakeMailClient: MailWriteClient {
         self.rawMessages = rawMessages
         self.mailboxMessages = mailboxMessages
         self.searchRules = searchRules
+        self.refusesNonASCII = refusesNonASCII
         self.errors = errors
     }
 
@@ -197,21 +203,23 @@ actor FakeMailClient: MailWriteClient {
 
     func searchUIDs(matching filter: MessageFilter) async throws -> [UInt32] {
         try record(.searchUIDs(filter), .searchUIDs)
-        guard let mailbox = openMailbox, mailboxMessages[mailbox] != nil else {
-            return searchResult
+        return searchResult
+    }
+
+    func searchUIDs(subjectContainingAll texts: [String]) async throws -> [UInt32] {
+        try record(.searchSubject(texts), .searchSubject)
+        if refusesNonASCII && !texts.allSatisfy({ $0.unicodeScalars.allSatisfy(\.isASCII) }) {
+            // What SwiftMailClient makes of NO [BADCHARSET].
+            throw IrisError.searchFailed(account: accountName, reason: "NO [BADCHARSET (US-ASCII)] Unsupported charset")
         }
-        precondition(filter == MessageFilter(subject: filter.subject), "the fake matches only the subject in mailboxMessages")
-        let text = filter.subject ?? ""
-        switch searchRules {
-        case .zoho:
-            guard text.unicodeScalars.allSatisfy(\.isASCII) else {
-                // What SwiftMailClient makes of Zoho's NO [BADCHARSET].
-                throw IrisError.searchFailed(account: accountName, reason: "NO [BADCHARSET (US-ASCII)] Unsupported charset")
+        return openMessages.filter { _, message in
+            texts.allSatisfy { text in
+                switch searchRules {
+                case .zoho: return Self.zohoSubjectMatches(message.subject, text)
+                case .rfc3501: return Self.contains(message.subject, text)
+                }
             }
-            return openMessages.filter { _, message in Self.zohoSubjectMatches(message.subject, text) }.map(\.key)
-        case .rfc3501:
-            return openMessages.filter { _, message in Self.contains(message.subject, text) }.map(\.key)
-        }
+        }.map(\.key)
     }
 
     func searchUIDs(messageIDs: [String]) async throws -> [UInt32] {
@@ -248,15 +256,25 @@ actor FakeMailClient: MailWriteClient {
         return bare(messageID) == bare(value)
     }
 
-    /// Zoho's SUBJECT search: each word of `text` must be a whole word of the
-    /// subject, ignoring case, so "Champ" does not match "Champion".
-    /// (Text that is not ASCII is refused before this.)
+    /// Zoho's SUBJECT key: each word of `text` that is 3 or more long must be
+    /// a whole word of the subject, ignoring case ("Champ" does not find
+    /// "Champion"), and a key with no such word finds nothing ("ai" found
+    /// nothing; "introduction for ai application work" found the thread). A
+    /// word ends at any character but a letter, digit, or ASCII apostrophe:
+    /// "bill" finds "bill’s" and "single" finds "single-use", but "don" does
+    /// not find "don't", nor "you" find "you're". A word that ends in "'s"
+    /// is also found without it ("vanguard" finds "Vanguard's"). Text that is
+    /// not ASCII is accepted.
     private static func zohoSubjectMatches(_ subject: String?, _ text: String) -> Bool {
-        func words(_ text: String) -> Set<String> {
-            Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+        func words(_ text: String) -> [String] {
+            text.lowercased().split { !($0.isLetter || $0.isNumber || $0 == "'") }.map(String.init)
         }
-        let wanted = words(text)
-        return !wanted.isEmpty && wanted.isSubset(of: words(subject ?? ""))
+        var index = Set(words(subject ?? ""))
+        for word in index where word.hasSuffix("'s") {
+            index.insert(String(word.dropLast(2)))
+        }
+        let wanted = words(text).filter { $0.count >= 3 }
+        return !wanted.isEmpty && wanted.allSatisfy(index.contains)
     }
 
     func fetchThreadHeaders(uids: [UInt32]) async throws -> [ThreadHeaders] {

@@ -343,6 +343,17 @@ final class SwiftMailClientTests: XCTestCase {
         assertCriteria(MessageFilter(since: since), [.since(since.start)])
     }
 
+    func testSubjectSearchHasOneSubjectKeyPerText() {
+        XCTAssertEqual(
+            "\(SwiftMailClient.subjectSearchCriteria(["introduction", "application", "josh"]))",
+            "\([SearchCriteria.subject("introduction"), .subject("application"), .subject("josh")])"
+        )
+        XCTAssertEqual(
+            "\(SwiftMailClient.subjectSearchCriteria(["josh ←→ anthony"]))",
+            "\([SearchCriteria.subject("josh ←→ anthony")])"
+        )
+    }
+
     func testMessageIDSearchForOneIDIsOneHeaderKey() {
         XCTAssertEqual(
             "\(SwiftMailClient.messageIDSearchCriteria(["<a@x>"]))",
