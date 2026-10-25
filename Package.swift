@@ -21,6 +21,9 @@ let package = Package(
         .package(url: "https://github.com/Cocoanetics/SwiftMail", revision: "88c45cbd31b347b373f7c87e197be63eb95efbc2"),
         // The HTML trait gives HTML-to-Markdown without SwiftText's PDF/OCR parts.
         .package(url: "https://github.com/Cocoanetics/SwiftText", from: "2.4.0", traits: ["HTML"]),
+        // Markdown-to-HTML for the HTML part of a draft. SwiftText already
+        // depends on it, so it adds no new package to the graph.
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.8.0"),
         // SwiftMail logs through swift-log. Only the executable picks the backend.
         .package(url: "https://github.com/apple/swift-log", from: "1.6.0"),
     ],
@@ -32,6 +35,7 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftMail", package: "SwiftMail"),
                 .product(name: "SwiftTextHTML", package: "SwiftText"),
+                .product(name: "Markdown", package: "swift-markdown"),
             ]
         ),
         .executableTarget(

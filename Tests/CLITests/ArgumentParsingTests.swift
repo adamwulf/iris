@@ -240,6 +240,63 @@ final class ArgumentParsingTests: XCTestCase {
         XCTAssertThrowsError(try Iris.parseAsRoot(["auth", "logout"]))
     }
 
+    func testDraftDefaults() throws {
+        let command = try Draft.parse(["work/INBOX/42"])
+        XCTAssertEqual(command.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
+        XCTAssertNil(command.body)
+        XCTAssertNil(command.file)
+        XCTAssertFalse(command.all)
+        XCTAssertFalse(command.noQuote, "the original is quoted by default")
+    }
+
+    func testDraftTakesTheReplyAsAnArgument() throws {
+        let command = try Draft.parse(["personal/[Gmail]/All Mail/7", "Thanks, *Jane*!", "--all", "--no-quote"])
+        XCTAssertEqual(command.irisID, IrisID(account: "personal", mailbox: "[Gmail]/All Mail", uid: 7))
+        XCTAssertEqual(command.body, "Thanks, *Jane*!")
+        XCTAssertTrue(command.all)
+        XCTAssertTrue(command.noQuote)
+    }
+
+    /// Without `--`, a reply that starts with `-` (a Markdown list) reads as an option.
+    func testDraftTakesAReplyThatStartsWithADashAfterDoubleDash() throws {
+        XCTAssertThrowsError(try Draft.parse(["work/INBOX/4821", "- yes"]))
+
+        let command = try Draft.parse(["work/INBOX/4821", "--", "- yes\n- no"])
+        XCTAssertEqual(command.body, "- yes\n- no")
+
+        let withOptions = try Draft.parse(["work/INBOX/4821", "--all", "--no-quote", "--", "-- signed"])
+        XCTAssertEqual(withOptions.body, "-- signed")
+        XCTAssertTrue(withOptions.all)
+        XCTAssertTrue(withOptions.noQuote)
+    }
+
+    func testDraftTakesAFileWithShortAndLongNames() throws {
+        XCTAssertEqual(try Draft.parse(["work/INBOX/42", "-F", "reply.md"]).file, "reply.md")
+        XCTAssertEqual(try Draft.parse(["work/INBOX/42", "--file", "reply.md"]).file, "reply.md")
+        XCTAssertEqual(try Draft.parse(["work/INBOX/42", "-F", "-"]).file, "-", "-F - reads stdin")
+    }
+
+    /// The parser accepts both, so that DraftBody can say what to do instead.
+    func testDraftParsesAnArgumentAndAFileTogether() throws {
+        let command = try Draft.parse(["work/INBOX/42", "Thanks!", "-F", "reply.md"])
+        XCTAssertEqual(command.body, "Thanks!")
+        XCTAssertEqual(command.file, "reply.md")
+    }
+
+    func testDraftNeedsAFullIrisIDAndHasNoAccountOption() {
+        XCTAssertThrowsError(try Draft.parse([]))
+        XCTAssertThrowsError(try Draft.parse(["42", "Thanks!"]))
+        XCTAssertThrowsError(try Draft.parse(["work/INBOX/42", "--account", "work"]), "the iris ID names the account")
+        XCTAssertThrowsError(try Draft.parse(["work/INBOX/42", "--quote"]), "only --no-quote exists")
+    }
+
+    func testDraftExplainsABadIrisID() {
+        XCTAssertThrowsError(try Draft.parse(["INBOX/42"])) { error in
+            let message = Draft.message(for: error)
+            XCTAssertTrue(message.contains("\"INBOX/42\" is not an iris ID"), message)
+        }
+    }
+
     /// ArgumentParser lists an option's values itself, so our help strings no longer list them too.
     func testHelpNoLongerHasTheOldValueLists() {
         let oldPhrases = ["table, json, jsonl, or id", "markdown, json, or raw", "auto (HTML", "text, or html"]

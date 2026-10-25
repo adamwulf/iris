@@ -22,6 +22,30 @@ public enum IrisError: Error, Equatable, LocalizedError {
     /// whether the message has a text part to show instead.
     case htmlNotConverted(reason: String, hasTextPart: Bool)
 
+    // Drafts
+
+    /// `iris draft` got its reply body both as an argument and with `--file`.
+    case draftBodyGivenTwice
+    /// `iris draft` got no reply body, and stdin is a terminal.
+    case draftBodyMissing
+    /// The reply body is empty or only whitespace. `source` says where it came
+    /// from, such as `the file "reply.md"`.
+    case draftBodyEmpty(source: String)
+    /// The reply body could not be read from a file or from stdin.
+    case draftBodyNotRead(source: String, reason: String)
+    /// The reply body is not UTF-8 text.
+    case draftBodyNotUTF8(source: String)
+    /// The account has no `IRIS_<NAME>_FROM`, and its username is not an address.
+    case draftFromAddressMissing(account: String, username: String)
+    /// LIST found no mailbox with the `\Drafts` attribute.
+    case draftsMailboxNotFound(account: String)
+    /// The draft is larger than the server's APPENDLIMIT.
+    case draftTooLarge(account: String, size: Int, limit: Int)
+    /// APPEND timed out, or the connection broke during it, so the server may
+    /// have saved the draft. `mailbox` is the Drafts mailbox: the wire name
+    /// from `SwiftMailClient`, and the decoded name after `MailWriter`.
+    case draftMayBeSaved(account: String, mailbox: String, reason: String)
+
     // IMAP
 
     /// The server refused the username or password.
@@ -102,6 +126,42 @@ public enum IrisError: Error, Equatable, LocalizedError {
                 ? problem + ". Run the command again with --body text."
                 : problem + ", and the message has no text part. "
                     + "Run the command again with --format raw to see the message source."
+        // Drafts
+        case .draftBodyGivenTwice:
+            return "The reply was given twice: as an argument and with -F. "
+                + "Give it one way: as an argument, with -F <path>, or on stdin."
+        case .draftBodyMissing:
+            return "No reply was given. Give the reply in Markdown as an argument "
+                + "(iris draft '<iris-id>' 'Thanks!'), with -F <path> (-F - reads stdin), "
+                + "or on stdin (echo 'Thanks!' | iris draft '<iris-id>')."
+        case .draftBodyEmpty(let source):
+            return "The reply from \(source) is empty. Write the reply in Markdown, "
+                + "and give it as an argument, with -F <path>, or on stdin."
+        case .draftBodyNotRead(let source, let reason):
+            // In parentheses: Foundation's reasons end with a period.
+            return "Could not read the reply from \(source) (\(reason)). "
+                + "Check the path, or give the reply as an argument or on stdin."
+        case .draftBodyNotUTF8(let source):
+            return "The reply from \(source) is not UTF-8 text. Save it as UTF-8, or give the reply as an argument."
+        case .draftFromAddressMissing(let account, let username):
+            let key = AccountResolver.fromKey(account: account)
+            return "iris needs your email address for the From line of the draft, and the username of "
+                + "account \"\(account)\" (\"\(username)\") is not an address. Set \(key) to your address, "
+                + "for example \"\(key)=Your Name <you@example.com>\", as an environment variable "
+                + "or in a .env file in this directory or a parent directory."
+        case .draftsMailboxNotFound(let account):
+            return "The server has no mailbox marked \\Drafts (account \"\(account)\"), so iris does not know "
+                + "where to save the draft. Run `iris mailboxes --account \(MessagePage.shellQuoted(account))` "
+                + "to see the mailboxes and their attributes."
+        case .draftTooLarge(let account, let size, let limit):
+            return "The draft is \(size) bytes, and the server takes at most \(limit) bytes "
+                + "(account \"\(account)\"). Shorten the reply, or leave out the quoted message with --no-quote."
+        case .draftMayBeSaved(let account, let mailbox, let reason):
+            let list = MessagePage.listCommand(
+                account: account, mailbox: mailbox, page: 1, limit: MailReader.defaultPageLimit, format: .listDefault
+            )
+            return "Saving the draft did not finish (account \"\(account)\"): \(reason). "
+                + "The server may have saved it in \"\(mailbox)\" anyway: look in it (`\(list)`) before you try again."
         // IMAP
         case .loginFailed(let account, let username, let host, let reason):
             return "The server \(host) refused the login for \(username) (account \"\(account)\"): \(reason). "

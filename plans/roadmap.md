@@ -7,16 +7,20 @@ Providers that must work: Gmail, Zoho Mail, iCloud Mail. Auth is an
 app-specific password over TLS on port 993, or, for a Gmail account that
 cannot make an app password, Google OAuth (XOAUTH2) after `iris auth login`.
 
-Milestone 1 (the inbox reader: accounts, check, mailboxes, list, show) is
-done; README.md describes it.
+Milestone 1 (the inbox reader: accounts, check, mailboxes, list, show) and
+milestone 3 (`iris draft`, a reply saved as a draft) are done; README.md
+describes them.
 
 ## Next: live check against real accounts
 
 - Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` once per
   provider (Gmail, iCloud), and once each with a wrong password and a wrong
   host.
-- Run `iris read` and `iris unread` once per provider (Gmail, iCloud,
-  Zoho). They have not run against a real server yet.
+- Run `iris read`, `iris unread`, and `iris draft` once per provider (Gmail,
+  iCloud, Zoho). They have not run against a real server yet. For
+  `iris draft`, check that the draft opens in Apple Mail as its own draft,
+  in the thread, and that the server reports its UID (UIDPLUS; Zoho
+  advertises it).
 - Zoho (`imappro.zoho.com`) was checked on 2026-10-24: `check`,
   `mailboxes`, `list`, `show`, and `thread` work. Post-login CAPABILITY: `IMAP4rev1
   UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR
@@ -30,8 +34,9 @@ done; README.md describes it.
   as they are done, the "not verified" warning, and the page the browser
   shows after the redirect. After the 7 days (or after removing the access
   at myaccount.google.com/permissions), `iris auth status` and `iris check`
-  should both show the expired sign-in (`invalid_grant`). None of it has
-  run against Google yet.
+  should both show the expired sign-in (`invalid_grant`), and `iris draft`
+  on the OAuth account should save a draft. None of it has run against
+  Google yet.
 - Record the post-login CAPABILITY and the Drafts/Sent names for Gmail and
   iCloud (open in `plans/research/imap-libraries.md`, section 5).
 
@@ -99,23 +104,6 @@ Next:
   When no marker is found, show the whole message (never drop text we are
   not sure about).
 
-## Milestone 3: draft a reply
-
-- `iris draft reply <iris-id> [--all] [--body-file <path> | stdin]`. The body is
-  Markdown.
-- Build the message: `To` from `Reply-To` or `From` (`--all` adds the other
-  recipients as `Cc`), `Subject: Re: ...`, `In-Reply-To`, `References`, and
-  `multipart/alternative` with the Markdown as text/plain and rendered HTML.
-- Save it with APPEND to the special-use `\Drafts` mailbox (found with LIST;
-  Gmail's is `[Gmail]/Drafts`) with the `\Draft` flag.
-- iris never sends mail. The user reviews and sends the draft from a mail app.
-- `draft` is a write command: it is never under `iris ro` (see AGENTS.md,
-  "Read-only and write commands"), and its APPEND call lives outside
-  `MailReader` (in `MailWriter` and `MailWriteClient`, as for `iris read`).
-- Probably needs a new optional key for the From address and display name
-  (for example `IRIS_<NAME>_FROM`), because the username is not always the
-  address.
-
 ## Later, maybe
 
 - More `list` filters (body text, To, Cc), archive/move.
@@ -174,6 +162,10 @@ Next:
   that part is not shown and not listed (`--body text` shows it). SwiftMail
   keeps only leaf parts, not the multipart subtypes, so iris cannot tell a
   footer from the text rendition of the same body.
+- `iris draft` decodes the original as `iris show` does. When its HTML body
+  cannot be converted and it has no text part, the error gives `show`'s
+  advice (`--format raw`), which `draft` does not have, even with
+  `--no-quote`, which needs no body.
 
 ## Open questions
 

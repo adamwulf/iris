@@ -63,10 +63,11 @@ final class ReadOnlyCommandTests: XCTestCase {
         }
     }
 
-    func testReadAndUnreadAreWriteCommandsOnlyAtTheTop() {
+    func testWriteCommandsAreOnlyAtTheTop() {
         let topLevel = Iris.configuration.subcommands
-        for command in [Read.self, Unread.self] as [any ParsableCommand.Type] {
+        for command in [Read.self, Unread.self, Draft.self] as [any ParsableCommand.Type] {
             XCTAssertTrue(names(topLevel).contains(command._commandName), "\(command) is not under `iris`")
+            XCTAssertFalse(names(ReadOnly.configuration.subcommands).contains(command._commandName), "\(command) is under `iris ro`")
             XCTAssertFalse(command is any ReadOnlyCommand.Type, "\(command) changes mail but is a ReadOnlyCommand")
         }
     }
@@ -75,10 +76,13 @@ final class ReadOnlyCommandTests: XCTestCase {
         // The write commands parse at the top, but not under `ro`.
         XCTAssertTrue(try Iris.parseAsRoot(["read", "work/INBOX/42"]) is Read)
         XCTAssertTrue(try Iris.parseAsRoot(["unread", "work/INBOX/42"]) is Unread)
+        let draft = try XCTUnwrap(try Iris.parseAsRoot(["draft", "work/INBOX/42", "Thanks!"]) as? Draft)
+        XCTAssertEqual(draft.irisID, IrisID(account: "work", mailbox: "INBOX", uid: 42))
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "read", "work/INBOX/42"]))
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "unread", "work/INBOX/42"]))
-        // There is no `draft` yet; when it exists, it must still fail here.
-        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "draft"]))
+        for arguments in [["ro", "draft"], ["ro", "draft", "work/INBOX/42", "Thanks!"], ["ro", "draft", "work/INBOX/42", "-F", "-"]] {
+            XCTAssertThrowsError(try Iris.parseAsRoot(arguments), "\(arguments)")
+        }
     }
 
     func testAuthLoginIsOnlyAtTheTopLevelAndAuthStatusIsInBoth() throws {
