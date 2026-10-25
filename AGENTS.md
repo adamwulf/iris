@@ -106,7 +106,8 @@ like EXAMINE), fetches the envelope by UID to check that the message exists
 `thread` decode a message), and `saveDraft(_:)` saves the reply that `ReplyComposer`
 built (pure; it needs no fake). `saveDraft` finds the `\Drafts` mailbox in
 the merged LIST, APPENDs to its wire name, and makes the iris ID from the
-decoded name (it also puts that name back into a `draftMayBeSaved` error).
+decoded name (it also puts that name back into a `draftMayBeSaved` or
+`draftRefused` error).
 `appendDraft` calls SwiftMail's `createDraft(from:in:additionalFlags:)`,
 which adds the `\Draft` flag and `X-Uniform-Type-Identifier:
 com.apple.mail-draft`; iris adds `\Seen`
@@ -118,7 +119,11 @@ sends AUTHENTICATE XOAUTH2 to save a draft as it does to read.
 The files of `draft --attach` are read before either session: the CLI
 calls `DraftAttachment.read(path:)` for each path before it reads the
 reply, so a bad path (`draftAttachmentNotRead`, `draftAttachmentIsAFolder`)
-fails before login. It reads through SwiftMail's `Attachment(fileURL:)`,
+fails before login. Each `--attach` takes one value (`.singleValue`), so in
+`--attach a.pdf b.pdf` (or a glob that matched two files) `b.pdf` is the
+reply argument: `DraftBody.read(..., attaching:)` turns an argument that
+names a file or folder that exists into `draftBodyNamesAFile` when there are
+attachments. `DraftAttachment.read` reads through SwiftMail's `Attachment(fileURL:)`,
 so the MIME type comes from SwiftMail's table by extension (internal to
 SwiftMail; `application/octet-stream` when unknown), and iris keeps no
 copy of it. `saveReply(..., attachments:)` passes them to `ReplyComposer`,
@@ -360,12 +365,19 @@ account (`--account <name>`).
   connection during APPEND is `draftMayBeSaved` instead, because the server
   may have saved the draft: it names the Drafts mailbox to look in before
   trying again.
-- **Large attachments and APPEND:** APPEND has 30 seconds
-  (`AppendCommand.timeoutSeconds`, fixed in SwiftMail), and the clock starts
-  when the APPEND line is flushed, before the message bytes go out. So a
-  draft with a large attachment on a slow uplink can end in
-  `draftMayBeSaved`. base64 makes each file about 4/3 of its size, and the
-  server's APPENDLIMIT (`draftTooLarge`) counts the whole message.
+- **A large draft fails in three ways:** base64 makes each attached file
+  about 4/3 of its size, and every limit counts the whole message.
+  - `draftTooLarge`, only when the server announces APPENDLIMIT: SwiftMail
+    checks the size before it sends (`IMAPError.appendLimitExceeded`).
+  - `draftRefused`, when it announces none (Zoho) and answers APPEND with
+    a tagged NO or BAD (`commandFailed`). Every IMAPError on `.append`
+    that is not one of the other two cases (or `connectionFailed`) maps
+    here, so a full mailbox lands here too; `serverError`'s advice (`iris
+    check`) never fits a refused draft.
+  - `draftMayBeSaved`, on a timeout: APPEND has 30 seconds
+    (`AppendCommand.timeoutSeconds`, fixed in SwiftMail), and the clock
+    starts when the APPEND line is flushed, before the message bytes go
+    out, so a large attachment on a slow uplink can run out of time.
 - **Attachment filenames:** SwiftMail writes a filename of printable ASCII
   as `filename="..."`, and any other (non-ASCII, `"`, `\`, a control
   character) as one RFC 2231 parameter, `filename*=UTF-8''R%C3%A9sum%C3%A9.pdf`

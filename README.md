@@ -443,15 +443,24 @@ The draft is built from the original message:
 (`application/octet-stream` when iris does not know the extension). An
 empty file is attached as it is. iris reads every file before it connects,
 so a wrong path, a folder, or a file you cannot read stops iris before it
-saves anything.
+saves anything. Each `--attach` takes one path: in `--attach a.pdf b.pdf`
+(or `--attach *.pdf` that matches two files), `b.pdf` would be the reply,
+so with `--attach` a reply that is the name of a file is an error. Put
+`--attach` before each file, and give a reply that is in a file with `-F`.
 
-A large attachment can fail in two ways. The server's size limit
-(APPENDLIMIT) counts the whole draft, and base64 makes each file about a
-third larger. And iris waits at most 30 seconds for the upload and the
-server's answer (a fixed limit in SwiftMail, the IMAP library iris uses),
-so a large file on a slow connection can time out; then the server may have
-saved the draft anyway, and iris names the Drafts mailbox to look in before
-you try again.
+A large draft can fail in three ways. base64 makes each attached file about
+a third larger, and every limit counts the whole draft.
+
+- When the server announces a size limit (APPENDLIMIT), iris checks the
+  draft against it before it sends anything, and says how large the draft
+  is and what the limit is.
+- A server that announces no limit (Zoho announces none) refuses the draft
+  when it is too large, and iris shows the server's reason. A full mailbox
+  is refused the same way.
+- iris waits at most 30 seconds for the upload and the server's answer (a
+  fixed limit in SwiftMail, the IMAP library iris uses), so a large file on
+  a slow connection can time out. Then the server may have saved the draft
+  anyway, and iris names the Drafts mailbox to look in before you try again.
 
 iris saves the draft with the flags `\Seen \Draft` (as Apple Mail saves its
 own drafts, so it does not show as unread) in the mailbox that the server

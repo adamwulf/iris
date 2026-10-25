@@ -22,7 +22,10 @@ describes them.
   in the thread, and that the server reports its UID (UIDPLUS; Zoho
   advertises it). With `--attach`, check that Apple Mail and Gmail's web
   view show the files with their names, also a non-ASCII name (RFC 2231
-  `filename*=`).
+  `filename*=`). Also attach a file larger than the server takes, on Zoho
+  and on Gmail: record whether each announces APPENDLIMIT (`draftTooLarge`)
+  or answers with a tagged NO (`draftRefused`, and the reason text it
+  sends), and how long the upload takes against the 30 second limit.
 - Run `iris list --search` and `iris list --to` once per provider (Gmail,
   iCloud, Zoho). IMAP TEXT and TO have not been sent to a real server
   yet: check that `--search` finds a word that is only in the body, and
