@@ -256,6 +256,43 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertEqual(QuotedHistory.trim("FYI\n\nBegin forwarded message:\n\nFrom: Jane\n\nLunch on Tuesday?"), .forward)
     }
 
+    func testAForwardWithTheSignatureAboveItIsNotCut() {
+        XCTAssertEqual(QuotedHistory.trim("""
+        FYI
+        --\u{20}
+        Adam
+
+        ---------- Forwarded message ---------
+        From: Jane Doe <jane@example.com>
+        Date: Fri, Oct 24, 2026 at 9:41 AM
+        Subject: Lunch
+
+        Lunch on Tuesday?
+        """), .forward)
+    }
+
+    func testAnOutlookReplyInAThreadThatStartedWithAForwardIsCut() {
+        // Outlook does not quote the history, so the forward marker is in it, unquoted.
+        XCTAssertEqual(QuotedHistory.trim("""
+        Sounds good.
+
+        ________________________________
+        From: Jane Doe <jane@example.com>
+        Sent: Friday, October 24, 2026 9:41 AM
+        To: Adam Wulf <adam@example.com>
+        Subject: Fwd: Lunch
+
+        FYI
+
+        ---------- Forwarded message ---------
+        From: Bob <bob@example.com>
+        Date: Thu, Oct 23, 2026 at 5:00 PM
+        Subject: Lunch
+
+        Who is in?
+        """), .trimmed("Sounds good."))
+    }
+
     func testAReplyThatQuotesAForwardIsCut() {
         XCTAssertEqual(QuotedHistory.trim("""
         Thanks!
@@ -359,12 +396,48 @@ final class QuotedHistoryTests: XCTestCase {
         XCTAssertTrue(result.trimmed)
     }
 
-    func testGmailQuoteContainerAlone() async throws {
+    func testGmailMarksDoNotDependOnTheLanguage() async throws {
+        // The text rules know only English; the classes find this quote.
         let result = try await trimmed("""
-        <div>Sounds good.</div><div class="gmail_quote_container"><div>On Fri, Jane wrote:</div><blockquote>Lunch on Tuesday?</blockquote></div>
+        <div dir="ltr">Klingt gut.</div><br><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">Am Fr., 24. Okt. 2026 um 09:41 Uhr schrieb Jane Doe &lt;jane@example.com&gt;:<br></div><blockquote class="gmail_quote">Mittagessen am Dienstag?</blockquote></div>
+        """)
+        XCTAssertEqual(result.text, "Klingt gut.")
+        XCTAssertTrue(result.trimmed)
+    }
+
+    func testGmailAnswersBetweenTheQuotedLinesAreKept() async throws {
+        // Gmail splits the blockquote around each answer, inside div.gmail_quote.
+        let html = """
+        <div>Answers inline below.</div><div class="gmail_quote gmail_quote_container"><div class="gmail_attr">On Fri, Oct 24, 2026 at 9:41 AM Jane Doe &lt;jane@example.com&gt; wrote:<br></div><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote><div>Yes, Tuesday works.</div><blockquote class="gmail_quote">Same place?</blockquote><div>No, the new one on Main St.</div></div>
+        """
+        let result = try await trimmed(html)
+        XCTAssertFalse(result.trimmed)
+        let full = try await whole(html)
+        XCTAssertEqual(result.text, full)
+
+        // A quoted line left without an answer at the end goes.
+        let unanswered = try await trimmed("""
+        <div>Answers inline below.</div><div class="gmail_quote"><div class="gmail_attr">On Fri, Jane wrote:<br></div><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote><div>Yes, Tuesday works.</div><blockquote class="gmail_quote">See you!</blockquote></div>
+        """)
+        XCTAssertTrue(unanswered.trimmed)
+        XCTAssertTrue(unanswered.text.hasSuffix("Yes, Tuesday works."), unanswered.text)
+        XCTAssertTrue(unanswered.text.contains("> Lunch on Tuesday?"), unanswered.text)
+    }
+
+    func testAGoogleGroupsFooterIsCutWithTheQuoteAboveIt() async throws {
+        let result = try await trimmed("""
+        <div dir="ltr">Sounds good.</div><br><div class="gmail_quote"><div class="gmail_attr">On Fri, Jane wrote:<br></div><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote></div><p></p>-- <br />You received this message because you are subscribed to the Google Groups "Lunch" group.<br />
         """)
         XCTAssertEqual(result.text, "Sounds good.")
         XCTAssertTrue(result.trimmed)
+    }
+
+    func testAnAttributionLikeLineIsKeptWhenOnlyASignatureWasRemoved() async throws {
+        let result = try await trimmed("""
+        <div>Notes from the call.</div><div>On Monday, Bob wrote:</div><div class="gmail_signature">Adam</div>
+        """)
+        XCTAssertEqual(result.text, "Notes from the call.\n\nOn Monday, Bob wrote:")
+        XCTAssertTrue(result.trimmed, "the signature is gone")
     }
 
     func testAnOutlookHeaderInsideAnotherAppsQuoteKeepsTheTextAfterTheQuote() async throws {
@@ -402,13 +475,14 @@ final class QuotedHistoryTests: XCTestCase {
 
     func testAppleMailForwardIsKept() async throws {
         let html = """
-        <html><body>FYI<div><br><div><br><blockquote type="cite"><div>Begin forwarded message:</div><br class="Apple-interchange-newline"><div style="margin-top: 0px;"><span><b>From: </b></span><span>Jane Doe &lt;jane@example.com&gt;</span></div><div><span><b>Subject: </b></span><span><b>Lunch</b></span></div><div><span><b>Date: </b></span><span>October 24, 2026 at 9:41:00 AM CDT</span></div><div><span><b>To: </b></span><span>Adam &lt;adam@example.com&gt;</span></div><br><div><div>Lunch on Tuesday?</div></div></blockquote></div><br></div></body></html>
+        <html><body>FYI<div><br><div><br><blockquote type="cite"><div>Begin forwarded message:</div><br class="Apple-interchange-newline"><div style="margin-top: 0px;"><span><b>From: </b></span><span>Jane Doe &lt;jane@example.com&gt;</span></div><div><span><b>Subject: </b></span><span><b>Lunch</b></span></div><div><span><b>Date: </b></span><span>October 24, 2026 at 9:41:00 AM CDT</span></div><div><span><b>To: </b></span><span>Adam &lt;adam@example.com&gt;</span></div><br><div><div>Lunch on Tuesday?</div><div><br><blockquote type="cite"><div>On Oct 23, 2026, at 5:00 PM, Bob wrote:</div><div>Who is in?</div></blockquote></div></div></blockquote></div><br></div></body></html>
         """
         let result = try await trimmed(html)
         XCTAssertFalse(result.trimmed)
         let full = try await whole(html)
         XCTAssertEqual(result.text, full)
         XCTAssertTrue(result.text.contains("Lunch on Tuesday?"))
+        XCTAssertTrue(result.text.contains("Who is in?"), "the forwarded message's own quote is part of the forward")
     }
 
     func testThunderbirdReplyAboveTheQuote() async throws {
@@ -494,14 +568,14 @@ final class QuotedHistoryTests: XCTestCase {
         // Apple Mail splits the body around an attachment.
         let emptied = try await trimmed(
             #"<div>Sounds good.</div><div class="gmail_signature">Adam</div>"#,
-            #"<div class="gmail_quote">On Fri, Jane wrote:<blockquote class="gmail_quote">Lunch?</blockquote></div>"#
+            #"<div class="gmail_quote"><div class="gmail_attr">On Fri, Jane wrote:</div><blockquote class="gmail_quote">Lunch?</blockquote></div>"#
         )
         XCTAssertEqual(emptied.text, "Sounds good.", "the last part is all quote, so the one before loses its signature too")
         XCTAssertTrue(emptied.trimmed)
 
         let kept = try await trimmed(
             #"<div>Sounds good.</div><div class="gmail_signature">Adam</div>"#,
-            #"<div>One more thing.</div><div class="gmail_quote">On Fri, Jane wrote:<blockquote class="gmail_quote">Lunch?</blockquote></div>"#
+            #"<div>One more thing.</div><div class="gmail_quote"><div class="gmail_attr">On Fri, Jane wrote:</div><blockquote class="gmail_quote">Lunch?</blockquote></div>"#
         )
         XCTAssertEqual(kept.text, "Sounds good.\n\nAdam\n\nOne more thing.", "the last part has text, so the part before is not touched")
         XCTAssertTrue(kept.trimmed)

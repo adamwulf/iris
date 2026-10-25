@@ -335,19 +335,19 @@ public enum MessageDecoder {
         guard trimming else {
             return (markdown(of: documents), false)
         }
-        let removedQuote = QuotedHistory.removeHistory(fromHTMLParts: documents)
+        let removal = QuotedHistory.removeHistory(fromHTMLParts: documents)
         let converted = markdown(of: documents)
-        let trim = QuotedHistory.trim(converted, fromHTML: true, afterRemovedQuote: removedQuote)
+        let trim = QuotedHistory.trim(converted, fromHTML: true, afterRemovedQuote: removal.quote)
         if case .trimmed(let kept) = trim {
             return (kept, true)
         }
-        if removedQuote && (converted.isEmpty || trim != .noMarker) {
+        if removal.any && (converted.isEmpty || trim != .noMarker) {
             // The body was all history, or it is a forward, so it is shown
             // whole. The elements are gone from these documents, so the
             // parts are parsed again.
             return (markdown(of: try await htmlDocuments(htmls, hasTextPart: hasTextPart, parseHTML: parseHTML)), false)
         }
-        return (converted, removedQuote)
+        return (converted, removal.any)
     }
 
     /// Each HTML part parsed.

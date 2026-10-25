@@ -38,8 +38,10 @@ enum QuotedHistory {
     enum TextTrim: Equatable {
         /// The text has no marker, so nothing is cut.
         case noMarker
-        /// The text has an unquoted forward marker (`isForwardMarker(_:)`),
-        /// so nothing is cut.
+        /// The text has an unquoted forward marker (`isForwardMarker(_:)`)
+        /// above its quoted history, so nothing is cut. A marker inside an
+        /// Outlook reply's history (which Outlook does not quote) is an
+        /// earlier message's, and does not count.
         case forward
         /// The cut would leave nothing, so nothing is cut.
         case allHistory
@@ -72,17 +74,19 @@ enum QuotedHistory {
     ///     `blockquote`).
     static func trim(_ text: String, fromHTML: Bool = false, afterRemovedQuote: Bool = false) -> TextTrim {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        guard !lines.contains(where: { !isQuoted($0) && isForwardMarker($0) }) else { return .forward }
-
         let signature = lines.firstIndex { line in
             line == "-- " || (fromHTML && line.wholeMatch(of: /-- */) != nil)
         }
-        let starts = [
-            signature,
+        let history = [
             trailingAttributionStart(in: lines, before: signature ?? lines.count, allowingNoQuote: afterRemovedQuote),
             outlookHeaderStart(in: lines),
-        ].compactMap { $0 }
-        guard let cut = starts.min() else { return .noMarker }
+        ].compactMap { $0 }.min()
+
+        // A forward marker above the history is the start of a forward. One
+        // in the history is an earlier message's: Outlook does not quote it.
+        let forward = lines[..<(history ?? lines.count)].contains { !isQuoted($0) && isForwardMarker($0) }
+        guard !forward else { return .forward }
+        guard let cut = [signature, history].compactMap({ $0 }).min() else { return .noMarker }
         let kept = BodyCleanup.clean(lines[..<cut].joined(separator: "\n"))
         return kept.isEmpty ? .allHistory : .trimmed(kept)
     }
@@ -177,39 +181,57 @@ enum QuotedHistory {
 
     // MARK: - HTML
 
+    /// What `removeHistory(fromHTMLParts:)` removed.
+    struct Removal: Equatable {
+        /// A quote, its attribution, or Outlook's header and what follows it.
+        var quote = false
+        var signature = false
+
+        var any: Bool { quote || signature }
+
+        static func + (lhs: Removal, rhs: Removal) -> Removal {
+            Removal(quote: lhs.quote || rhs.quote, signature: lhs.signature || rhs.signature)
+        }
+    }
+
     /// Removes the quoted history and signature at the end of `documents`,
     /// the HTML parts of one body in order, before they become Markdown. It
     /// starts with the last part, and moves to the part before only when
-    /// nothing is left of the later one. Returns whether anything was removed.
+    /// nothing is left of the later one.
     ///
     /// These elements are removed, each only when nothing but other such
     /// elements and blank space follows it:
-    /// - Gmail: class `gmail_quote` (the attribution and the quote) and
-    ///   `gmail_signature` or `gmail_signature_prefix` (the `-- ` line).
+    /// - Gmail: `blockquote class="gmail_quote"`, its attribution (class
+    ///   `gmail_attr`), and the signature (class `gmail_signature` or
+    ///   `gmail_signature_prefix`, the `-- ` line). The `div.gmail_quote`
+    ///   around the attribution and the quote is searched like any other
+    ///   element, because Gmail puts answers written between the quoted
+    ///   lines in it.
     /// - Apple Mail and Thunderbird: `blockquote type="cite"` (Apple Mail puts
     ///   the attribution in one too), class `moz-cite-prefix` (Thunderbird's
     ///   attribution), and class `moz-signature`.
     /// - New Outlook: id `mail-editor-reference-message-container`.
     ///
-    /// A quote that starts a forward (`isForwardMarker(_:)`) counts as
-    /// content: it is kept, and so is everything before it.
+    /// A quote or `div.gmail_quote` that starts a forward
+    /// (`isForwardMarker(_:)`) counts as content: it is kept whole, and so is
+    /// everything before it.
     ///
     /// Outlook's reply header, `div#divRplyFwdMsg`, is removed with everything
     /// after it, and with the `<hr>` just above it: Outlook does not put the
     /// message it quotes in a blockquote. A header inside another app's
     /// quote is part of that quote, so it is not looked for there.
-    static func removeHistory(fromHTMLParts documents: [HTMLDocument]) -> Bool {
-        var removed = false
+    static func removeHistory(fromHTMLParts documents: [HTMLDocument]) -> Removal {
+        var removal = Removal()
         for document in documents.reversed() {
             let root = contentRoot(of: document)
-            let removedOutlookHistory = removeOutlookHistory(in: root)
+            removal.quote = removeOutlookHistory(in: root) || removal.quote
             let tail = removeTrailingHistory(in: root, depth: 0)
-            removed = removed || removedOutlookHistory || tail.removed
+            removal = removal + tail.removal
             if tail.contentLeft {
                 break
             }
         }
-        return removed
+        return removal
     }
 
     /// The element that `HTMLDocument.markdown()` converts: the `<html>`
@@ -223,7 +245,10 @@ enum QuotedHistory {
         return html
     }
 
-    static let quoteClasses: Set<String> = ["gmail_quote", "gmail_quote_container", "moz-cite-prefix"]
+    /// The classes of an attribution, which is removed like a quote.
+    static let attributionClasses: Set<String> = ["gmail_attr", "moz-cite-prefix"]
+    /// The classes of Gmail's element around the attribution and the quote.
+    static let quoteContainerClasses: Set<String> = ["gmail_quote", "gmail_quote_container"]
     static let signatureClasses: Set<String> = ["gmail_signature", "gmail_signature_prefix", "moz-signature"]
     static let quoteIDs: Set<String> = ["mail-editor-reference-message-container"]
     static let outlookHeaderID = "divRplyFwdMsg"
@@ -237,14 +262,14 @@ enum QuotedHistory {
     static let maxDepth = 100
 
     /// Removes the history elements at the end of `element`, from its last
-    /// child back to the first child with content. Returns whether it removed
-    /// any, and whether content is left.
-    static func removeTrailingHistory(in element: DOMElement, depth: Int) -> (removed: Bool, contentLeft: Bool) {
-        var removed = false
+    /// child back to the first child with content. Returns what it removed,
+    /// and whether content is left.
+    static func removeTrailingHistory(in element: DOMElement, depth: Int) -> (removal: Removal, contentLeft: Bool) {
+        var removal = Removal()
         for index in element.children.indices.reversed() {
             guard let child = element.children[index] as? DOMElement else {
                 if hasContent(element.children[index]) {
-                    return (removed, true)
+                    return (removal, true)
                 }
                 continue
             }
@@ -252,29 +277,34 @@ enum QuotedHistory {
                 continue
             }
             if child.name == "img" {
-                return (removed, true)
+                return (removal, true)
             }
-            if isSignature(child) || isQuote(child) {
-                if isQuote(child) && startsForward(child) {
-                    return (removed, true)
-                }
+            if (isQuote(child) || isQuoteContainer(child)) && startsForward(child) {
+                return (removal, true)
+            }
+            if isSignature(child) {
                 element.children.remove(at: index)
-                removed = true
+                removal.signature = true
+                continue
+            }
+            if isQuote(child) {
+                element.children.remove(at: index)
+                removal.quote = true
                 continue
             }
             if depth >= maxDepth {
                 if hasContent(child) {
-                    return (removed, true)
+                    return (removal, true)
                 }
                 continue
             }
             let inner = removeTrailingHistory(in: child, depth: depth + 1)
-            removed = removed || inner.removed
+            removal = removal + inner.removal
             if inner.contentLeft {
-                return (removed, true)
+                return (removal, true)
             }
         }
-        return (removed, false)
+        return (removal, false)
     }
 
     /// Whether `element` is a signature that `removeHistory(fromHTMLParts:)` removes.
@@ -285,9 +315,18 @@ enum QuotedHistory {
     /// Whether `element` is a quote (or its attribution) that
     /// `removeHistory(fromHTMLParts:)` removes, unless it starts a forward.
     static func isQuote(_ element: DOMElement) -> Bool {
-        !classes(of: element).isDisjoint(with: quoteClasses)
-            || (element.name == "blockquote" && attribute("type", of: element)?.lowercased() == "cite")
+        let classes = classes(of: element)
+        let isBlockquote = element.name == "blockquote"
+        return !classes.isDisjoint(with: attributionClasses)
+            || (isBlockquote && classes.contains("gmail_quote"))
+            || (isBlockquote && attribute("type", of: element)?.lowercased() == "cite")
             || attribute("id", of: element).map(quoteIDs.contains) == true
+    }
+
+    /// Whether `element` is Gmail's element around an attribution and a
+    /// quote, which is searched, not removed whole.
+    static func isQuoteContainer(_ element: DOMElement) -> Bool {
+        element.name != "blockquote" && !classes(of: element).isDisjoint(with: quoteContainerClasses)
     }
 
     static func classes(of element: DOMElement) -> Set<String> {
@@ -304,9 +343,11 @@ enum QuotedHistory {
 
     /// Removes Outlook's reply header, everything after it in the document,
     /// and the `<hr>` just above it. Returns whether there was one outside
-    /// the quotes (`isQuote(_:)`).
+    /// other apps' quotes (`isQuote(_:)`, `isQuoteContainer(_:)`).
     static func removeOutlookHistory(in root: DOMElement) -> Bool {
-        guard let path = path(in: root, to: { attribute("id", of: $0) == outlookHeaderID }, skipping: isQuote),
+        let isHeader = { (element: DOMElement) in attribute("id", of: element) == outlookHeaderID }
+        let isOtherQuote = { (element: DOMElement) in isQuote(element) || isQuoteContainer(element) }
+        guard let path = path(in: root, to: isHeader, skipping: isOtherQuote),
               let header = path.last
         else { return false }
         for (level, step) in path.enumerated() {
