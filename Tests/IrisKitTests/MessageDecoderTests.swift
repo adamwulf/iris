@@ -8,6 +8,11 @@ final class MessageDecoderTests: XCTestCase {
         Data(text.replacingOccurrences(of: "\n", with: "\r\n").utf8)
     }
 
+    /// The attachment ID of the part with these section numbers.
+    private func id(_ components: Int...) -> AttachmentID {
+        AttachmentID(components: components)
+    }
+
     private let alternative = """
     From: Jane Doe <jane@example.com>
     To: adam@example.com
@@ -350,7 +355,9 @@ final class MessageDecoderTests: XCTestCase {
             references: ["<root@example.com>", "<first@example.com>"],
             body: "Attached.",
             bodySource: .text,
-            attachments: [MessageAttachment(filename: "résumé.pdf", contentType: "application/pdf", size: 11, inline: false)]
+            attachments: [
+                MessageAttachment(attachmentID: id(2), filename: "résumé.pdf", contentType: "application/pdf", size: 11, inline: false),
+            ]
         ))
         XCTAssertEqual(document.appleMailURL, "message://%3Creply-2@example.com%3E")
     }
@@ -398,7 +405,7 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertNil(document.bodySource)
         XCTAssertEqual(
             document.attachments,
-            [MessageAttachment(filename: "scan.png", contentType: "image/png", size: 8, inline: false)]
+            [MessageAttachment(attachmentID: id(1), filename: "scan.png", contentType: "image/png", size: 8, inline: false)]
         )
     }
 
@@ -480,7 +487,7 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(document.bodySource, .text)
         XCTAssertEqual(
             document.attachments,
-            [MessageAttachment(filename: "contract.pdf", contentType: "application/pdf", size: 8, inline: true)]
+            [MessageAttachment(attachmentID: id(2), filename: "contract.pdf", contentType: "application/pdf", size: 8, inline: true)]
         )
     }
 
@@ -499,7 +506,7 @@ final class MessageDecoderTests: XCTestCase {
 
         XCTAssertEqual(
             document.attachments,
-            [MessageAttachment(filename: "IMG_0042.jpeg", contentType: "image/jpeg", size: 10, inline: true)]
+            [MessageAttachment(attachmentID: id(2, 2), filename: "IMG_0042.jpeg", contentType: "image/jpeg", size: 10, inline: true)]
         )
     }
 
@@ -527,9 +534,65 @@ final class MessageDecoderTests: XCTestCase {
 
         XCTAssertEqual(document.body, "The message could not be delivered.")
         XCTAssertEqual(document.attachments, [
-            MessageAttachment(filename: nil, contentType: "message/delivery-status", size: 14, inline: false),
-            MessageAttachment(filename: nil, contentType: "message/rfc822", size: eml(returned).count, inline: false),
+            MessageAttachment(attachmentID: id(2), filename: nil, contentType: "message/delivery-status", size: 14, inline: false),
+            MessageAttachment(attachmentID: id(3), filename: nil, contentType: "message/rfc822", size: eml(returned).count, inline: false),
         ])
+    }
+
+    /// The IDs are the sections that `BODY[<section>]` fetches (RFC 3501,
+    /// section 6.4.5): a forwarded message is one part, so the part after it
+    /// is 3, not a number inside the forwarded message.
+    func testAttachmentIDsAreIMAPSectionsAndAForwardedMessageIsOnePart() async throws {
+        let document = try await MessageDecoder.decode(eml("""
+        Subject: Fwd: Plans
+        Content-Type: multipart/mixed; boundary="m"
+
+        --m
+        Content-Type: text/plain
+
+        See below.
+        --m
+        Content-Type: message/rfc822
+
+        From: jane@example.com
+        Subject: Plans
+        Content-Type: multipart/mixed; boundary="inner"
+
+        --inner
+        Content-Type: text/plain
+
+        The plans.
+        --inner
+        Content-Type: application/pdf; name="plans.pdf"
+        Content-Transfer-Encoding: base64
+
+        SGVsbG8=
+        --inner--
+        --m
+        Content-Type: application/pdf; name="notes.pdf"
+        Content-Disposition: attachment; filename="notes.pdf"
+        Content-Transfer-Encoding: base64
+
+        SGVsbG8=
+        --m--
+        """))
+
+        XCTAssertEqual(document.attachments.map(\.attachmentID), [id(2), id(3)])
+        XCTAssertEqual(document.attachments.map(\.contentType), ["message/rfc822", "application/pdf"])
+    }
+
+    func testTheAttachmentIDOfAMessageOfOnePartIs1() async throws {
+        let document = try await MessageDecoder.decode(eml("""
+        Subject: Scan
+        Content-Type: application/pdf; name="scan.pdf"
+        Content-Disposition: attachment; filename="scan.pdf"
+        Content-Transfer-Encoding: base64
+
+        SGVsbG8=
+        """))
+
+        XCTAssertEqual(document.attachments.map(\.attachmentID), [id(1)])
+        XCTAssertEqual(document.attachments.map(\.filename), ["scan.pdf"])
     }
 
     func testAnInlineTextAttachmentIsNotPartOfTheBody() async throws {
@@ -552,7 +615,7 @@ final class MessageDecoderTests: XCTestCase {
         XCTAssertEqual(document.body, "My notes are attached.")
         XCTAssertEqual(
             document.attachments,
-            [MessageAttachment(filename: "notes.txt", contentType: "text/plain", size: 13, inline: true)]
+            [MessageAttachment(attachmentID: id(2), filename: "notes.txt", contentType: "text/plain", size: 13, inline: true)]
         )
     }
 
@@ -614,7 +677,7 @@ final class MessageDecoderTests: XCTestCase {
 
         XCTAssertEqual(document.body, "Jane added a comment.")
         XCTAssertEqual(document.attachments, [
-            MessageAttachment(filename: "doc.pdf", contentType: "application/pdf", size: 5, inline: false),
+            MessageAttachment(attachmentID: id(2), filename: "doc.pdf", contentType: "application/pdf", size: 5, inline: false),
         ])
     }
 
@@ -726,8 +789,8 @@ final class MessageDecoderTests: XCTestCase {
 
         XCTAssertEqual(document.body, "Lunch on Tuesday.")
         XCTAssertEqual(document.attachments, [
-            MessageAttachment(filename: nil, contentType: "text/calendar", size: eml(invite).count, inline: false),
-            MessageAttachment(filename: "invite.ics", contentType: "application/ics", size: 5, inline: false),
+            MessageAttachment(attachmentID: id(1, 3), filename: nil, contentType: "text/calendar", size: eml(invite).count, inline: false),
+            MessageAttachment(attachmentID: id(2), filename: "invite.ics", contentType: "application/ics", size: 5, inline: false),
         ])
     }
 
@@ -755,8 +818,10 @@ final class MessageDecoderTests: XCTestCase {
 
         XCTAssertEqual(document.body, "The message could not be delivered.")
         XCTAssertEqual(document.attachments, [
-            MessageAttachment(filename: nil, contentType: "message/delivery-status", size: 14, inline: false),
-            MessageAttachment(filename: nil, contentType: "text/rfc822-headers", size: eml(returnedHeaders).count, inline: false),
+            MessageAttachment(attachmentID: id(2), filename: nil, contentType: "message/delivery-status", size: 14, inline: false),
+            MessageAttachment(
+                attachmentID: id(3), filename: nil, contentType: "text/rfc822-headers", size: eml(returnedHeaders).count, inline: false
+            ),
         ])
     }
 

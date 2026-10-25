@@ -19,9 +19,18 @@ final class MessageFormatterTests: XCTestCase {
         body: "Can we meet **Tuesday**?\n\n> Quoted line",
         bodySource: .html,
         attachments: [
-            MessageAttachment(filename: "résumé.pdf", contentType: "application/pdf", size: 120_000, inline: false),
-            MessageAttachment(filename: nil, contentType: "text/calendar", size: 512, inline: false),
-            MessageAttachment(filename: "photo.jpg", contentType: "image/jpeg", size: 1_200_000, inline: true),
+            MessageAttachment(
+                attachmentID: AttachmentID(components: [2]),
+                filename: "résumé.pdf", contentType: "application/pdf", size: 120_000, inline: false
+            ),
+            MessageAttachment(
+                attachmentID: AttachmentID(components: [3]),
+                filename: nil, contentType: "text/calendar", size: 512, inline: false
+            ),
+            MessageAttachment(
+                attachmentID: AttachmentID(components: [4, 2]),
+                filename: "photo.jpg", contentType: "image/jpeg", size: 1_200_000, inline: true
+            ),
         ]
     )
 
@@ -45,9 +54,9 @@ final class MessageFormatterTests: XCTestCase {
         ---
 
         **Attachments:**
-        - résumé.pdf (application/pdf, 120 KB)
-        - (no filename) (text/calendar, 512 bytes)
-        - photo.jpg (image/jpeg, 1.2 MB, inline)
+        - `2` résumé.pdf (application/pdf, 120 KB)
+        - `3` (no filename) (text/calendar, 512 bytes)
+        - `4.2` photo.jpg (image/jpeg, 1.2 MB, inline)
         """)
     }
 
@@ -126,6 +135,39 @@ final class MessageFormatterTests: XCTestCase {
         var expected = try await MessageDecoder.decode(latin1Message)
         expected.irisID = irisID
         XCTAssertEqual(document, expected)
+    }
+
+    /// A message with a PDF attached at section 2.
+    private let withAttachment = Data("""
+    Subject: Report\r
+    Message-ID: <report@example.com>\r
+    Content-Type: multipart/mixed; boundary="m"\r
+    \r
+    --m\r
+    Content-Type: text/plain\r
+    \r
+    The report is attached.\r
+    --m\r
+    Content-Type: application/pdf; name="report.pdf"\r
+    Content-Disposition: attachment; filename="report.pdf"\r
+    Content-Transfer-Encoding: base64\r
+    \r
+    SGVsbG8=\r
+    --m--\r
+
+    """.utf8)
+
+    func testRenderShowsTheAttachmentIDInMarkdownAndJSON() async throws {
+        let markdown = try await MessageFormatter.render(rawMessage: withAttachment, irisID: irisID, format: .markdown)
+        XCTAssertTrue(
+            String(decoding: markdown, as: UTF8.self).contains("- `2` report.pdf (application/pdf, 5 bytes)\n"),
+            String(decoding: markdown, as: UTF8.self)
+        )
+
+        let json = try await MessageFormatter.render(rawMessage: withAttachment, irisID: irisID, format: .json)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+        let attachments = try XCTUnwrap(object["attachments"] as? [[String: Any]])
+        XCTAssertEqual(attachments.compactMap { $0["attachmentID"] as? String }, ["2"])
     }
 
     func testRenderPassesTheBodyPreference() async throws {
@@ -218,6 +260,22 @@ final class MessageFormatterTests: XCTestCase {
         }
         let array = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [NSDictionary])
         XCTAssertEqual(objects, array, "the objects of --format json, in the same order")
+    }
+
+    func testRenderThreadShowsTheAttachmentIDsInEveryFormat() async throws {
+        let messages = [thread[0], ThreadMessage(irisID: irisID, rawMessage: .success(withAttachment))]
+
+        let markdown = String(decoding: try await MessageFormatter.render(thread: messages, format: .markdown), as: UTF8.self)
+        XCTAssertTrue(markdown.contains("- `2` report.pdf (application/pdf, 5 bytes)\n"), markdown)
+
+        let json = try await MessageFormatter.render(thread: messages, format: .json)
+        let array = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [[String: Any]])
+        XCTAssertEqual(array.map { ($0["attachments"] as? [[String: Any]])?.compactMap { $0["attachmentID"] as? String } }, [[], ["2"]])
+
+        let jsonl = String(decoding: try await MessageFormatter.render(thread: messages, format: .jsonl), as: UTF8.self)
+        let lines = jsonl.split(separator: "\n")
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines[1].contains(#""attachments":[{"attachmentID":"2","#), String(lines[1]))
     }
 
     func testRenderThreadIDsIsOneIrisIDPerLineAsListWritesThem() throws {
@@ -394,17 +452,20 @@ final class MessageFormatterTests: XCTestCase {
           "appleMailURL" : "message://%3Creply-2@example.com%3E",
           "attachments" : [
             {
+              "attachmentID" : "2",
               "contentType" : "application/pdf",
               "filename" : "résumé.pdf",
               "inline" : false,
               "size" : 120000
             },
             {
+              "attachmentID" : "3",
               "contentType" : "text/calendar",
               "inline" : false,
               "size" : 512
             },
             {
+              "attachmentID" : "4.2",
               "contentType" : "image/jpeg",
               "filename" : "photo.jpg",
               "inline" : true,

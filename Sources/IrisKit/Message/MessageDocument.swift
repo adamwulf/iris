@@ -66,6 +66,8 @@ public struct MessageDocument: Sendable, Equatable, Encodable {
 /// One part of the message that is not the body, described without its
 /// bytes: a file attachment, or an inline part that a terminal cannot show.
 public struct MessageAttachment: Sendable, Equatable, Encodable {
+    /// The part's MIME section number, which `iris download` takes to save the part.
+    public let attachmentID: AttachmentID
     /// The decoded filename. `nil` when the part has none.
     public let filename: String?
     /// The MIME type in lowercase, without parameters, for example `application/pdf`.
@@ -78,7 +80,8 @@ public struct MessageAttachment: Sendable, Equatable, Encodable {
     /// `Content-Disposition`, such as the returned message in a bounce.
     public let inline: Bool
 
-    public init(filename: String?, contentType: String, size: Int, inline: Bool) {
+    public init(attachmentID: AttachmentID, filename: String?, contentType: String, size: Int, inline: Bool) {
+        self.attachmentID = attachmentID
         self.filename = filename
         self.contentType = contentType
         self.size = size

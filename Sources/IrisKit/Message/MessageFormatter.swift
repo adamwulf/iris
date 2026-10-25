@@ -206,8 +206,8 @@ public enum MessageFormatter {
     /// The message as Markdown: a subject heading, the From/To/Cc/Date lines,
     /// the iris ID line when `irisID` is set, and the Apple Mail line when
     /// `appleMailURL` is set (each but the last ends in a hard break), the
-    /// body, and the attachments and inline parts (only when there are any).
-    /// It has no trailing newline.
+    /// body, and the attachments and inline parts (only when there are any),
+    /// each with its attachment ID first. It has no trailing newline.
     ///
     /// - Parameter timeZone: The zone for the date line. Tests pass a fixed zone.
     public static func markdown(_ document: MessageDocument, timeZone: TimeZone = .current) -> String {
@@ -243,7 +243,9 @@ public enum MessageFormatter {
                 if attachment.inline {
                     details.append("inline")
                 }
-                return "- \(attachment.filename ?? "(no filename)") (\(details.joined(separator: ", ")))"
+                // The attachment ID first, in code like the iris ID, so it is easy to copy.
+                return "- `\(attachment.attachmentID)` \(attachment.filename ?? "(no filename)") "
+                    + "(\(details.joined(separator: ", ")))"
             }
         }
         return lines.joined(separator: "\n")

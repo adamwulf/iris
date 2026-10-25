@@ -57,6 +57,12 @@ public enum MessageDecoder {
     /// as the returned `message/rfc822` of a bounce, so iris does not use it here.
     /// The only other parts left out are other renditions of the body, such as
     /// Gmail's AMP HTML (see `isOtherRendition(_:bodyParents:)`).
+    ///
+    /// Each attachment ID is the part's section. EMLParser numbers the parts
+    /// as IMAP does (RFC 3501, section 6.4.5): a multipart's children are
+    /// `<parent>.1`, `<parent>.2`, and so on, a body of one part is `1`, and a
+    /// message/rfc822 part is one part, not opened. So each ID is a section
+    /// that `BODY[<section>]` fetches, which `iris download` uses.
     static func attachments(of message: Message) -> [MessageAttachment] {
         let bodySections = Set(bodyParts(of: message).map(\.section))
         let bodyParents = Set(bodySections.map(parentSection(of:)))
@@ -64,6 +70,7 @@ public enum MessageDecoder {
             !bodySections.contains(part.section) && !isOtherRendition(part, bodyParents: bodyParents)
         }.map { part in
             MessageAttachment(
+                attachmentID: AttachmentID(components: part.section.components),
                 filename: part.filename.flatMap { $0.isEmpty ? nil : $0 },
                 contentType: mimeType(of: part.contentType),
                 size: part.decodedData()?.count ?? 0,
