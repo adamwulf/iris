@@ -23,9 +23,10 @@ final class SwiftMailClientTests: XCTestCase {
         SwiftMailClient.irisError(for: error, command: command, account: account)
     }
 
-    /// The mapping for the Google account, during AUTHENTICATE with the access token `ya29.access`.
-    private func googleError(_ error: any Error, _ command: SwiftMailClient.Command = .authenticate) -> IrisError {
-        SwiftMailClient.irisError(for: error, command: command, account: googleAccount, accessToken: "ya29.access")
+    /// The mapping for the Google account during AUTHENTICATE, which sent the access token `ya29.access`.
+    /// Only AUTHENTICATE passes the access token, as in `SwiftMailClient.login()`.
+    private func googleError(_ error: any Error) -> IrisError {
+        SwiftMailClient.irisError(for: error, command: .authenticate, account: googleAccount, accessToken: "ya29.access")
     }
 
     // MARK: - Transport security
@@ -216,19 +217,36 @@ final class SwiftMailClientTests: XCTestCase {
         )
     }
 
-    func testGoogleErrorsNeverShowTheAccessTokenRefreshTokenOrClientSecret() {
+    func testAuthenticateErrorsNeverShowTheAccessTokenRefreshTokenOrClientSecret() {
         let echo = "user=me@gmail.com auth=Bearer ya29.access client-secret 1//refresh-token"
         let errors = [
             googleError(IMAPError.authFailed(echo)),
             googleError(IMAPError.connectionFailed(echo)),
             googleError(IMAPError.commandFailed(echo)),
-            googleError(IMAPError.connectionFailed(echo), .list),
-            googleError(IMAPError.commandFailed(echo), .search),
         ]
         for error in errors {
             let message = error.errorDescription ?? ""
             XCTAssertTrue(message.contains("auth=Bearer <redacted> <redacted> <redacted>"), message)
             for secret in ["ya29.access", "client-secret", "1//refresh-token"] {
+                XCTAssertFalse(message.contains(secret), "\(secret) in \(message)")
+            }
+        }
+    }
+
+    func testErrorsAfterAuthenticateNeverShowTheRefreshTokenOrClientSecret() {
+        // After AUTHENTICATE, iris passes no access token, as in production.
+        let echo = "client-secret 1//refresh-token"
+        let cases: [(any Error, SwiftMailClient.Command)] = [
+            (IMAPError.connectionFailed(echo), .list),
+            (IMAPError.commandFailed(echo), .search),
+            (IMAPError.selectFailed(echo), .examine(mailbox: "INBOX")),
+            (IMAPError.commandFailed(echo), .fetchEnvelopes),
+        ]
+        for (error, command) in cases {
+            let message = SwiftMailClient.irisError(for: error, command: command, account: googleAccount)
+                .errorDescription ?? ""
+            XCTAssertTrue(message.contains("<redacted> <redacted>"), message)
+            for secret in ["client-secret", "1//refresh-token"] {
                 XCTAssertFalse(message.contains(secret), "\(secret) in \(message)")
             }
         }
