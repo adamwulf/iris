@@ -82,6 +82,33 @@ final class AttachmentOutputTests: XCTestCase {
         }
     }
 
+    /// A typo in the folder, or a folder not made yet, fails before the download.
+    func testAPathWhoseFolderIsMissingIsFoundBeforeTheDownload() throws {
+        let missing = path("Dowloads/report.pdf")
+        assertThrows(.attachmentNotSaved(path: missing, reason: "the folder \"\(path("Dowloads"))\" does not exist")) {
+            try AttachmentOutput(path: missing, stdoutIsTerminal: false)
+        }
+
+        let file = path("notes.txt")
+        try Data("mine".utf8).write(to: URL(fileURLWithPath: file))
+        let underAFile = path("notes.txt/report.pdf")
+        assertThrows(.attachmentNotSaved(path: underAFile, reason: "\"\(file)\" is not a folder")) {
+            try AttachmentOutput(path: underAFile, stdoutIsTerminal: false)
+        }
+    }
+
+    func testAPathInALinkToAFolderOrInTheCurrentFolderIsFine() throws {
+        let link = path("link-to-folder")
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: directory.path)
+        let inLink = link + "/report.pdf"
+        XCTAssertEqual(try AttachmentOutput(path: inLink, stdoutIsTerminal: false), .file(path: inLink))
+        let bareName = "iris-test-\(UUID().uuidString).pdf"
+        XCTAssertEqual(
+            try AttachmentOutput(path: bareName, stdoutIsTerminal: false), .file(path: bareName),
+            "a bare file name is in the current folder"
+        )
+    }
+
     // MARK: - Saving
 
     func testAPathIsTheFileToWriteAndNothingIsPrinted() throws {

@@ -14,9 +14,11 @@ public enum AttachmentOutput: Sendable, Equatable {
     /// `.file` for `-o <path>`, else `.stdout`. A path that is an existing
     /// folder throws `attachmentOutputIsFolder`: `-o` takes the file's path.
     /// Anything else at the path, also a symbolic link that leads nowhere,
-    /// throws `attachmentFileExists`, so iris does not download for nothing;
-    /// `write(_:)` checks again when it creates the file. Without a path, a
-    /// terminal on stdout throws `attachmentStdoutIsTerminal`: the bytes would garble it.
+    /// throws `attachmentFileExists`, and a path whose folder does not exist
+    /// (or is not a folder) throws `attachmentNotSaved`, so iris does not
+    /// download for nothing; `write(_:)` checks again when it creates the
+    /// file. Without a path, a terminal on stdout throws
+    /// `attachmentStdoutIsTerminal`: the bytes would garble it.
     ///
     /// - Parameter stdoutIsTerminal: Whether stdout is a terminal. The CLI checks it.
     public init(path: String?, stdoutIsTerminal: Bool) throws {
@@ -29,6 +31,14 @@ public enum AttachmentOutput: Sendable, Equatable {
             // attributesOfItem does not follow a symbolic link (lstat), so a link that leads nowhere counts.
             if (try? fileManager.attributesOfItem(atPath: path)) != nil {
                 throw IrisError.attachmentFileExists(path: path)
+            }
+            // A link to a folder is a folder here: fileExists follows links.
+            let parent = (path as NSString).deletingLastPathComponent
+            let folder = parent.isEmpty ? "." : parent
+            if !fileManager.fileExists(atPath: folder, isDirectory: &isDirectory) {
+                throw IrisError.attachmentNotSaved(path: path, reason: "the folder \"\(folder)\" does not exist")
+            } else if !isDirectory.boolValue {
+                throw IrisError.attachmentNotSaved(path: path, reason: "\"\(folder)\" is not a folder")
             }
             self = .file(path: path)
         } else if stdoutIsTerminal {

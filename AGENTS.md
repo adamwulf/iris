@@ -307,8 +307,10 @@ for the user to save.
   download: without `-o`, a terminal on stdout is
   `attachmentStdoutIsTerminal`, so binary never lands in a terminal (the
   CLI checks `isatty` and passes it in, as `draft` passes
-  `stdinIsTerminal`), and `-o` naming an existing folder is
-  `attachmentOutputIsFolder`, which says to add a file name. iris never
+  `stdinIsTerminal`), `-o` naming an existing folder is
+  `attachmentOutputIsFolder`, which says to add a file name, and an `-o`
+  whose folder does not exist (or is not a folder) is `attachmentNotSaved`,
+  which names that folder. iris never
   makes a file name from the sender's text: SwiftMail's BODYSTRUCTURE
   filename skips RFC 2231 `filename*=`, so it would lose names such as
   `Résumé.pdf`. A file is never overwritten: `AttachmentOutput.init` finds
