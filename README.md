@@ -389,7 +389,8 @@ iris cuts only at the marks that mail apps leave:
   (or Zoho's `---- On <date> <name> wrote ----`) with only `>` lines under
   it, the same line quoted as the first line of a quote (iPhone writes
   `> On ... wrote:`), the `From:` / `Sent:` (or `Date:`) / `Subject:`
-  header block of Outlook and Zoho, and a signature after a `-- ` line.
+  header block of Outlook (and of Zoho's plain-text part), and a signature
+  after a `-- ` line (but not when answers to quoted lines follow it).
 
 Only the end of a body is cut. When someone answers between the quoted
 lines, the answers and the quoted lines above them are kept; only quoted
@@ -405,7 +406,8 @@ Limits:
   its `From:` / `Sent:` header) loses those answers; `--full` shows them.
   So does the plain-text part of a Zoho reply (`--body text`), which does
   not quote the message under its header either. Zoho's HTML part, shown
-  by default, keeps them.
+  by default, keeps them. But a classic Outlook or Samsung Email reply to
+  such a Zoho reply (answers under Zoho's header) is shown whole.
 - Outlook writes the same header for a forward. A forward is known only by
   `Fwd:` or `Fw:`, so a forward from an Outlook in another language
   (`WG:`, `TR:`, `RV:`) loses the message it forwards; `--full` shows it.

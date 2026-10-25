@@ -523,6 +523,24 @@ final class QuotedHistoryTests: XCTestCase {
         let inline = try await trimmed(#"<div>See inline.</div><div class="zmail_extra">"# + header + #"<blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote><div>Yes, Tuesday works.</div><blockquote id="blockquote_zmail"><div>See you!</div></blockquote></div>"#)
         XCTAssertTrue(inline.text.contains("> Lunch on Tuesday?"), inline.text)
         XCTAssertTrue(inline.text.hasSuffix("Yes, Tuesday works."), inline.text)
+
+        // A signature above the container does not cut the answers either.
+        let signed = try await trimmed(#"<div>Hi Jane,</div><div>-- <br>Adam</div><div class="zmail_extra">"# + header + #"<div>Tuesday works for me.</div><blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div>"#)
+        XCTAssertTrue(signed.text.hasSuffix("Tuesday works for me."), signed.text)
+    }
+
+    func testAnOutlookStyleReplyToAZohoReplyIsCutAtItsHeader() async throws {
+        // Classic Outlook and Samsung Email put an unmarked header over the
+        // message they answer; here that message is an English Zoho reply.
+        let zoho = #"<div>Sounds good, Tuesday it is.<br></div><div class="zmail_extra"><div><br></div><div id="Zm-_Id_-Sgn1">From: Bob &lt;bob@example.com&gt;<br>Date: Fri, 23 Oct 2026 10:28:18 -0500<br>Subject: Lunch<br></div><div><br></div><blockquote id="blockquote_zmail"><div>Lunch on Tuesday?</div></blockquote></div>"#
+        for header in [
+            #"<div style="border:none;border-top:solid #E1E1E1 1.0pt"><p class="MsoNormal"><b>From:</b> Jane Doe &lt;jane@example.com&gt;<br><b>Sent:</b> Friday, October 23, 2026 11:00 AM<br><b>To:</b> Bob<br><b>Subject:</b> RE: Lunch</p></div>"#,
+            #"<div>-------- Original message --------</div><div>From: Jane Doe &lt;jane@example.com&gt;</div><div>Date: 10/23/26 11:00 AM (GMT-06:00)</div><div>To: Bob</div><div>Subject: Re: Lunch</div><div><br></div>"#,
+        ] {
+            let result = try await trimmed("<div><p>Great, see you then.</p>" + header + "<div>" + zoho + "</div></div>")
+            XCTAssertEqual(result.text, "Great, see you then.", header)
+            XCTAssertTrue(result.trimmed, header)
+        }
     }
 
     func testAZohoForwardIsKept() async throws {
@@ -619,6 +637,29 @@ final class QuotedHistoryTests: XCTestCase {
         """)
         XCTAssertEqual(result.text, "Klingt gut.")
         XCTAssertTrue(result.trimmed)
+    }
+
+    func testGmailAnswersUnderTheSignatureAreKept() async throws {
+        // Gmail puts the signature above the quote, so inline answers are under it.
+        let result = try await trimmed("""
+        <div dir="ltr">See inline.<br clear="all"><div><br></div><span class="gmail_signature_prefix">-- </span><br><div dir="ltr" class="gmail_signature">Adam</div></div><br><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">On Fri, Oct 24, 2026 at 9:41 AM Jane Doe &lt;jane@example.com&gt; wrote:<br></div><blockquote class="gmail_quote">Lunch on Tuesday?</blockquote><div>Yes, Tuesday works.</div><blockquote class="gmail_quote">Same place?</blockquote><div>No, the new one.</div></div>
+        """)
+        XCTAssertTrue(result.text.contains("> Same place?"), result.text)
+        XCTAssertTrue(result.text.hasSuffix("No, the new one."), result.text)
+        XCTAssertFalse(result.trimmed)
+
+        XCTAssertEqual(QuotedHistory.trim("""
+        See inline.
+
+        --\u{20}
+        Adam
+
+        On Fri, Oct 24, 2026 at 9:41 AM Jane Doe <jane@example.com> wrote:
+
+        > Lunch on Tuesday?
+
+        Yes, Tuesday works.
+        """), .noMarker, "plain text too")
     }
 
     func testGmailAnswersBetweenTheQuotedLinesAreKept() async throws {

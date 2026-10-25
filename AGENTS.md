@@ -387,7 +387,13 @@ for the user to save.
   answers), or a forward marker line above the text's history
   (`TextTrim.forward`). The HTML rule holds only for the DOM pass: the text
   pass still cuts a quoted forward under an English attribution, which
-  marks a reply. It keeps a body that would be
+  marks a reply. Two more facts go from the DOM pass to the text pass:
+  when the DOM pass kept Zoho's header (`hasZohoHeader`, read after it),
+  the text pass does not look for Outlook's header block
+  (`findingOutlookHeader`), because in English Zoho's header reads as
+  Outlook's; and when it kept the sender's text inside a quote container
+  (`Removal.keptAnswers`), a signature above that text does not start the
+  cut. It keeps a body that would be
   left empty, and the decoder parses the HTML again when the DOM pass cut
   something that the text pass then calls a forward or all history.
   `MessageDocument.bodyTrimmed` says
