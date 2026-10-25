@@ -50,8 +50,8 @@ final class MailReaderAttachmentTests: XCTestCase {
     /// multipart/mixed(text/plain, application/pdf), as SwiftMail gives its BODYSTRUCTURE.
     private var report: [PartStructure] {
         [
-            PartStructure(id: part(1), filename: nil, encoding: "7BIT"),
-            PartStructure(id: part(2), filename: "report.pdf", encoding: "BASE64"),
+            PartStructure(id: part(1), encoding: "7BIT"),
+            PartStructure(id: part(2), encoding: "BASE64"),
         ]
     }
 
@@ -74,9 +74,7 @@ final class MailReaderAttachmentTests: XCTestCase {
 
         let attachment = try await reader(fake).attachment(part(2), of: id(150))
 
-        XCTAssertEqual(attachment, DownloadedAttachment(
-            attachmentID: part(2), filename: "report.pdf", data: Data("Hello World".utf8)
-        ))
+        XCTAssertEqual(attachment, DownloadedAttachment(attachmentID: part(2), data: Data("Hello World".utf8)))
         let calls = await fake.calls
         XCTAssertEqual(calls, [
             .login, .examine("INBOX"), .fetchEnvelopesByUID([150]), .fetchStructure(150), .fetchPart(part(2), 150),
@@ -85,7 +83,7 @@ final class MailReaderAttachmentTests: XCTestCase {
     }
 
     func testAttachmentDecodesQuotedPrintable() async throws {
-        let structure = [PartStructure(id: part(2), filename: "notes.txt", encoding: "QUOTED-PRINTABLE")]
+        let structure = [PartStructure(id: part(2), encoding: "QUOTED-PRINTABLE")]
         let fake = server(structure: structure, parts: [part(2): Data("caf=C3=A9 au =\r\nlait\r\n".utf8)])
 
         let attachment = try await reader(fake).attachment(part(2), of: id(150))
@@ -96,7 +94,7 @@ final class MailReaderAttachmentTests: XCTestCase {
     func testAttachmentWithoutATransferEncodingKeepsItsBytes() async throws {
         let bytes = Data([0x00, 0xFF, 0x0D, 0x0A, 0x41])
         for encoding in [nil, "7BIT", "8BIT", "BINARY"] {
-            let structure = [PartStructure(id: part(1), filename: nil, encoding: encoding)]
+            let structure = [PartStructure(id: part(1), encoding: encoding)]
             let fake = server(structure: structure, parts: [part(1): bytes])
 
             let attachment = try await reader(fake).attachment(part(1), of: id(150))
@@ -110,16 +108,16 @@ final class MailReaderAttachmentTests: XCTestCase {
     func testAForwardedMessageDownloadsWholeAsAnEMLFile() async throws {
         let forwarded = Data("From: jane@example.com\r\nSubject: Plans\r\n\r\nThe plans.\r\n".utf8)
         let structure = [
-            PartStructure(id: part(1), filename: nil, encoding: "7BIT"),
-            PartStructure(id: part(2), filename: "Plans.eml", encoding: "7BIT"),
-            PartStructure(id: part(2, 1), filename: nil, encoding: "7BIT"),
-            PartStructure(id: part(2, 2), filename: "plans.pdf", encoding: "BASE64"),
-            PartStructure(id: part(3), filename: "notes.pdf", encoding: "BASE64"),
+            PartStructure(id: part(1), encoding: "7BIT"),
+            PartStructure(id: part(2), encoding: "7BIT"),
+            PartStructure(id: part(2, 1), encoding: "7BIT"),
+            PartStructure(id: part(2, 2), encoding: "BASE64"),
+            PartStructure(id: part(3), encoding: "BASE64"),
         ]
         let fake = server(structure: structure, parts: [part(2): forwarded, part(2, 2): Data("SGVsbG8=".utf8)])
 
         let message = try await reader(fake).attachment(part(2), of: id(150))
-        XCTAssertEqual(message, DownloadedAttachment(attachmentID: part(2), filename: "Plans.eml", data: forwarded))
+        XCTAssertEqual(message, DownloadedAttachment(attachmentID: part(2), data: forwarded))
 
         let inner = try await reader(fake).attachment(part(2, 2), of: id(150))
         XCTAssertEqual(inner.data, Data("Hello".utf8), "a part inside the forwarded message downloads too")

@@ -49,7 +49,7 @@ final class ReadOnlyCommandTests: XCTestCase {
     }
 
     func testDownloadWithAnOutputPathIsOnlyAtTheTop() throws {
-        // -o writes a file whose content and name come from the sender.
+        // -o writes a file whose content comes from the sender.
         XCTAssertFalse(Download.self is any ReadOnlyCommand.Type)
         let download = try XCTUnwrap(try Iris.parseAsRoot(["download", "work/INBOX/42", "2", "-o", "x"]) as? Download)
         XCTAssertEqual(download.output, "x")

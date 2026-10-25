@@ -280,8 +280,9 @@ struct SwiftMailClient: MailWriteClient {
     }
 
     func fetchStructure(uid: UInt32) async throws -> [PartStructure] {
-        // A second FETCH reads the named parts' MIME headers, to put back the
-        // backslashes that some servers drop from filenames.
+        // For a message with named parts, SwiftMail also reads their MIME
+        // headers (to put back backslashes in the filenames, which iris does
+        // not use); a failure there keeps the BODYSTRUCTURE answer.
         let parts = try await run(.fetchStructure) {
             try await server.fetchStructure(UID(uid))
         }
@@ -568,11 +569,7 @@ extension PartStructure {
     /// SwiftMail keeps a message/rfc822 part at its own section, so it can be
     /// fetched whole, and adds the parts inside it after it (`2`, then `2.1`, `2.2`).
     init(swiftMail part: MessagePart) {
-        self.init(
-            id: AttachmentID(components: part.section.components),
-            filename: part.filename.flatMap { $0.isEmpty ? nil : $0 },
-            encoding: part.encoding
-        )
+        self.init(id: AttachmentID(components: part.section.components), encoding: part.encoding)
     }
 }
 

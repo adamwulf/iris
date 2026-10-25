@@ -238,19 +238,14 @@ public struct ThreadMessage: Sendable, Equatable {
 }
 
 /// One part of a message as `iris download` downloaded it: its bytes without
-/// the transfer encoding, and the filename that the sender gave it.
+/// the transfer encoding.
 public struct DownloadedAttachment: Sendable, Equatable {
     public let attachmentID: AttachmentID
-    /// The filename from the part's headers, decoded. Nil when the part has
-    /// none. It comes from the sender, so it is not safe as a path:
-    /// `AttachmentOutput.safeFilename(_:attachmentID:)` makes a safe name of it.
-    public let filename: String?
     /// The part's bytes, decoded from its Content-Transfer-Encoding.
     public let data: Data
 
-    init(attachmentID: AttachmentID, filename: String?, data: Data) {
+    init(attachmentID: AttachmentID, data: Data) {
         self.attachmentID = attachmentID
-        self.filename = filename
         self.data = data
     }
 }

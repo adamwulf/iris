@@ -98,6 +98,8 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case attachmentDownloadTimedOut(seconds: Int)
     /// `iris download` has no `-o`, and stdout is a terminal, which the bytes would garble.
     case attachmentStdoutIsTerminal
+    /// `iris download -o` names an existing folder, not the file to write.
+    case attachmentOutputIsFolder(path: String)
     /// The file that `iris download -o` would write already exists.
     case attachmentFileExists(path: String)
     /// `iris download -o` could not write the file for another reason.
@@ -271,6 +273,10 @@ public enum IrisError: Error, Equatable, LocalizedError {
             return "iris writes the attachment's bytes to stdout, and stdout is a terminal, where they would garble "
                 + "the screen. Redirect stdout to a file, as in `iris download '<iris-id>' <attachment-id> > <file>`, "
                 + "or pass -o <path> to save it to a file (`iris ro download` has no -o)."
+        case .attachmentOutputIsFolder(let path):
+            let example = MessagePage.singleQuoted((path as NSString).appendingPathComponent("<file name>"))
+            return "\"\(path)\" is a folder, and -o takes the path of the file to write. Add a file name, "
+                + "such as the filename that `iris show` lists for the attachment: -o \(example)."
         case .attachmentFileExists(let path):
             return "The file \"\(path)\" already exists, and iris never overwrites a file. Pass -o with another path."
         case .attachmentNotSaved(let path, let reason):

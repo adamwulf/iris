@@ -708,23 +708,17 @@ final class SwiftMailClientTests: XCTestCase {
 
     // MARK: - Parts
 
-    func testPartStructureKeepsTheSectionFilenameAndEncoding() {
+    func testPartStructureKeepsTheSectionAndEncoding() {
         let part = MessagePart(
             sectionString: "1.2", contentType: "application/pdf; name=\"report.pdf\"", disposition: "attachment",
             encoding: "BASE64", filename: "report.pdf", size: 1234
         )
-        XCTAssertEqual(
-            PartStructure(swiftMail: part),
-            PartStructure(id: AttachmentID(components: [1, 2]), filename: "report.pdf", encoding: "BASE64")
-        )
+        XCTAssertEqual(PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [1, 2]), encoding: "BASE64"))
     }
 
-    func testPartStructureWithAnEmptyFilenameHasNone() {
-        let named = MessagePart(sectionString: "2", contentType: "image/png", filename: "")
-        let unnamed = MessagePart(sectionString: "3", contentType: "image/png")
-        XCTAssertNil(PartStructure(swiftMail: named).filename)
-        XCTAssertNil(PartStructure(swiftMail: unnamed).filename)
-        XCTAssertNil(PartStructure(swiftMail: unnamed).encoding)
+    func testPartStructureWithoutAnEncodingHasNone() {
+        let part = MessagePart(sectionString: "3", contentType: "image/png")
+        XCTAssertEqual(PartStructure(swiftMail: part), PartStructure(id: AttachmentID(components: [3]), encoding: nil))
     }
 
     // MARK: - Transfer encoding

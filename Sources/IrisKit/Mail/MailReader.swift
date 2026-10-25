@@ -113,7 +113,7 @@ public struct MailReader: Sendable {
     }
 
     /// The part `attachmentID` of the message `id`, without its
-    /// Content-Transfer-Encoding, and its filename. Only that part is
+    /// Content-Transfer-Encoding. Only that part is
     /// downloaded (`BODY.PEEK[<section>]`, with SwiftMail's 60-second limit),
     /// never the whole message, whose download stops after 10 seconds.
     /// Reading it does not mark the message as read. A missing message throws
@@ -142,9 +142,7 @@ public struct MailReader: Sendable {
             }
             let data = try await client.fetchPart(attachmentID, uid: id.uid)
             return DownloadedAttachment(
-                attachmentID: attachmentID,
-                filename: part.filename,
-                data: TransferEncoding.decoded(data, encoding: part.encoding)
+                attachmentID: attachmentID, data: TransferEncoding.decoded(data, encoding: part.encoding)
             )
         }
     }

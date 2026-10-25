@@ -119,9 +119,6 @@ struct MessageEnvelope: Sendable, Equatable {
 struct PartStructure: Sendable, Equatable {
     /// The part's section, which `BODY[<section>]` fetches.
     let id: AttachmentID
-    /// The filename that the server read from the part's headers, decoded. Nil
-    /// when the part has none. It comes from the sender, so it is not safe as a path.
-    let filename: String?
     /// The Content-Transfer-Encoding, such as `BASE64`. Nil when the part has none.
     let encoding: String?
 }

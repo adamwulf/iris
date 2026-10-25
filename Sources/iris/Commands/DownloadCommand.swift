@@ -3,13 +3,13 @@ import Foundation
 import IrisKit
 
 /// `iris download`: a write command, so it is never under `iris ro`. With
-/// `-o` it writes a file whose content and name come from the sender.
+/// `-o` it writes a file whose content comes from the sender.
 /// `iris ro download` is `ReadOnlyDownload`, the same command without `-o`.
 /// Both take `DownloadArguments` and run its `run(outputPath:)`, so they cannot drift.
 struct Download: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Download one attachment of a message: save it with -o, or write its bytes to stdout. The message is not marked as read.",
-        discussion: "The attachment ID is the number that `iris show` and `iris thread` list first on each attachment line. Without -o, the bytes go to stdout, which must not be a terminal: redirect it to a file. With -o, iris saves a new file at that path, or in that folder under the attachment's filename made safe, prints the saved path, and never overwrites a file. A download that takes more than 60 seconds fails."
+        discussion: "The attachment ID is the number that `iris show` and `iris thread` list first on each attachment line. Without -o, the bytes go to stdout, which must not be a terminal: redirect it to a file. With -o, iris saves a new file at exactly that path and prints nothing; it never overwrites a file. A download that takes more than 60 seconds fails."
     )
 
     @OptionGroup var arguments: DownloadArguments
@@ -17,7 +17,7 @@ struct Download: AsyncParsableCommand {
     @Option(
         name: .shortAndLong,
         help: ArgumentHelp(
-            "Save the attachment in this new file, or in this folder under its filename. Omit to write the bytes to stdout.",
+            "Save the attachment in a new file at this path, including the file name. Omit to write the bytes to stdout.",
             valueName: "path"
         )
     )
@@ -59,9 +59,9 @@ struct DownloadArguments: ParsableArguments {
     var attachmentID: AttachmentID
 
     /// Downloads the attachment, then writes its bytes to stdout, or, with
-    /// `outputPath` (`-o`), saves it and writes the saved path.
+    /// `outputPath` (`-o`), saves it there and writes nothing.
     func run(outputPath: String?) async throws {
-        // Before the download, so a terminal on stdout fails before iris connects.
+        // Before the download, so a terminal on stdout, or a folder for -o, fails before iris connects.
         let output = try AttachmentOutput(path: outputPath, stdoutIsTerminal: isatty(STDOUT_FILENO) == 1)
         let account = try AccountResolver.resolve(name: irisID.account, settings: AccountResolver.settings())
         let attachment = try await MailReader(account: account).attachment(attachmentID, of: irisID)
