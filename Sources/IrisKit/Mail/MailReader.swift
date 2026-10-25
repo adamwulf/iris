@@ -330,16 +330,15 @@ public struct MailReader: Sendable {
     /// The raw bytes of `id` from the open mailbox, which must be `id`'s
     /// mailbox, or the error of this one message: it did not download in time,
     /// or it is gone. Every other error, such as a lost connection, throws.
-    private func threadDownload(_ id: IrisID, with client: any MailClient) async throws -> Result<Data, IrisError> {
+    private func threadDownload(
+        _ id: IrisID, with client: any MailClient
+    ) async throws -> Result<Data, ThreadMessage.DownloadFailure> {
         do {
             return .success(try await fetchRawMessage(id, with: client))
-        } catch let error as IrisError {
-            switch error {
-            case .messageDownloadTimedOut, .unknownMessage:
-                return .failure(error)
-            default:
-                throw error
-            }
+        } catch IrisError.messageDownloadTimedOut(let seconds) {
+            return .failure(.timedOut(seconds: seconds))
+        } catch IrisError.unknownMessage {
+            return .failure(.gone)
         }
     }
 

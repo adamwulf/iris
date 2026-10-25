@@ -60,7 +60,7 @@ public struct IrisID: Sendable, Hashable, CustomStringConvertible {
     /// The iris ID in single quotes, one word for a shell command line: a
     /// mailbox name can have spaces, `[ ]`, or `$`.
     var shellQuoted: String {
-        "'" + description.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+        MessagePage.singleQuoted(description)
     }
 }
 

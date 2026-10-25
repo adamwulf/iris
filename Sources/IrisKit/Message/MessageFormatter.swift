@@ -45,22 +45,20 @@ public enum MessageFormatter {
 
     /// The line logged for a message that `render(thread:format:body:timeZone:)`
     /// leaves out: its iris ID, why, and what to run next.
-    static func leftOutLine(_ id: IrisID, error: IrisError) -> String {
-        let reason: String
-        switch error {
-        case .messageDownloadTimedOut(let seconds):
-            reason = "it did not download in \(seconds) seconds"
-        case .messageNotParsed(let detail):
-            reason = "it could not be read as an email (\(detail))"
-        case .htmlNotConverted(let detail, _):
-            reason = "its HTML body could not be converted to Markdown (\(detail))"
-        case .unknownMessage:
+    static func leftOutLine(_ id: IrisID, because failure: ThreadMessage.DownloadFailure) -> String {
+        switch failure {
+        case .timedOut(let seconds):
+            return leftOutLine(id, because: "it did not download in \(seconds) seconds")
+        case .gone:
             // `iris show` would not find it either.
             return "Left \(id) out of the thread: it is no longer in its mailbox. Run the command again."
-        default:
-            reason = error.errorDescription ?? String(describing: error)
         }
-        return "Left \(id) out of the thread: \(reason). Run `iris show \(id.shellQuoted) --format raw` to see its source."
+    }
+
+    /// The line logged for a message that `render(thread:format:body:timeZone:)`
+    /// leaves out for `reason`, with the command that shows its source.
+    static func leftOutLine(_ id: IrisID, because reason: String) -> String {
+        "Left \(id) out of the thread: \(reason). Run `iris show \(id.shellQuoted) --format raw` to see its source."
     }
 
     /// The raw message `data` decoded, with `irisID`, the message it was read from.
@@ -78,12 +76,12 @@ public enum MessageFormatter {
     /// The bytes `iris thread` writes to stdout for `messages`, in their order:
     /// each message decoded, with its iris ID, as `render(rawMessage:irisID:format:body:timeZone:)`
     /// makes it. Markdown puts `threadSeparator` between the messages; JSON is
-    /// one array. Both end with a newline.
+    /// one array. Both end with a newline. With no message to show, as in
+    /// `OutputFormatter`, Markdown is empty and JSON is `[]`.
     ///
     /// A message that did not download, cannot be read as an email, or whose
-    /// HTML cannot be converted is left out, and `leftOutLine(_:error:)` is
-    /// logged for it, so the rest of the thread is still shown. Every other
-    /// error throws.
+    /// HTML cannot be converted is left out, and a `leftOutLine` is logged for
+    /// it, so the rest of the thread is still shown. Every other error throws.
     public static func render(
         thread messages: [ThreadMessage],
         format: ThreadOutputFormat,
@@ -92,19 +90,26 @@ public enum MessageFormatter {
     ) async throws -> Data {
         var documents: [MessageDocument] = []
         for message in messages {
-            do {
-                let data = try message.rawMessage.get()
-                documents.append(try await document(rawMessage: data, irisID: message.irisID, body: preference))
-            } catch let error as IrisError {
-                switch error {
-                case .messageDownloadTimedOut, .unknownMessage, .messageNotParsed, .htmlNotConverted:
-                    IrisLog.log(leftOutLine(message.irisID, error: error))
-                default:
-                    throw error
+            switch message.rawMessage {
+            case .failure(let failure):
+                IrisLog.log(leftOutLine(message.irisID, because: failure))
+            case .success(let data):
+                do {
+                    documents.append(try await document(rawMessage: data, irisID: message.irisID, body: preference))
+                } catch IrisError.messageNotParsed(let detail) {
+                    IrisLog.log(leftOutLine(message.irisID, because: "it could not be read as an email (\(detail))"))
+                } catch IrisError.htmlNotConverted(let detail, _) {
+                    IrisLog.log(leftOutLine(
+                        message.irisID, because: "its HTML body could not be converted to Markdown (\(detail))"
+                    ))
                 }
             }
         }
         switch format {
+        case .markdown where documents.isEmpty:
+            return Data()
+        case .json where documents.isEmpty:
+            return Data("[]\n".utf8)
         case .markdown:
             let markdowns = documents.map { markdown($0, timeZone: timeZone) }
             return Data((markdowns.joined(separator: "\n\n\(threadSeparator)\n\n") + "\n").utf8)

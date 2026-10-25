@@ -78,8 +78,8 @@ sends AUTHENTICATE XOAUTH2 (`Command.authenticate`) instead of LOGIN. Its
 parts that need no server are static and tested in `SwiftMailClientTests`:
 the error mapping (`irisError(for:command:account:accessToken:)`), the TLS choice
 (`transportSecurity(forPort:)`), the SEARCH keys
-(`searchCriteria(for:)`, `messageIDSearchCriteria(_:)`), the STORE
-operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
+(`searchCriteria(for:)`, `subjectSearchCriteria(_:)`, `messageIDSearchCriteria(_:)`),
+the STORE operation (`storeOperation(seen:)`), `MailboxInfo(swiftMail:)`,
 `MessageEnvelope(swiftMail:)`, and `ThreadHeaders(swiftMail:)`.
 
 `MailWriteClient` refines `MailClient` with the calls that change mail:
@@ -109,7 +109,7 @@ each), round after round. Messages with the subject that name a known ID
 join until none joins. Each Message-ID is shown once, from the first
 mailbox in `threadMailboxes` order (lowest UID). Only those copies are
 downloaded with `fetchRawMessage`. A download that times out or finds the
-message gone is kept as a failure in `ThreadMessage.rawMessage`, and the
+message gone is kept as a `ThreadMessage.DownloadFailure`, and the
 mailbox is examined again before the next download (SwiftMail reconnects
 after a timeout, with no mailbox open). `MessageFormatter.render(thread:)`
 leaves out a message that failed, or that cannot be decoded, and logs one

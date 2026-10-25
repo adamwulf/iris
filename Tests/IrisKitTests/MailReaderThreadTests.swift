@@ -748,7 +748,9 @@ final class MailReaderThreadTests: XCTestCase {
         let messages = try await reader(fake).thread(IrisID(account: "work", mailbox: "INBOX", uid: 4))
 
         XCTAssertEqual(messages.map(\.irisID.description), ["work/INBOX/1", "work/Sent/2", "work/INBOX/3", "work/INBOX/4"])
-        XCTAssertEqual(messages.map(\.rawMessage), [.success(a.raw), .failure(timeout), .failure(gone), .success(d.raw)])
+        XCTAssertEqual(
+            messages.map(\.rawMessage), [.success(a.raw), .failure(.timedOut(seconds: 10)), .failure(.gone), .success(d.raw)]
+        )
         let calls = await fake.calls
         let downloads = calls.drop { if case .fetchRawMessage = $0 { return false } else { return true } }
         XCTAssertEqual(Array(downloads), [

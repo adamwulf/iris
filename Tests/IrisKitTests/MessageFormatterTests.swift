@@ -227,7 +227,7 @@ final class MessageFormatterTests: XCTestCase {
         IrisLog.handler = { recorder.record($0) }
         defer { IrisLog.handler = nil }
         let timedOut = ThreadMessage(
-            irisID: IrisID(account: "work", mailbox: "Sent Mail", uid: 5), rawMessage: .failure(.messageDownloadTimedOut(seconds: 10))
+            irisID: IrisID(account: "work", mailbox: "Sent Mail", uid: 5), rawMessage: .failure(.timedOut(seconds: 10))
         )
         let notAnEmail = ThreadMessage(irisID: IrisID(account: "work", mailbox: "INBOX", uid: 9), rawMessage: .success(Data()))
 
@@ -248,43 +248,41 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertTrue(recorder.lines[1].hasSuffix("Run `iris show 'work/INBOX/9' --format raw` to see its source."))
     }
 
-    func testRenderThreadOfOnlyBadMessagesIsEmpty() async throws {
+    func testRenderThreadWithNothingToShowIsEmptyAsInOutputFormatter() async throws {
+        // A thread of one large message whose download timed out, say.
         IrisLog.handler = { _ in }
         defer { IrisLog.handler = nil }
-        let bad = [ThreadMessage(irisID: irisID, rawMessage: .failure(.messageDownloadTimedOut(seconds: 10)))]
+        let threads: [[ThreadMessage]] = [
+            [],
+            [ThreadMessage(irisID: irisID, rawMessage: .failure(.timedOut(seconds: 10)))],
+            [ThreadMessage(irisID: irisID, rawMessage: .failure(.gone)), ThreadMessage(irisID: irisID, rawMessage: .success(Data()))],
+        ]
+        for messages in threads {
+            let markdown = try await MessageFormatter.render(thread: messages, format: .markdown)
+            let json = try await MessageFormatter.render(thread: messages, format: .json)
 
-        let markdown = try await MessageFormatter.render(thread: bad, format: .markdown)
-        let json = try await MessageFormatter.render(thread: bad, format: .json)
-
-        XCTAssertEqual(String(decoding: markdown, as: UTF8.self), "\n")
-        XCTAssertEqual(String(decoding: json, as: UTF8.self), "[\n\n]\n")
-    }
-
-    func testRenderThreadStillFailsForOtherErrors() async {
-        let lost = IrisError.connectionLost(account: "work", command: "FETCH", reason: "reset")
-        do {
-            _ = try await MessageFormatter.render(thread: [ThreadMessage(irisID: irisID, rawMessage: .failure(lost))], format: .json)
-            XCTFail("expected \(lost)")
-        } catch {
-            XCTAssertEqual(error as? IrisError, lost)
+            XCTAssertEqual(markdown, Data(), "\(messages.count) messages")
+            XCTAssertEqual(String(decoding: json, as: UTF8.self), "[]\n", "\(messages.count) messages")
         }
+        let rows: [MessageSummary] = []
+        XCTAssertEqual(try OutputFormatter.render(rows, format: .json), "[]\n")
     }
 
     func testLeftOutLinesNameTheIrisIDTheReasonAndTheNextStep() {
         let id = IrisID(account: "work", mailbox: "Bob's [x]", uid: 7)
         XCTAssertEqual(
-            MessageFormatter.leftOutLine(id, error: .htmlNotConverted(reason: "bad tag", hasTextPart: true)),
+            MessageFormatter.leftOutLine(id, because: .timedOut(seconds: 10)),
+            "Left work/Bob's [x]/7 out of the thread: it did not download in 10 seconds. "
+                + #"Run `iris show 'work/Bob'\''s [x]/7' --format raw` to see its source."#
+        )
+        XCTAssertEqual(
+            MessageFormatter.leftOutLine(id, because: .gone),
+            "Left work/Bob's [x]/7 out of the thread: it is no longer in its mailbox. Run the command again."
+        )
+        XCTAssertEqual(
+            MessageFormatter.leftOutLine(id, because: "its HTML body could not be converted to Markdown (bad tag)"),
             "Left work/Bob's [x]/7 out of the thread: its HTML body could not be converted to Markdown (bad tag). "
                 + #"Run `iris show 'work/Bob'\''s [x]/7' --format raw` to see its source."#
-        )
-        XCTAssertEqual(
-            MessageFormatter.leftOutLine(id, error: .messageNotParsed(reason: "no headers")),
-            "Left work/Bob's [x]/7 out of the thread: it could not be read as an email (no headers). "
-                + #"Run `iris show 'work/Bob'\''s [x]/7' --format raw` to see its source."#
-        )
-        XCTAssertEqual(
-            MessageFormatter.leftOutLine(id, error: .unknownMessage(id)),
-            "Left work/Bob's [x]/7 out of the thread: it is no longer in its mailbox. Run the command again."
         )
     }
 
