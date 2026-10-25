@@ -1,12 +1,10 @@
 import Foundation
 import SwiftMail
 
-/// The real `MailClient`, `MailWriteClient`, and `DraftClient`, over SwiftMail's
-/// `IMAPServer`. It only converts types and errors. The logic is in
-/// `MailReader`, `MailWriter`, and `DraftWriter`, where the tests cover it.
-/// `MailReader` holds it as `any MailClient`, which has no write calls. For an
-/// account that signs in with Google, `login()` first gets an access token
-/// from `GoogleTokenEndpoint`.
+/// The real `MailClient` and `MailWriteClient`, over SwiftMail's `IMAPServer`.
+/// It only converts types and errors. The logic is in `MailReader` and
+/// `MailWriter`, where the tests cover it. For an account that signs in with
+/// Google, `login()` first gets an access token from `GoogleTokenEndpoint`.
 struct SwiftMailClient: MailWriteClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
@@ -303,6 +301,15 @@ struct SwiftMailClient: MailWriteClient {
         seen ? .add : .remove
     }
 
+    func appendDraft(_ draft: DraftMessage, to mailbox: String) async throws -> UInt32? {
+        // createDraft adds the \Draft flag and X-Uniform-Type-Identifier:
+        // com.apple.mail-draft, which makes Apple Mail treat it as its own draft.
+        let result = try await run(.append(mailbox: mailbox)) {
+            try await server.createDraft(from: Email(draft: draft), in: mailbox)
+        }
+        return result.firstUID?.value
+    }
+
     // MARK: - Errors
 
     /// Runs one IMAP command and turns its errors into `IrisError`s.
@@ -444,19 +451,6 @@ struct SwiftMailClient: MailWriteClient {
         default:
             return String(describing: error)
         }
-    }
-}
-
-/// The draft calls. `login()`, `listMailboxes()`, and `logout()` are the same
-/// as for `MailClient`.
-extension SwiftMailClient: DraftClient {
-    func appendDraft(_ draft: DraftMessage, to mailbox: String) async throws -> UInt32? {
-        // createDraft adds the \Draft flag and X-Uniform-Type-Identifier:
-        // com.apple.mail-draft, which makes Apple Mail treat it as its own draft.
-        let result = try await run(.append(mailbox: mailbox)) {
-            try await server.createDraft(from: Email(draft: draft), in: mailbox)
-        }
-        return result.firstUID?.value
     }
 }
 

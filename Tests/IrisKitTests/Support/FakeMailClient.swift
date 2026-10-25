@@ -18,13 +18,14 @@ actor FakeMailClient: MailWriteClient {
         case fetchRawMessage(UInt32)
         case select(String)
         case setSeen(Bool, UInt32)
+        case appendDraft(DraftMessage, String)
         case logout
     }
 
     /// `fetchEnvelopes` stands for both envelope fetches.
     enum Method: Hashable {
         case login, capabilities, listMailboxes, examine, searchUIDs, searchSubject, searchMessageIDs, fetchEnvelopes,
-             fetchThreadHeaders, fetchRawMessage, select, setSeen
+             fetchThreadHeaders, fetchRawMessage, select, setSeen, appendDraft
     }
 
     /// How the fake answers a search in a mailbox of `mailboxMessages`.
@@ -99,6 +100,7 @@ actor FakeMailClient: MailWriteClient {
     private let searchRules: SearchRules
     private let refusesNonASCII: Bool
     private let rawMessageErrors: [UInt32: any Error]
+    private let appendedUID: UInt32?
     private let errors: [Method: any Error]
     /// The wire name of the mailbox that the last EXAMINE opened.
     private var openMailbox: String?
@@ -110,8 +112,9 @@ actor FakeMailClient: MailWriteClient {
     /// filter: the server does the matching, so a test scripts its answer.
     /// `fetchEnvelopes` returns the `envelopes` whose sequence number (or UID)
     /// is asked for, in the order given. `fetchRawMessage` returns empty data
-    /// for a UID that is not in `rawMessages`, as SwiftMail does. `accountName`
-    /// goes in the errors the fake throws itself.
+    /// for a UID that is not in `rawMessages`, as SwiftMail does. `appendDraft`
+    /// returns `appendedUID`: nil stands for a server without UIDPLUS.
+    /// `accountName` goes in the errors the fake throws itself.
     ///
     /// `mailboxMessages` holds whole mailboxes for `thread`, by wire name and
     /// UID. A mailbox in it can be examined without a status. In such a
@@ -134,6 +137,7 @@ actor FakeMailClient: MailWriteClient {
         searchRules: SearchRules = .zoho,
         refusesNonASCII: Bool = false,
         rawMessageErrors: [UInt32: any Error] = [:],
+        appendedUID: UInt32? = nil,
         errors: [Method: any Error] = [:]
     ) {
         self.accountName = accountName
@@ -147,6 +151,7 @@ actor FakeMailClient: MailWriteClient {
         self.searchRules = searchRules
         self.refusesNonASCII = refusesNonASCII
         self.rawMessageErrors = rawMessageErrors
+        self.appendedUID = appendedUID
         self.errors = errors
     }
 
@@ -324,6 +329,11 @@ actor FakeMailClient: MailWriteClient {
 
     func setSeen(_ seen: Bool, uid: UInt32) async throws {
         try record(.setSeen(seen, uid), .setSeen)
+    }
+
+    func appendDraft(_ draft: DraftMessage, to mailbox: String) async throws -> UInt32? {
+        try record(.appendDraft(draft, mailbox), .appendDraft)
+        return appendedUID
     }
 
     func logout() async {

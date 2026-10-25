@@ -60,6 +60,11 @@ protocol MailWriteClient: MailClient {
     /// mailbox (UID STORE +FLAGS), or removes it (-FLAGS) when `seen` is false.
     /// The server answers OK for a missing UID and changes nothing.
     func setSeen(_ seen: Bool, uid: UInt32) async throws
+    /// Saves `draft` in `mailbox` (a wire name) with APPEND and the `\Draft`
+    /// flag. Returns the new message's UID from APPENDUID, or nil when the
+    /// server does not report it (it has no UIDPLUS). A `draftMayBeSaved`
+    /// error holds `mailbox`.
+    func appendDraft(_ draft: DraftMessage, to mailbox: String) async throws -> UInt32?
 }
 
 extension MailClient {

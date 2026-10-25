@@ -33,7 +33,7 @@ struct Draft: AsyncParsableCommand {
         let account = try AccountResolver.resolve(name: irisID.account, settings: settings)
         let from = try AccountResolver.fromAddress(for: account, in: settings)
         let reply = try DraftBody.read(argument: body, file: file, stdinIsTerminal: isatty(STDIN_FILENO) == 1)
-        let saved = try await DraftWriter(account: account).saveReply(
+        let saved = try await MailWriter(account: account).saveReply(
             to: irisID, body: reply, from: from, replyAll: all, quote: !noQuote
         )
         if let draftID = saved.irisID {

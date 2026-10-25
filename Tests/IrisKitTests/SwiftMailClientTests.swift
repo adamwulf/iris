@@ -319,7 +319,7 @@ final class SwiftMailClientTests: XCTestCase {
             .draftMayBeSaved(
                 account: "work", mailbox: "[Gmail]/Entw&APw-rfe", reason: "the server did not answer APPEND in time"
             ),
-            "the error holds the wire name; DraftWriter puts back the decoded name"
+            "the error holds the wire name; MailWriter puts back the decoded name"
         )
     }
 

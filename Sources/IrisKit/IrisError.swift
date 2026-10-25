@@ -43,7 +43,7 @@ public enum IrisError: Error, Equatable, LocalizedError {
     case draftTooLarge(account: String, size: Int, limit: Int)
     /// APPEND timed out, or the connection broke during it, so the server may
     /// have saved the draft. `mailbox` is the Drafts mailbox: the wire name
-    /// from `SwiftMailClient`, and the decoded name after `DraftWriter`.
+    /// from `SwiftMailClient`, and the decoded name after `MailWriter`.
     case draftMayBeSaved(account: String, mailbox: String, reason: String)
 
     // IMAP
