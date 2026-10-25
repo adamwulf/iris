@@ -48,8 +48,21 @@ final class ReadOnlyCommandTests: XCTestCase {
         }
     }
 
-    func testRoRejectsACommandThatIsNotReadOnly() {
-        // There is no write command yet; when `draft` exists, it must still fail here.
+    func testReadAndUnreadAreWriteCommandsOnlyAtTheTop() {
+        let topLevel = Iris.configuration.subcommands
+        for command in [Read.self, Unread.self] as [any ParsableCommand.Type] {
+            XCTAssertTrue(names(topLevel).contains(command._commandName), "\(command) is not under `iris`")
+            XCTAssertFalse(command is any ReadOnlyCommand.Type, "\(command) changes mail but is a ReadOnlyCommand")
+        }
+    }
+
+    func testRoRejectsACommandThatIsNotReadOnly() throws {
+        // The write commands parse at the top, but not under `ro`.
+        XCTAssertTrue(try Iris.parseAsRoot(["read", "work/INBOX/42"]) is Read)
+        XCTAssertTrue(try Iris.parseAsRoot(["unread", "work/INBOX/42"]) is Unread)
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "read", "work/INBOX/42"]))
+        XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "unread", "work/INBOX/42"]))
+        // There is no `draft` yet; when it exists, it must still fail here.
         XCTAssertThrowsError(try Iris.parseAsRoot(["ro", "draft"]))
     }
 }

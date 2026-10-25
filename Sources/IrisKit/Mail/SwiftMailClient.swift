@@ -1,9 +1,10 @@
 import Foundation
 import SwiftMail
 
-/// The real `MailClient`, over SwiftMail's `IMAPServer`. It only converts types
-/// and errors. The logic is in `MailReader`, where the tests cover it.
-struct SwiftMailClient: MailClient {
+/// The real `MailClient` and `MailWriteClient`, over SwiftMail's `IMAPServer`.
+/// It only converts types and errors. The logic is in `MailReader` and
+/// `MailWriter`, where the tests cover it.
+struct SwiftMailClient: MailWriteClient {
     /// `IMAPServer.fetchRawMessage` always gives up after this many seconds.
     static let rawMessageTimeoutSeconds = 10
 
@@ -22,6 +23,9 @@ struct SwiftMailClient: MailClient {
         case search
         case fetchEnvelopes
         case fetchRawMessage
+        /// `mailbox` is the wire name, in modified UTF-7.
+        case select(mailbox: String)
+        case store
 
         /// The command's name in error messages.
         var name: String {
@@ -32,6 +36,8 @@ struct SwiftMailClient: MailClient {
             case .examine: return "EXAMINE"
             case .search: return "SEARCH"
             case .fetchEnvelopes, .fetchRawMessage: return "FETCH"
+            case .select: return "SELECT"
+            case .store: return "STORE"
             }
         }
     }
@@ -183,6 +189,25 @@ struct SwiftMailClient: MailClient {
         }
     }
 
+    // MARK: - Writes (MailWriteClient)
+
+    func select(mailbox: String) async throws {
+        _ = try await run(.select(mailbox: mailbox)) {
+            try await server.selectMailbox(mailbox)
+        }
+    }
+
+    func setSeen(_ seen: Bool, uid: UInt32) async throws {
+        try await run(.store) {
+            try await server.store(flags: [.seen], on: UIDSet(UID(uid)), operation: Self.storeOperation(seen: seen))
+        }
+    }
+
+    /// `+FLAGS` adds `\Seen` (read), and `-FLAGS` removes it (unread).
+    static func storeOperation(seen: Bool) -> StoreData.StoreType {
+        seen ? .add : .remove
+    }
+
     // MARK: - Errors
 
     /// Runs one IMAP command and turns its errors into `IrisError`s.
@@ -208,7 +233,8 @@ struct SwiftMailClient: MailClient {
                 host: account.host,
                 reason: redacting(password, in: reason)
             )
-        case (.examine(let mailbox), IMAPError.selectFailed(let reason)):
+        case (.examine(let mailbox), IMAPError.selectFailed(let reason)),
+             (.select(let mailbox), IMAPError.selectFailed(let reason)):
             return .unknownMailbox(account: account.name, name: mailbox, reason: redacting(password, in: reason))
         case (.fetchRawMessage, IMAPError.timeout):
             return .messageDownloadTimedOut(seconds: rawMessageTimeoutSeconds)

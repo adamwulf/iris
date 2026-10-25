@@ -1,13 +1,13 @@
 import Foundation
 
-/// The IMAP calls that iris makes. `SwiftMailClient` talks to a real server;
-/// tests use a fake.
+/// The IMAP calls that iris makes to read mail. `SwiftMailClient` talks to a
+/// real server; tests use a fake. The calls that change mail are in `MailWriteClient`.
 ///
 /// A client serves one session: `login()`, then the other calls, then
-/// `logout()`. `MailReader` keeps that order and always logs out.
+/// `logout()`. `session(_:)` keeps that order and always logs out.
 ///
 /// A client knows only wire names, the modified UTF-7 form of mailbox names
-/// (RFC 3501, section 5.1.3). `MailReader` encodes and decodes them.
+/// (RFC 3501, section 5.1.3). `MailReader` and `MailWriter` encode and decode them.
 protocol MailClient: Sendable {
     /// Connects to the server and logs in.
     func login() async throws
@@ -33,6 +33,34 @@ protocol MailClient: Sendable {
     /// Logs out and closes the connection. It is safe to call after a failed
     /// login, and it never throws, so it cannot hide the error that came before it.
     func logout() async
+}
+
+/// The IMAP calls that change mail, for `MailWriter`. `MailReader` holds only a
+/// `MailClient`, so a read-only command cannot reach them.
+protocol MailWriteClient: MailClient {
+    /// Opens a mailbox read-write (SELECT), so STORE can change its flags.
+    /// `mailbox` is the wire name, and an `unknownMailbox` error holds it.
+    func select(mailbox: String) async throws
+    /// Adds the `\Seen` flag to the message with this UID in the selected
+    /// mailbox (UID STORE +FLAGS), or removes it (-FLAGS) when `seen` is false.
+    /// The server answers OK for a missing UID and changes nothing.
+    func setSeen(_ seen: Bool, uid: UInt32) async throws
+}
+
+extension MailClient {
+    /// Logs in, runs `body`, and logs out after it, also when the login or
+    /// `body` throws.
+    func session<T>(_ body: () async throws -> T) async throws -> T {
+        do {
+            try await login()
+            let result = try await body()
+            await logout()
+            return result
+        } catch {
+            await logout()
+            throw error
+        }
+    }
 }
 
 /// What EXAMINE reports about a mailbox.
