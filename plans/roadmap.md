@@ -16,12 +16,14 @@ done; README.md describes it.
   and `iris unread` once per provider (Gmail, iCloud, Zoho), and once each
   with a wrong password and a wrong host. Nothing has run against a real
   server yet.
-- Gmail with Google OAuth: run `iris auth login`, then `iris check`, with
-  Adam's Google Cloud app (External, Testing). Check the console steps in
-  README.md ("Gmail with OAuth") as they are done, the "not verified"
-  warning, the page the browser shows after the redirect, and the
-  `invalid_grant` error after the 7 days (or after removing the access at
-  myaccount.google.com/permissions). None of it has run against Google yet.
+- Gmail with Google OAuth, with Adam's Google Cloud app (External,
+  Testing): run `iris auth login`, then `iris auth status` and
+  `iris check`. Check the console steps in README.md ("Gmail with OAuth")
+  as they are done, the "not verified" warning, and the page the browser
+  shows after the redirect. After the 7 days (or after removing the access
+  at myaccount.google.com/permissions), `iris auth status` and `iris check`
+  should both show the expired sign-in (`invalid_grant`). None of it has
+  run against Google yet.
 - Record the post-login CAPABILITY and the Drafts/Sent names per provider
   (open in `plans/research/imap-libraries.md`, section 5).
 

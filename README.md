@@ -123,6 +123,10 @@ into the `.env` file that has the client ID. (When the client ID comes from
 the environment, iris writes no file: it prints the line for you to save.)
 Run `iris check --account personal` to test the account.
 
+From then on, each command gets a new access token from Google before it
+logs in. iris only reads mail, but Gmail's IMAP accepts only the
+`https://mail.google.com/` scope, which is full access to the mailbox.
+
 `iris auth status` checks the Google sign-in of every account that has a
 client ID (or one, with `--account`): which keys are set (never their
 values), and whether Google still gives an access token. It logs in to no
@@ -133,10 +137,6 @@ $ iris auth status
 NAME      USERNAME      CLIENT ID  CLIENT SECRET  REFRESH TOKEN  STATUS
 personal  me@gmail.com  set        set            set            ok
 ```
-
-From then on, each command gets a new access token from Google before it
-logs in. iris only reads mail, but Gmail's IMAP accepts only the
-`https://mail.google.com/` scope, which is full access to the mailbox.
 
 **Sign in again every 7 days.** Google ends the sign-in of an app in
 Testing mode after 7 days, and also when you change your Google password.

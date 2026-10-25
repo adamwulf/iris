@@ -104,7 +104,9 @@ underscores because the suffix is fixed. The process environment wins over
 `.env`; the nearest `.env` wins over a parent's. Commands resolve the account
 once, at the start, through `AccountOptions.resolve()`. A command that takes
 an `IrisID` (such as `show` and `read`) has no `--account`: it resolves the account that
-the ID names, with `AccountResolver.resolve(name:settings:)`. Resolver functions take
+the ID names, with `AccountResolver.resolve(name:settings:)`. `auth status`
+has its own `--account`: leaving it out checks every Google account, not the
+default one, through `GoogleSignInStatus.check`. Resolver functions take
 the settings as a parameter, so tests never read the real environment.
 
 An account with `IRIS_<NAME>_GOOGLE_CLIENT_ID` signs in with Google
@@ -181,7 +183,8 @@ for the user to save.
    (types and errors only), and script it in `FakeMailClient`.
 3. Add `Sources/iris/Commands/<Name>Command.swift`: `@OptionGroup var
    accountOptions: AccountOptions` (but a command that takes an `IrisID`
-   has no `--account`; see "Accounts"), options (a list command uses
+   has no `--account`, and `auth status` has its own, where leaving it out
+   means every Google account; see "Accounts"), options (a list command uses
    `var format: OutputFormat = .listDefault`), and a `run()` of a few lines.
    Register it (see "Read-only and write commands").
 4. Add parse tests in `Tests/CLITests/ArgumentParsingTests.swift`.
@@ -202,7 +205,7 @@ enforces it:
   `Iris.configuration.subcommands`, after the read-only ones. Never
   mark it `ReadOnlyCommand`: `ReadOnly.commands` is typed
   `[any ReadOnlyCommand.Type]`, so the compiler keeps write commands out of
-  `ro`. `iris auth login` is one: it opens a browser and writes `.env`.
+  `ro`.
 - A **group with both kinds** cannot be a `ReadOnlyCommand`. `auth` is one:
   `iris auth login` writes `.env`, and `iris auth status` only reads. Give
   it two forms: the full group (`Auth`, with `login` and `status`) in
