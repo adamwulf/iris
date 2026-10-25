@@ -231,10 +231,16 @@ public enum AccountResolver {
             return .password(try value(.password, account: name, in: settings))
         }
         let client = try googleClient(forAccount: name, in: settings)
+        return .google(client, refreshToken: try googleRefreshToken(forAccount: name, in: settings))
+    }
+
+    /// The account's refresh token, which `iris auth login` writes. Without
+    /// one, the account has not signed in yet, which `googleNotSignedIn` explains.
+    static func googleRefreshToken(forAccount name: String, in settings: [String: String]) throws -> String {
         guard let refreshToken = settings[key(.googleRefreshToken, account: name)] else {
             throw IrisError.googleNotSignedIn(account: name)
         }
-        return .google(client, refreshToken: refreshToken)
+        return refreshToken
     }
 
     /// The account's Google client. It throws when a key is missing, and when

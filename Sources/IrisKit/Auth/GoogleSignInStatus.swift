@@ -49,12 +49,12 @@ public struct GoogleSignInStatus: Sendable, Equatable, Encodable {
         if let name {
             names = [try AccountResolver.chosenAccountName(name, in: settings)]
         } else {
-            guard !AccountResolver.accountNames(in: settings).isEmpty else {
+            // Every Google account, not the default one: IRIS_DEFAULT_ACCOUNT plays no part.
+            let all = AccountResolver.accountNames(in: settings)
+            guard !all.isEmpty else {
                 throw IrisError.noAccountsConfigured
             }
-            names = AccountResolver.accountNames(in: settings).filter {
-                AccountResolver.usesGoogle(account: $0, in: settings)
-            }
+            names = all.filter { AccountResolver.usesGoogle(account: $0, in: settings) }
             guard !names.isEmpty else {
                 throw IrisError.noGoogleAccounts
             }
@@ -75,34 +75,38 @@ public struct GoogleSignInStatus: Sendable, Equatable, Encodable {
         func isSet(_ field: AccountResolver.Field) -> Bool {
             settings[AccountResolver.key(field, account: name)] != nil
         }
-        let problem: String?
-        if !AccountResolver.usesGoogle(account: name, in: settings) {
-            problem = "\(AccountResolver.key(.googleClientID, account: name)) is not set, "
-                + "so the account logs in with a password, not with Google"
-        } else {
-            do {
-                if case .google(let client, let refreshToken) = try AccountResolver.authentication(
-                    forAccount: name, in: settings
-                ) {
-                    _ = try await endpoint.accessToken(client: client, refreshToken: refreshToken, account: name)
-                }
-                problem = nil
-            } catch {
-                // The token endpoint's errors are redacted already; this also covers any other text.
-                let secrets = [AccountResolver.Field.password, .googleClientSecret, .googleRefreshToken]
-                    .compactMap { settings[AccountResolver.key($0, account: name)] }
-                let text = (error as? IrisError)?.errorDescription ?? String(describing: error)
-                problem = Redaction.redacting(secrets, in: text)
-            }
-        }
         return GoogleSignInStatus(
             name: name,
             username: settings[AccountResolver.key(.username, account: name)],
             clientIDSet: isSet(.googleClientID),
             clientSecretSet: isSet(.googleClientSecret),
             refreshTokenSet: isSet(.googleRefreshToken),
-            problem: problem
+            problem: await problem(of: name, settings: settings, endpoint: endpoint)
         )
+    }
+
+    /// Why the account is not signed in, or nil when Google gave an access token.
+    private static func problem(
+        of name: String,
+        settings: [String: String],
+        endpoint: GoogleTokenEndpoint
+    ) async -> String? {
+        guard AccountResolver.usesGoogle(account: name, in: settings) else {
+            return "\(AccountResolver.key(.googleClientID, account: name)) is not set, "
+                + "so the account logs in with a password, not with Google"
+        }
+        do {
+            let client = try AccountResolver.googleClient(forAccount: name, in: settings)
+            let refreshToken = try AccountResolver.googleRefreshToken(forAccount: name, in: settings)
+            _ = try await endpoint.accessToken(client: client, refreshToken: refreshToken, account: name)
+            return nil
+        } catch {
+            // The token endpoint's errors are redacted already; this also covers any other text.
+            let secrets = [AccountResolver.Field.password, .googleClientSecret, .googleRefreshToken]
+                .compactMap { settings[AccountResolver.key($0, account: name)] }
+            let text = (error as? IrisError)?.errorDescription ?? String(describing: error)
+            return Redaction.redacting(secrets, in: text)
+        }
     }
 }
 

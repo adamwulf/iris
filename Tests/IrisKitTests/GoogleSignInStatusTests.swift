@@ -58,6 +58,39 @@ final class GoogleSignInStatusTests: XCTestCase {
         ])
     }
 
+    func testTheDefaultAccountDoesNotNarrowTheCheck() async throws {
+        // Without --account, every Google account is checked, whatever IRIS_DEFAULT_ACCOUNT says,
+        // and a typo in it is not defaultAccountError here.
+        for defaultAccount in ["personal", "Persnal"] {
+            var settings = googleSettings("PERSONAL").merging(googleSettings("SIDE")) { $1 }
+            settings[AccountResolver.defaultAccountKey] = defaultAccount
+            let transport = StubTransport([ok(), ok()])
+
+            let statuses = try await check(settings, transport)
+
+            XCTAssertEqual(statuses.map(\.name), ["personal", "side"], "IRIS_DEFAULT_ACCOUNT=\(defaultAccount)")
+            XCTAssertTrue(statuses.allSatisfy(\.signedIn), "\(statuses)")
+            let requests = await transport.requests
+            XCTAssertEqual(requests.count, 2)
+        }
+    }
+
+    func testANetworkFailureGoesInItsRow() async throws {
+        let offline = URLError(.notConnectedToInternet)
+        let settings = googleSettings("PERSONAL").merging(googleSettings("SIDE")) { $1 }
+        let transport = StubTransport([.failure(offline), ok()])
+
+        let statuses = try await check(settings, transport)
+
+        XCTAssertEqual(statuses.map(\.name), ["personal", "side"])
+        XCTAssertEqual(
+            statuses[0].problem,
+            IrisError.googleTokenFailed(account: "personal", reason: offline.localizedDescription).errorDescription
+        )
+        XCTAssertFalse(statuses[0].signedIn)
+        XCTAssertTrue(statuses[1].signedIn, "the next account is still checked")
+    }
+
     func testAnExpiredSignInGoesInItsRowAndDoesNotHideTheOthers() async throws {
         let settings = googleSettings("OLD").merging(googleSettings("PERSONAL")) { $1 }
         let expired = HTTPResponse(statusCode: 400, body: Data(#"{"error":"invalid_grant"}"#.utf8))
