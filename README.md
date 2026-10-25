@@ -124,7 +124,8 @@ same, and the next-page hint keeps the filter options.
 
 The server does the matching (IMAP SEARCH), so the details depend on the
 server. RFC 3501 says that text matches any part of the header and ignores
-case, but some servers match only whole words. `--since` and `--before`
+case, but some servers match only whole words, and some refuse `--from` or
+`--subject` text that is not ASCII. `--since` and `--before`
 compare days, not times: the server uses the day it received the message
 and ignores the time and the time zone. That day can be different from the
 `DATE` column, which shows the sender's `Date:` header.

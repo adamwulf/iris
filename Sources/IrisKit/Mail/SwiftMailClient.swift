@@ -224,9 +224,10 @@ struct SwiftMailClient: MailClient {
             // reports a closed connection and a BYE this way.
             return connectionLost(reason: reason(of: error), command: command, account: account)
         case (.search, let error as IMAPError):
-            // The login and EXAMINE worked, so the server refused the filter, not
-            // the account: NO or BAD (commandFailed), or NO [BADCHARSET] for
-            // text that is not ASCII (searchCharsetNotSupported).
+            // The login and EXAMINE worked, so the account is fine, and the cause is
+            // usually the filter: NO or BAD (commandFailed), or NO [BADCHARSET] for
+            // text that is not ASCII (searchCharsetNotSupported). A busy server can
+            // also answer NO; the reason in the message shows that.
             return .searchFailed(account: account.name, reason: redacting(password, in: error.description))
         case (_, let error as IMAPError):
             return .serverError(
