@@ -1,4 +1,5 @@
 import Foundation
+import SwiftMail
 
 /// One mailbox of an address header, such as `Jane Doe <jane@example.com>`.
 /// `iris list` and `iris show` both use it, so their JSON has the same keys.
@@ -15,6 +16,19 @@ public struct MailAddress: Sendable, Equatable, Encodable {
         let name = name.map(Self.unquoted)
         self.name = name?.isEmpty == true ? nil : name
         self.address = address
+    }
+
+    /// One address as a header writes it, `Jane Doe <jane@example.com>` or
+    /// `jane@example.com`, read with SwiftMail's RFC 5322 parser. Nil for text
+    /// that is not one address with a local part, an `@`, and a domain.
+    init?(parsing text: String) {
+        guard let parsed = EmailAddress(text.trimmingCharacters(in: .whitespaces)),
+              let at = parsed.address.lastIndex(of: "@"),
+              at != parsed.address.startIndex,
+              parsed.address.index(after: at) != parsed.address.endIndex else {
+            return nil
+        }
+        self.init(name: parsed.name, address: parsed.address)
     }
 
     /// The display name, else the address.

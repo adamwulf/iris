@@ -36,6 +36,22 @@ final class MailAddressTests: XCTestCase {
         XCTAssertNil(name(nil))
     }
 
+    func testParsingReadsANameAndAnAddressOrABareAddress() {
+        XCTAssertEqual(
+            MailAddress(parsing: "Jane Doe <jane@example.com>"),
+            MailAddress(name: "Jane Doe", address: "jane@example.com")
+        )
+        XCTAssertEqual(MailAddress(parsing: "<jane@example.com>"), MailAddress(name: nil, address: "jane@example.com"))
+        XCTAssertEqual(MailAddress(parsing: " jane@example.com "), MailAddress(name: nil, address: "jane@example.com"))
+        XCTAssertEqual(MailAddress(parsing: "Doe, Jane <jane@example.com>")?.name, "Doe, Jane")
+    }
+
+    func testParsingRejectsTextThatIsNotOneAddress() {
+        for text in ["", "Jane Doe", "jane", "jane@", "@example.com", "a@example.com, b@example.com"] {
+            XCTAssertNil(MailAddress(parsing: text), text)
+        }
+    }
+
     /// `list --format json` then leaves out the name, as `show` does.
     func testAnEmptyQuotedNameIsNilAndShowsTheAddress() {
         let address = MailAddress(name: "\"\"", address: "jane@example.com")

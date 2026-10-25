@@ -441,6 +441,92 @@ final class AccountResolverTests: XCTestCase {
         XCTAssertEqual(google.secrets, ["client-secret-PERSONAL", "1//refresh"])
     }
 
+    // MARK: - From address
+
+    private let work = Account(
+        name: "work", host: "imap.example.com", port: 993, username: "me@example.com", authentication: .password("secret")
+    )
+
+    func testFromKeyUppercasesTheAccountName() {
+        XCTAssertEqual(AccountResolver.fromKey(account: "my_gmail"), "IRIS_MY_GMAIL_FROM")
+    }
+
+    func testTheFromKeyAloneIsNotAnAccount() {
+        XCTAssertNil(AccountResolver.accountName(fromKey: "IRIS_WORK_FROM"))
+        var values = settings("WORK").merging(googleSettings("PERSONAL")) { $1 }
+        values["IRIS_OTHER_FROM"] = "me@example.com"
+        values["IRIS_PERSONAL_FROM"] = "me@gmail.com"
+        XCTAssertEqual(AccountResolver.accountNames(in: values), ["personal", "work"])
+        XCTAssertEqual(try AccountResolver.summaries(in: values).map(\.problems), [[], []], "accounts does not check it")
+    }
+
+    func testFromAddressReadsANameAndAnAddress() throws {
+        let values = ["IRIS_WORK_FROM": "Jane Doe <jane@example.com>"]
+        XCTAssertEqual(
+            try AccountResolver.fromAddress(for: work, in: values),
+            MailAddress(name: "Jane Doe", address: "jane@example.com")
+        )
+    }
+
+    func testFromAddressReadsAQuotedName() throws {
+        let values = ["IRIS_WORK_FROM": #""Doe, Jane" <jane@example.com>"#]
+        XCTAssertEqual(try AccountResolver.fromAddress(for: work, in: values).name, "Doe, Jane")
+    }
+
+    func testFromAddressReadsABareAddress() throws {
+        let values = ["IRIS_WORK_FROM": "jane@example.com"]
+        XCTAssertEqual(
+            try AccountResolver.fromAddress(for: work, in: values),
+            MailAddress(name: nil, address: "jane@example.com")
+        )
+    }
+
+    func testFromAddressWinsOverTheUsername() throws {
+        let values = ["IRIS_WORK_FROM": "other@example.com"]
+        XCTAssertEqual(try AccountResolver.fromAddress(for: work, in: values).address, "other@example.com")
+    }
+
+    func testFromAddressFallsBackToAUsernameThatIsAnAddress() throws {
+        XCTAssertEqual(
+            try AccountResolver.fromAddress(for: work, in: [:]),
+            MailAddress(name: nil, address: "me@example.com")
+        )
+    }
+
+    /// A Google account's username is the address chosen at Google sign-in.
+    func testFromAddressOfAGoogleAccountFallsBackToItsSignInAddress() throws {
+        let values = googleSettings("PERSONAL")
+        let account = try AccountResolver.resolve(name: nil, settings: values)
+        XCTAssertEqual(
+            try AccountResolver.fromAddress(for: account, in: values),
+            MailAddress(name: nil, address: "personal@gmail.com")
+        )
+        var named = values
+        named["IRIS_PERSONAL_FROM"] = "Me <me@example.com>"
+        XCTAssertEqual(try AccountResolver.fromAddress(for: account, in: named).address, "me@example.com")
+    }
+
+    func testFromAddressWithoutTheKeyOrAnAddressUsernameNamesTheKey() {
+        let icloud = Account(
+            name: "icloud", host: "imap.mail.me.com", port: 993, username: "emily", authentication: .password("secret")
+        )
+        XCTAssertThrowsError(try AccountResolver.fromAddress(for: icloud, in: [:])) { error in
+            XCTAssertEqual(error as? IrisError, .draftFromAddressMissing(account: "icloud", username: "emily"))
+        }
+    }
+
+    func testFromAddressWithoutAnAddressInTheKeyNamesTheKey() {
+        for bad in ["Jane Doe", "jane", "jane@", "@example.com", "Jane <>", "a@example.com, b@example.com"] {
+            XCTAssertThrowsError(try AccountResolver.fromAddress(for: work, in: ["IRIS_WORK_FROM": bad])) { error in
+                guard case .invalidSetting(let key, let reason) = error as? IrisError else {
+                    return XCTFail("unexpected error \(error) for \(bad)")
+                }
+                XCTAssertEqual(key, "IRIS_WORK_FROM")
+                XCTAssertTrue(reason.contains("\"\(bad)\" is not an email address"), reason)
+            }
+        }
+    }
+
     func testDefaultAccountErrorIsNilWhenTheDefaultIsFine() {
         var values = settings("WORK")
         XCTAssertNil(AccountResolver.defaultAccountError(in: values), "the key is not set")

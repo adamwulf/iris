@@ -123,6 +123,72 @@ final class MailErrorTests: XCTestCase {
         XCTAssertFalse(message.contains("IRIS_WORK_IMAP_PORT"))
     }
 
+    // MARK: - Drafts
+
+    func testDraftBodyErrorsSayHowToGiveTheReply() throws {
+        let twice = try XCTUnwrap(IrisError.draftBodyGivenTwice.errorDescription)
+        XCTAssertEqual(
+            twice,
+            "The reply was given twice: as an argument and with -F. "
+                + "Give it one way: as an argument, with -F <path>, or on stdin."
+        )
+        let missing = try XCTUnwrap(IrisError.draftBodyMissing.errorDescription)
+        XCTAssertTrue(missing.contains("as an argument"), missing)
+        XCTAssertTrue(missing.contains("-F <path> (-F - reads stdin)"), missing)
+        XCTAssertTrue(missing.contains("echo 'Thanks!' | iris draft '<iris-id>'"), missing)
+
+        XCTAssertEqual(
+            IrisError.draftBodyEmpty(source: "stdin").errorDescription,
+            "The reply from stdin is empty. Write the reply in Markdown, "
+                + "and give it as an argument, with -F <path>, or on stdin."
+        )
+        XCTAssertEqual(
+            IrisError.draftBodyNotRead(source: "the file \"reply.md\"", reason: "No such file.").errorDescription,
+            "Could not read the reply from the file \"reply.md\" (No such file.). "
+                + "Check the path, or give the reply as an argument or on stdin."
+        )
+        XCTAssertEqual(
+            IrisError.draftBodyNotUTF8(source: "stdin").errorDescription,
+            "The reply from stdin is not UTF-8 text. Save it as UTF-8, or give the reply as an argument."
+        )
+    }
+
+    func testMissingFromAddressNamesTheKeyAndTheUsername() throws {
+        let message = try XCTUnwrap(
+            IrisError.draftFromAddressMissing(account: "my_icloud", username: "emily").errorDescription
+        )
+        XCTAssertTrue(message.contains("account \"my_icloud\" (\"emily\") is not an address"), message)
+        XCTAssertTrue(message.contains("Set IRIS_MY_ICLOUD_FROM to your address"), message)
+        XCTAssertTrue(message.contains("\"IRIS_MY_ICLOUD_FROM=Your Name <you@example.com>\""), message)
+    }
+
+    func testMissingDraftsMailboxPointsToTheMailboxesCommandForThatAccount() {
+        XCTAssertEqual(
+            IrisError.draftsMailboxNotFound(account: "work").errorDescription,
+            "The server has no mailbox marked \\Drafts (account \"work\"), so iris does not know "
+                + "where to save the draft. Run `iris mailboxes --account work` to see the mailboxes and their attributes."
+        )
+    }
+
+    func testDraftTooLargeGivesBothSizesAndHowToShortenIt() {
+        XCTAssertEqual(
+            IrisError.draftTooLarge(account: "work", size: 2_000_000, limit: 1_000_000).errorDescription,
+            "The draft is 2000000 bytes, and the server takes at most 1000000 bytes (account \"work\"). "
+                + "Shorten the reply, or leave out the quoted message with --no-quote."
+        )
+    }
+
+    func testDraftMayBeSavedNamesTheMailboxToLookInBeforeTryingAgain() {
+        XCTAssertEqual(
+            IrisError.draftMayBeSaved(
+                account: "personal", mailbox: "[Gmail]/Drafts", reason: "the server did not answer APPEND in time"
+            ).errorDescription,
+            "Saving the draft did not finish (account \"personal\"): the server did not answer APPEND in time. "
+                + "The server may have saved it in \"[Gmail]/Drafts\" anyway: look in it "
+                + "(`iris list --account personal --mailbox '[Gmail]/Drafts'`) before you try again."
+        )
+    }
+
     func testRedactingRemovesEveryCopyOfEverySecret() {
         XCTAssertEqual(
             Redaction.redacting(["hunter2"], in: "LOGIN me hunter2 failed: hunter2"),

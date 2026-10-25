@@ -8,6 +8,7 @@ import Foundation
 ///     IRIS_WORK_IMAP_PORT=993            (optional; 993 is the default)
 ///     IRIS_WORK_IMAP_USERNAME=me@example.com
 ///     IRIS_WORK_IMAP_PASSWORD=app-password
+///     IRIS_WORK_FROM=Me <me@example.com> (optional; only `iris draft` reads it)
 ///     IRIS_DEFAULT_ACCOUNT=work          (optional when only one account exists)
 ///
 /// An account with `IRIS_<NAME>_GOOGLE_CLIENT_ID` signs in with Google
@@ -42,6 +43,33 @@ public enum AccountResolver {
     /// The key that holds `field` for `account`: `key(.host, account: "work")` is `IRIS_WORK_IMAP_HOST`.
     public static func key(_ field: Field, account: String) -> String {
         keyPrefix + account.uppercased() + "_" + field.rawValue
+    }
+
+    /// The optional key for the address that drafts are from: `fromKey(account: "work")`
+    /// is `IRIS_WORK_FROM`. It is not a `Field`: reading needs no From address,
+    /// so the key alone does not make an account, and `iris accounts` does not check it.
+    public static func fromKey(account: String) -> String {
+        keyPrefix + account.uppercased() + "_FROM"
+    }
+
+    /// The address that a draft from `account` is from: `IRIS_<NAME>_FROM`, as
+    /// `Name <address>` or the address alone, else the username when it is an address.
+    public static func fromAddress(for account: Account, in settings: [String: String]) throws -> MailAddress {
+        let key = fromKey(account: account.name)
+        if let value = settings[key] {
+            guard let address = MailAddress(parsing: value) else {
+                throw IrisError.invalidSetting(
+                    key: key,
+                    reason: "\"\(value)\" is not an email address. Write it as Name <address>, "
+                        + "for example \"Jane Doe <jane@example.com>\", or as the address alone."
+                )
+            }
+            return address
+        }
+        guard let username = MailAddress(parsing: account.username), username.name == nil else {
+            throw IrisError.draftFromAddressMissing(account: account.name, username: account.username)
+        }
+        return username
     }
 
     /// All settings iris can see: the `.env` files, with the process environment
