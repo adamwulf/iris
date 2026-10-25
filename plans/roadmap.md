@@ -6,56 +6,51 @@ and known limits. Implemented features and recorded live checks are in
 thread-search constraints are described there and in the original
 [library research](research/imap-libraries.md).
 
-## Next: live checks against real accounts
+## Next: iCloud validation
 
-Gmail, Zoho Mail, and iCloud Mail remain the target providers. The commands
-below are implemented; these are validation tasks, not missing features.
-Keep the recorded results in README.md up to date as checks are completed,
-including the date, provider, and behavior checked.
+Adam confirmed on 2026-10-25 that all functionality works well with agents
+on his Zoho and Gmail accounts. Routine validation of those providers is
+complete. iCloud remains the provider to check end to end.
 
-- Run `iris check`, `iris mailboxes`, `iris list`, and `iris show` on
-  Gmail and iCloud, including a wrong password and a wrong host. Repeat
-  `show` and `thread` on Zoho to check the outline FETCH and thread-header
-  FETCH with RFC822.SIZE added after its first live check, for small
-  messages as well as large ones. For Gmail, record the commands and
-  authentication method used: the 2026-10-25 real-message checks did not
-  record that coverage.
-- Check `iris thread` on Gmail and iCloud. Confirm that SUBJECT finds
-  replies, how each server matches words, and that `--format id` gives
-  the same iris IDs as the rendered thread when all messages download.
-- Run `iris download` on each provider, on a PDF, an inline image, and
-  a forwarded message (`message/rfc822`, saved as an `.eml`), and compare
-  the downloaded bytes with the attachment.
-- Show a 20 MB message (a large PDF attached) on Zoho and Gmail with
-  `iris show`, `iris thread`, and `iris draft`: they must take the parts
-  path and show or quote the body. Then download the PDF with
-  `iris download`, check that its bytes match, and record the download
-  time against the 60 second part limit.
-  Compare the body, filenames, and estimated sizes with
-  `iris show --format raw` on a fast link, and with a message under 1 MiB
-  that takes the whole path. Record what BODYSTRUCTURE sends for a
-  non-ASCII filename (`filename*=`), and whether the outline's size,
-  structure, and header fields arrive in one FETCH response or several.
-- Run `iris read`, `iris unread`, and `iris draft` on each provider.
-  Confirm the read/unread state in another mail app. Check that a draft
-  opens in Apple Mail as its own draft, in the thread, and that the server
-  reports its UID (UIDPLUS). With `--attach`, check the filenames in
-  Apple Mail and Gmail's web view, including a non-ASCII name. On Zoho and
-  Gmail, also attach a file larger than the server accepts: record
+- Run `iris check`, `iris mailboxes`, `iris list`, `iris show`, and
+  `iris thread` on iCloud. Check the list filters, subject matching, and
+  that `thread --format id` gives the same iris IDs as a rendered thread
+  when all messages download.
+- Run `iris download` on a PDF, an inline image, and a forwarded message
+  (`message/rfc822`, saved as an `.eml`), and compare the bytes. Check
+  `show`, `thread`, and `draft` with a large original as well as a small
+  one.
+- Run `iris read`, `iris unread`, and `iris draft`. Confirm the flags in
+  another mail app, and that the draft opens in Apple Mail as its own
+  draft in the thread. Check the returned iris ID and `--attach`, including
+  a non-ASCII filename.
+- Record post-login CAPABILITY and Drafts/Sent names. The original
+  research captured only iCloud's pre-login capabilities.
+
+## Targeted validation and provider details
+
+These checks cover specific limits and failure handling beyond regular
+use. Keep results in README.md with the date, provider, and case checked.
+
+- Check wrong-password and wrong-host errors. For Gmail OAuth, check the
+  expired/revoked-token behavior in `iris auth status` and `iris check`.
+  Verify the README console setup steps when setting up another client.
+- Compare a 20 MB message's body, filenames, and estimated attachment
+  sizes in `show` and `thread` with `show --format raw` on a fast link;
+  check that `draft` quotes its body correctly. Download the PDF, compare
+  its bytes, and record the time against the 60 second part limit. On
+  Zoho and Gmail, record what BODYSTRUCTURE sends for a non-ASCII filename
+  (`filename*=`), and whether the outline's size, structure, and headers
+  arrive in one FETCH response or several.
+- On Zoho and Gmail, attach a file larger than the server accepts: record
   APPENDLIMIT (`draftTooLarge`) or a tagged NO (`draftRefused` and its
   reason), and the upload time against the 30 second limit.
-- Run `iris list --search` and `iris list --to` on each provider.
-  Check that `--search` finds a word only in the body, and record how TEXT
-  and TO match words. The Zoho TEXT probe with a Message-ID does not
-  establish ordinary body-word matching.
-- Check Gmail OAuth with Adam's Google Cloud app (External, Testing):
-  `iris auth login`, `iris auth status`, `iris check`, and saving a
-  draft. Verify the README console steps, consent warning, and redirect
-  page. After token expiry or revoking access,
-  `iris auth status` and `iris check` should report the expired sign-in
-  (`invalid_grant`).
-- Record post-login CAPABILITY and Drafts/Sent names for Gmail and iCloud.
-  The original research captured only their pre-login capabilities.
+- Record how Gmail and iCloud match SUBJECT, TEXT (`list --search`), and
+  TO (`list --to`) words, and how Zoho matches ordinary TEXT/TO words.
+  Zoho's earlier TEXT probe with a Message-ID does not establish those
+  matching rules.
+- Record Gmail's post-login CAPABILITY and Drafts/Sent names alongside
+  the existing Zoho record.
 
 ## Quoted-history validation
 
