@@ -96,7 +96,7 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(MessageFormatter.sizeText(2_000_000_000), "2.0 GB")
     }
 
-    /// A message whose bytes are not valid UTF-8 (a Latin-1 "é"), so `raw` must not re-encode it.
+    /// A message whose bytes are not valid UTF-8 (a Latin-1 "é"), which only its charset decodes.
     private let latin1Message = Data(
         "Subject: Caf\u{E9}\r\nContent-Type: text/plain; charset=ISO-8859-1\r\n\r\nCaf\u{E9}\r\n"
             .unicodeScalars.map { UInt8($0.value) }
@@ -104,14 +104,13 @@ final class MessageFormatterTests: XCTestCase {
 
     private let irisID = IrisID(account: "work", mailbox: "INBOX", uid: 42)
 
-    func testRenderRawGivesTheBytesUnchanged() async throws {
-        let output = try await MessageFormatter.render(rawMessage: latin1Message, irisID: irisID, format: .raw)
-        XCTAssertEqual(output, latin1Message)
-    }
+    // A whole message renders what it always rendered: the goldens here
+    // (`testMarkdownForAFullDocument`, `testJSONIsDeterministicAndHasNoAttachmentBytes`)
+    // and in MessageDecoderTests pin the output byte for byte.
 
     func testRenderMarkdownDecodesShowsTheIrisIDAndEndsWithANewline() async throws {
         let output = try await MessageFormatter.render(
-            rawMessage: latin1Message, irisID: irisID, format: .markdown, timeZone: chicago
+            message: .whole(latin1Message), irisID: irisID, format: .markdown, timeZone: chicago
         )
         var document = try await MessageDecoder.decode(latin1Message)
         document.irisID = irisID
@@ -121,7 +120,7 @@ final class MessageFormatterTests: XCTestCase {
     }
 
     func testRenderJSONDecodesAddsTheIrisIDAndEndsWithANewline() async throws {
-        let output = try await MessageFormatter.render(rawMessage: latin1Message, irisID: irisID, format: .json)
+        let output = try await MessageFormatter.render(message: .whole(latin1Message), irisID: irisID, format: .json)
         var document = try await MessageDecoder.decode(latin1Message)
         XCTAssertNil(document.irisID, "the decoder reads only the bytes")
         document.irisID = irisID
@@ -130,7 +129,7 @@ final class MessageFormatterTests: XCTestCase {
     }
 
     func testDocumentDecodesAndSetsTheIrisID() async throws {
-        let document = try await MessageFormatter.document(rawMessage: latin1Message, irisID: irisID, body: .auto)
+        let document = try await MessageFormatter.document(message: .whole(latin1Message), irisID: irisID, body: .auto)
 
         var expected = try await MessageDecoder.decode(latin1Message)
         expected.irisID = irisID
@@ -158,13 +157,13 @@ final class MessageFormatterTests: XCTestCase {
     """.utf8)
 
     func testRenderShowsTheAttachmentIDInMarkdownAndJSON() async throws {
-        let markdown = try await MessageFormatter.render(rawMessage: withAttachment, irisID: irisID, format: .markdown)
+        let markdown = try await MessageFormatter.render(message: .whole(withAttachment), irisID: irisID, format: .markdown)
         XCTAssertTrue(
             String(decoding: markdown, as: UTF8.self).contains("- `2` report.pdf (application/pdf, 5 bytes)\n"),
             String(decoding: markdown, as: UTF8.self)
         )
 
-        let json = try await MessageFormatter.render(rawMessage: withAttachment, irisID: irisID, format: .json)
+        let json = try await MessageFormatter.render(message: .whole(withAttachment), irisID: irisID, format: .json)
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [String: Any])
         let attachments = try XCTUnwrap(object["attachments"] as? [[String: Any]])
         XCTAssertEqual(attachments.compactMap { $0["attachmentID"] as? String }, ["2"])
@@ -186,8 +185,8 @@ final class MessageFormatterTests: XCTestCase {
         --b--\r
 
         """.utf8)
-        let text = try await MessageFormatter.render(rawMessage: alternative, irisID: irisID, format: .json, body: .text)
-        let html = try await MessageFormatter.render(rawMessage: alternative, irisID: irisID, format: .json, body: .html)
+        let text = try await MessageFormatter.render(message: .whole(alternative), irisID: irisID, format: .json, body: .text)
+        let html = try await MessageFormatter.render(message: .whole(alternative), irisID: irisID, format: .json, body: .html)
         XCTAssertTrue(String(decoding: text, as: UTF8.self).contains(#""body" : "plain *text*""#))
         XCTAssertTrue(String(decoding: html, as: UTF8.self).contains(#""body" : "html **text**""#))
     }
@@ -294,6 +293,13 @@ final class MessageFormatterTests: XCTestCase {
         XCTAssertEqual(ThreadOutputFormat.json.messagesFormat, .json)
         XCTAssertEqual(ThreadOutputFormat.jsonl.messagesFormat, .jsonl)
         XCTAssertNil(ThreadOutputFormat.id.messagesFormat)
+    }
+
+    func testOnlyTheRawFormatOfShowNeedsTheWholeMessage() {
+        // `iris show` downloads a large message in parts for every format with a documentFormat.
+        XCTAssertEqual(MessageOutputFormat.markdown.documentFormat, .markdown)
+        XCTAssertEqual(MessageOutputFormat.json.documentFormat, .json)
+        XCTAssertNil(MessageOutputFormat.raw.documentFormat, "the source is always the whole message")
     }
 
     func testRenderThreadPassesTheBodyPreference() async throws {

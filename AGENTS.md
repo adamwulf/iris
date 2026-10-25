@@ -50,8 +50,10 @@ Sources/IrisKit/
                ThreadSubject (the subject rule of `thread`)
   Message/     MessageDecoder (raw RFC 822, or a large message's outline and
                body parts -> MessageDocument), FlowedText,
-               BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON/raw,
-               and a thread), AppleMailURL (the message: URL from the Message-ID header),
+               BodyCleanup, HeaderDate, MessageFormatter (Markdown/JSON of a
+               DownloadedMessage, and a thread; `--format raw` is the bytes
+               of `MailReader.rawMessage` unchanged), AppleMailURL (the
+               message: URL from the Message-ID header),
                TransferEncoding (base64 and quoted-printable of one downloaded part)
   Draft/       DraftBody (the reply's one source: argument, -F, stdin),
                DraftAttachment (a file of --attach: name, MIME type, bytes),

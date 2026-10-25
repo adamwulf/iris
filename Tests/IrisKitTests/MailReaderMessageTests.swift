@@ -94,6 +94,8 @@ final class MailReaderMessageTests: XCTestCase {
 
     // MARK: - Whole or in parts
 
+    /// A whole message then decodes and renders as it always did: the goldens
+    /// in MessageFormatterTests and MessageDecoderTests pin that byte for byte.
     func testASmallMessageIsDownloadedWholeAfterTheOutline() async throws {
         let fake = server(MessageOutline(size: small.count, headers: MessageHeaders(), parts: []), raw: small)
 
@@ -182,18 +184,6 @@ final class MailReaderMessageTests: XCTestCase {
 
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [String: Any])
         XCTAssertEqual(object["body"] as? String, "The report is attached.")
-    }
-
-    func testAWholeMessageRendersAsRenderRawMessageDoes() async throws {
-        for format in MessageDocumentFormat.allCases {
-            let old: MessageOutputFormat = format == .markdown ? .markdown : .json
-            let output = try await MessageFormatter.render(message: .whole(small), irisID: id(150), format: format)
-            let expected = try await MessageFormatter.render(rawMessage: small, irisID: id(150), format: old)
-            XCTAssertEqual(output, expected, "\(format)")
-        }
-        XCTAssertEqual(MessageOutputFormat.markdown.documentFormat, .markdown)
-        XCTAssertEqual(MessageOutputFormat.json.documentFormat, .json)
-        XCTAssertNil(MessageOutputFormat.raw.documentFormat, "the source is always the whole message")
     }
 
     // MARK: - Errors

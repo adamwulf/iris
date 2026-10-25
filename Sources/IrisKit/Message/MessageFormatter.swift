@@ -62,29 +62,11 @@ public enum ThreadMessagesFormat: CaseIterable, Sendable {
 
 /// Prints a `MessageDocument` the way `iris show` does.
 public enum MessageFormatter {
-    /// The bytes `iris show` writes to stdout for the raw message `data`, read
-    /// from `irisID`. `raw` gives the bytes unchanged, so that it stays the
-    /// exact message source. The other formats decode the message, show the
-    /// iris ID, and end with a newline.
-    public static func render(
-        rawMessage data: Data,
-        irisID: IrisID,
-        format: MessageOutputFormat,
-        body preference: BodyPreference = .auto,
-        timeZone: TimeZone = .current
-    ) async throws -> Data {
-        guard let documentFormat = format.documentFormat else {
-            return data
-        }
-        return try await render(
-            message: .whole(data), irisID: irisID, format: documentFormat, body: preference, timeZone: timeZone
-        )
-    }
-
-    /// The bytes `iris show` writes to stdout for `message`, read from
-    /// `irisID`, as `MailReader.message(_:)` downloaded it: decoded, with the
-    /// iris ID shown, ending with a newline. A whole message gives what
-    /// `render(rawMessage:irisID:format:body:timeZone:)` gives.
+    /// The bytes `iris show` writes to stdout in Markdown or JSON for
+    /// `message`, read from `irisID`, as `MailReader.message(_:)` downloaded
+    /// it (whole, or a large one in parts): decoded, with the iris ID shown,
+    /// ending with a newline. For `--format raw`, `iris show` writes the bytes
+    /// of `MailReader.rawMessage(_:)` unchanged, so they stay the exact source.
     public static func render(
         message: DownloadedMessage,
         irisID: IrisID,
@@ -136,20 +118,6 @@ public enum MessageFormatter {
     /// The next step for a message whose source might say what is wrong with it.
     static func showSourceStep(_ id: IrisID) -> String {
         "Run `iris show \(id.shellQuoted) --format raw` to see its source."
-    }
-
-    /// The raw message `data` decoded, with `irisID`, the message it was read
-    /// from. A note about the part shown goes to `log`.
-    static func document(
-        rawMessage data: Data,
-        irisID: IrisID,
-        body preference: BodyPreference,
-        convertingHTMLWith htmlToMarkdown: (String) async throws -> String = MessageDecoder.markdown(fromHTML:),
-        log: (String) -> Void = IrisLog.log
-    ) async throws -> MessageDocument {
-        try await document(
-            message: .whole(data), irisID: irisID, body: preference, convertingHTMLWith: htmlToMarkdown, log: log
-        )
     }
 
     /// `message` decoded, whole or from its parts, with `irisID`, the message
