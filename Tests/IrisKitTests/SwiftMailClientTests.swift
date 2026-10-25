@@ -306,7 +306,7 @@ final class SwiftMailClientTests: XCTestCase {
         // The thread search has no filter options, so the filter advice in searchFailed does not apply.
         XCTAssertEqual(
             irisError(IMAPError.commandFailed("BAD Could not parse command secret"), .headerSearch),
-            .serverError(account: "work", command: "SEARCH", reason: "Command failed: BAD Could not parse command <password>")
+            .serverError(account: "work", command: "SEARCH", reason: "Command failed: BAD Could not parse command <redacted>")
         )
         XCTAssertEqual(irisError(IMAPError.timeout, .headerSearch), .serverTimedOut(account: "work", command: "SEARCH"))
         XCTAssertEqual(irisError(IMAPError.timeout, .fetchThreadHeaders), .serverTimedOut(account: "work", command: "FETCH"))

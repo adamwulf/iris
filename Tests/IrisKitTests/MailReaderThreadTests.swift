@@ -11,7 +11,8 @@ final class MailReaderThreadTests: XCTestCase {
     private typealias SearchRules = FakeMailClient.SearchRules
 
     private let account = Account(
-        name: "work", host: "imap.example.com", port: 993, username: "me@example.com", password: "secret"
+        name: "work", host: "imap.example.com", port: 993, username: "me@example.com",
+        authentication: .password("secret")
     )
 
     /// Zoho's mailboxes, as LIST gave them on 2026-10-24: two `\Sent`, and no `\All`.
