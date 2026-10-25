@@ -443,6 +443,13 @@ downloads whole, as an `.eml` file.
 An attachment that does not download in 60 seconds fails (SwiftMail stops
 every part download then): try again on a faster connection.
 
+The attachment IDs come only from `iris show` and `iris thread`, which
+download the whole message within 10 seconds. So a message that is large
+because of its attachments can time out there before you see an ID. The
+first attachment of a plain message with attachments (the text, then the
+files) is usually `2`, the next `3`, so `iris download '<iris-id>' 2` is
+worth a try without `show`.
+
 ### Drafts
 
 `iris draft <iris-id>` saves a reply to that message as a draft. It never

@@ -130,6 +130,12 @@ Next:
   revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. Large
   messages may fail. Fix: an upstream SwiftMail change that adds a timeout
   parameter, then a pin bump (ask Adam before opening an upstream PR).
+  This also limits `iris download`: the attachment IDs come only from
+  `iris show` and `iris thread`, which download the whole message, so the
+  large messages that `download` is for can time out before an ID is shown.
+  The first attachment of a plain multipart/mixed message (text, then the
+  file) is usually `2`, so `iris download '<iris-id>' 2` can be tried
+  without `show`.
 - `iris download` fetches one part with SwiftMail's `fetchPart`, whose
   `FetchMessagePartCommand.timeoutSeconds` is hard-coded at 60 at the
   pinned revision, so an attachment that takes more than 60 seconds to
