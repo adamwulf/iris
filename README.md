@@ -419,7 +419,10 @@ The draft is built from the original message:
   quotes: an HTML original as HTML again, and a plain-text original as its
   text, line by line, never read as Markdown. HTML in the reply or the quote
   is shown as text, never run as HTML. Quoted images that pointed at a part
-  of the original (`cid:`, such as a signature logo) are left out.
+  of the original (`cid:`, such as a signature logo) are left out. A line of
+  only `-` or `=` under a text line, such as the `-- ` before a signature,
+  stays text: it never turns the line above it into a heading (use `#` for
+  a heading).
 
 iris saves the draft with the flags `\Seen \Draft` (as Apple Mail saves its
 own drafts, so it does not show as unread) in the mailbox that the server

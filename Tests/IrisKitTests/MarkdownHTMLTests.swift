@@ -90,6 +90,39 @@ final class MarkdownHTMLTests: XCTestCase {
         XCTAssertEqual(html("![Image](cid:logo)  \n![Image](cid:icon)"), "", "a hard break too")
     }
 
+    // MARK: - No setext headings
+
+    /// Gmail quotes a plain-text message with <br> per line, and SwiftText keeps the
+    /// `-- ` signature line right under the last line. As a setext heading it would
+    /// merge the lines into one <h2> and drop the `--`.
+    func testASignatureLineUnderAQuotedLineStaysText() {
+        XCTAssertEqual(
+            html("> > First line  \n> > Second line  \n> > --  \n> > Bob"),
+            "<blockquote>\n<blockquote>\n<p>First line<br />\nSecond line<br />\n--<br />\nBob</p>\n</blockquote>\n</blockquote>\n"
+        )
+    }
+
+    func testASignatureLineInTheReplyStaysText() {
+        XCTAssertEqual(html("Thanks,\nAdam\n-- \nAdam Wulf"), "<p>Thanks,<br />\nAdam<br />\n--<br />\nAdam Wulf</p>\n")
+    }
+
+    func testAnEqualsUnderlineStaysTextAndTheNextParagraphStaysApart() {
+        XCTAssertEqual(html("Title\n=====\n\nText"), "<p>Title<br />\n=====</p>\n<p>Text</p>\n")
+        XCTAssertEqual(
+            html("- a\n  --\n  b"),
+            "<ul>\n<li><p>a<br />\n--<br />\nb</p>\n</li>\n</ul>\n",
+            "in a list item too"
+        )
+    }
+
+    func testAnATXHeadingStaysAHeading() {
+        XCTAssertEqual(html("# Title\nText"), "<h1>Title</h1>\n<p>Text</p>\n")
+    }
+
+    func testAnUnderlineInACodeBlockIsUntouched() {
+        XCTAssertEqual(html("```\nlog line\n=====\n```"), "<pre><code>log line\n=====\n</code></pre>\n")
+    }
+
     func testTextIsEscaped() {
         XCTAssertEqual(html("x < y & \"z\" > w"), "<p>x &lt; y &amp; &quot;z&quot; &gt; w</p>\n")
     }

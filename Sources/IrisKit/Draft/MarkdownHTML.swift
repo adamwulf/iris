@@ -8,7 +8,7 @@ enum MarkdownHTML {
         // Without smart punctuation, so the HTML says what the text part says:
         // the parser would turn "quotes" into curly ones and -- into a dash.
         let parsed = Document(parsing: markdown, options: .disableSmartOpts)
-        var escaper = HTMLEscaper()
+        var escaper = HTMLEscaper(source: markdown)
         let document = escaper.visit(parsed) ?? Document()
         return HTMLFormatter.format(document)
     }
@@ -69,9 +69,107 @@ enum MarkdownHTML {
 /// not have. The links, bold, italic, and struck text, and paragraphs that
 /// they leave blank (only white space and line breaks) go too, and so do the
 /// line breaks they leave at the start or end of a paragraph.
+///
+/// And iris never makes a setext heading: a line of only `-` or `=` under a
+/// text line stays text. In email that line is the `-- ` signature separator
+/// (RFC 3676), and as a heading it would merge the lines above it into one
+/// `<h2>` and drop the `--`. The rule works on the parsed tree, so a `=====`
+/// line in a code block is never touched.
 private struct HTMLEscaper: MarkupRewriter {
+    /// The Markdown's lines, to read the underline of a setext heading.
+    private let sourceLines: [Substring]
+
+    init(source: String) {
+        sourceLines = source.split(separator: "\n", omittingEmptySubsequences: false)
+    }
+
     static func escaped(_ text: String) -> String {
         MarkdownHTML.escaped(text)
+    }
+
+    mutating func visitDocument(_ document: Document) -> Markup? {
+        document.withUncheckedChildren(rewrittenBlocks(of: document))
+    }
+
+    mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> Markup? {
+        blockQuote.withUncheckedChildren(rewrittenBlocks(of: blockQuote))
+    }
+
+    mutating func visitListItem(_ listItem: ListItem) -> Markup? {
+        listItem.withUncheckedChildren(rewrittenBlocks(of: listItem))
+    }
+
+    /// The blocks of `container`, rewritten, with each setext heading turned
+    /// back into the text it was: its lines, a line break, and the underline.
+    /// A paragraph or setext heading that starts on the next line joins it
+    /// after a line break, as it did in the text: after a setext heading,
+    /// CommonMark starts a new paragraph even without a blank line.
+    private mutating func rewrittenBlocks(of container: Markup) -> [Markup] {
+        var blocks: [Markup] = []
+        // The inlines of the paragraph that a setext heading became, and its
+        // last line, while a block on the next line can still join it.
+        var open: (inlines: [Markup], lastLine: Int)?
+        func close() {
+            if let open, let paragraph = Self.paragraph(open.inlines) {
+                blocks.append(paragraph)
+            }
+            open = nil
+        }
+        for child in container.children {
+            let startsOnNextLine = open.map { child.range?.lowerBound.line == $0.lastLine + 1 } ?? false
+            if let heading = child as? Heading, let underline = setextUnderline(of: heading) {
+                let inlines = heading.children.compactMap { visit($0) }
+                    + [LineBreak(), Text(Self.escaped(underline.text))]
+                if startsOnNextLine, let current = open {
+                    open = (current.inlines + [LineBreak()] + inlines, underline.line)
+                } else {
+                    close()
+                    open = (inlines, underline.line)
+                }
+                continue
+            }
+            if startsOnNextLine, let current = open, child is Paragraph {
+                let paragraph = visit(child).map { Array($0.children) } ?? []
+                open = (current.inlines + [LineBreak()] + paragraph, current.lastLine)
+                close()
+                continue
+            }
+            close()
+            if let rewritten = visit(child) {
+                blocks.append(rewritten)
+            }
+        }
+        close()
+        return blocks
+    }
+
+    /// The underline of a setext heading (`---` or `===`) and its line
+    /// number. Nil for an ATX heading (`# Title`), whose range is one line.
+    ///
+    /// swift-markdown ends a setext heading's range at the end of its
+    /// container, not at the underline, so this looks for the underline: the
+    /// first line after the first that holds only `-` or only `=` after the
+    /// markers of its containers (`> > `, or a list item's indent). A line of
+    /// the heading's text cannot look like that: it would be the underline.
+    private func setextUnderline(of heading: Heading) -> (text: String, line: Int)? {
+        guard let range = heading.range, range.upperBound.line > range.lowerBound.line else {
+            return nil
+        }
+        for number in (range.lowerBound.line + 1)...range.upperBound.line where sourceLines.indices.contains(number - 1) {
+            let line = sourceLines[number - 1].trimmingCharacters(in: .whitespaces)
+            let underline = String(line.reversed().prefix(while: { $0 == "-" || $0 == "=" }))
+            let markers = line.dropLast(underline.count)
+            if Set(underline).count == 1, markers.allSatisfy({ $0 == ">" || $0.isWhitespace }) {
+                return (underline, number)
+            }
+        }
+        return nil
+    }
+
+    /// A paragraph of `inlines` (already rewritten), trimmed, or nil when blank.
+    private static func paragraph(_ inlines: [Markup]) -> Markup? {
+        let trimmed = trimmed(inlines).compactMap { $0 as? InlineMarkup }
+        return trimmed.isEmpty ? nil : unlessBlank(Paragraph(trimmed))
     }
 
     mutating func visitSoftBreak(_ softBreak: SoftBreak) -> Markup? {

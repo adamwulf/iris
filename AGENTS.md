@@ -415,6 +415,14 @@ account (`--account <name>`).
   `<img src="cid:...">`, which the draft has no part for). It also parses
   with `.disableSmartOpts`, so the HTML part has the same quotes and dashes
   as the text part.
+- **No setext headings:** a line of only `-` or `=` under a text line (the
+  `-- ` signature separator, RFC 3676) would make the lines above it one
+  `<h2>`. `MarkdownHTML` turns a setext heading back into a paragraph with
+  its underline as text, joined to a paragraph on the next line, in the
+  tree, so a code block is never touched. swift-markdown ends a setext
+  heading's range at the end of its container, not at the underline, so
+  the underline is found by scanning the source lines; an ATX heading
+  (`# Title`) has a one-line range and stays a heading.
 - **The HTML quote:** only an original whose body came from HTML
   (`bodySource == .html`) is rendered as Markdown. A text/plain original is
   escaped line by line (`MarkdownHTML.html(fromPlainText:)`), because as
