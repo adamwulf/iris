@@ -18,7 +18,7 @@ done; README.md describes it.
 - Run `iris read` and `iris unread` once per provider (Gmail, iCloud,
   Zoho). They have not run against a real server yet.
 - Zoho (`imappro.zoho.com`) was checked on 2026-10-24: `check`,
-  `mailboxes`, `list`, and `show` work. Post-login CAPABILITY: `IMAP4rev1
+  `mailboxes`, `list`, `show`, and `thread` work. Post-login CAPABILITY: `IMAP4rev1
   UNSELECT CHILDREN XLIST NAMESPACE IDLE MOVE ID AUTH=PLAIN SASL-IR
   AUTH=XOAUTH2 UIDPLUS ESEARCH LIST-EXTENDED LIST-STATUS WITHIN LITERAL- ACL
   CONDSTORE` (no SPECIAL-USE, no THREAD, no MULTISEARCH). Special-use

@@ -7,8 +7,9 @@ read. The only commands that change mail are `iris read` and `iris unread`,
 which mark one message as read or unread.
 
 Made for Gmail, iCloud Mail, and Zoho Mail. `check`, `mailboxes`, `list`,
-`show`, and `thread` were run against Zoho Mail on 2026-10-24; Gmail and
-iCloud Mail are not checked yet.
+`show`, and `thread` were run against Zoho Mail on 2026-10-24; `read` and
+`unread` have not run against a real server yet, and Gmail and iCloud Mail
+are not checked yet.
 
 ## Install
 
