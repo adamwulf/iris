@@ -8,6 +8,23 @@ public enum MessageOutputFormat: String, CaseIterable, Sendable {
     case json
     /// The message source exactly as the server sent it (RFC 822, an `.eml` file).
     case raw
+
+    /// The format in which `MessageFormatter.render(message:irisID:format:body:timeZone:)`
+    /// prints the decoded message, or nil for `raw`, which is the message
+    /// source: `MailReader.rawMessage(_:)` downloads it whole, at any size.
+    public var documentFormat: MessageDocumentFormat? {
+        switch self {
+        case .markdown: return .markdown
+        case .json: return .json
+        case .raw: return nil
+        }
+    }
+}
+
+/// The `MessageOutputFormat`s that decode the message, so that `iris show`
+/// can download a large one in parts (`MailReader.message(_:)`).
+public enum MessageDocumentFormat: CaseIterable, Sendable {
+    case markdown, json
 }
 
 /// How `iris thread` prints a thread (its `--format`).
@@ -56,14 +73,30 @@ public enum MessageFormatter {
         body preference: BodyPreference = .auto,
         timeZone: TimeZone = .current
     ) async throws -> Data {
-        switch format {
-        case .raw:
+        guard let documentFormat = format.documentFormat else {
             return data
+        }
+        return try await render(
+            message: .whole(data), irisID: irisID, format: documentFormat, body: preference, timeZone: timeZone
+        )
+    }
+
+    /// The bytes `iris show` writes to stdout for `message`, read from
+    /// `irisID`, as `MailReader.message(_:)` downloaded it: decoded, with the
+    /// iris ID shown, ending with a newline. A whole message gives what
+    /// `render(rawMessage:irisID:format:body:timeZone:)` gives.
+    public static func render(
+        message: DownloadedMessage,
+        irisID: IrisID,
+        format: MessageDocumentFormat,
+        body preference: BodyPreference = .auto,
+        timeZone: TimeZone = .current
+    ) async throws -> Data {
+        let document = try await document(message: message, irisID: irisID, body: preference)
+        switch format {
         case .markdown:
-            let document = try await document(rawMessage: data, irisID: irisID, body: preference)
             return Data((markdown(document, timeZone: timeZone) + "\n").utf8)
         case .json:
-            let document = try await document(rawMessage: data, irisID: irisID, body: preference)
             return Data((try json(document) + "\n").utf8)
         }
     }
@@ -104,9 +137,27 @@ public enum MessageFormatter {
         convertingHTMLWith htmlToMarkdown: (String) async throws -> String = MessageDecoder.markdown(fromHTML:),
         log: (String) -> Void = IrisLog.log
     ) async throws -> MessageDocument {
-        var document = try await MessageDecoder.decode(
-            data, body: preference, convertingHTMLWith: htmlToMarkdown, log: log
+        try await document(
+            message: .whole(data), irisID: irisID, body: preference, convertingHTMLWith: htmlToMarkdown, log: log
         )
+    }
+
+    /// `message` decoded, whole or from its parts, with `irisID`, the message
+    /// it was read from. A note about the part shown goes to `log`.
+    static func document(
+        message: DownloadedMessage,
+        irisID: IrisID,
+        body preference: BodyPreference,
+        convertingHTMLWith htmlToMarkdown: (String) async throws -> String = MessageDecoder.markdown(fromHTML:),
+        log: (String) -> Void = IrisLog.log
+    ) async throws -> MessageDocument {
+        var document: MessageDocument
+        switch message {
+        case .whole(let data):
+            document = try await MessageDecoder.decode(data, body: preference, convertingHTMLWith: htmlToMarkdown, log: log)
+        case .parts(let parts):
+            document = try await MessageDecoder.decode(parts, body: preference, convertingHTMLWith: htmlToMarkdown, log: log)
+        }
         document.irisID = irisID
         return document
     }

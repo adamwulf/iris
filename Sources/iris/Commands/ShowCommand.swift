@@ -19,9 +19,16 @@ struct Show: ReadOnlyCommand {
 
     func run() async throws {
         let account = try AccountResolver.resolve(name: irisID.account, settings: AccountResolver.settings())
-        let data = try await MailReader(account: account).rawMessage(irisID)
-        FileHandle.standardOutput.write(
-            try await MessageFormatter.render(rawMessage: data, irisID: irisID, format: format, body: body)
-        )
+        let reader = MailReader(account: account)
+        if let documentFormat = format.documentFormat {
+            // A large message is downloaded in parts: its body, and not its attachments.
+            let message = try await reader.message(irisID)
+            FileHandle.standardOutput.write(
+                try await MessageFormatter.render(message: message, irisID: irisID, format: documentFormat, body: body)
+            )
+        } else {
+            // The source is the whole message, at any size.
+            FileHandle.standardOutput.write(try await reader.rawMessage(irisID))
+        }
     }
 }
