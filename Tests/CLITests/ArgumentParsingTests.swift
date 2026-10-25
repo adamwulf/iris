@@ -66,6 +66,7 @@ final class ArgumentParsingTests: XCTestCase {
     }
 
     /// The next-page hint writes the filter options as text, so they must parse back to the same filter.
+    /// The values need no shell quoting: `parse` gets the words with no shell to remove the quotes.
     func testFilterOptionsInTheNextPageHintParseBackToTheSameFilter() throws {
         let filter = MessageFilter(
             unread: true,
