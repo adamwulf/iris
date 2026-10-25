@@ -6,8 +6,9 @@ public enum ReplyComposer {
     /// A reply to `original` from `from`, with `body` (Markdown) as its text.
     ///
     /// - Parameters:
-    ///   - username: The account's username. With `replyAll`, it is left out
-    ///     of Cc when it is an address, as `from` is.
+    ///   - username: The account's username. When it is an address, it is
+    ///     yours, as `from` is: a message from it is your own, and `replyAll`
+    ///     leaves it out of Cc.
     ///   - replyAll: Also Cc the original's To and Cc recipients.
     ///   - quote: Add the original's body after the reply, as a Markdown quote.
     ///   - timeZone: The zone for the date in the quote's first line. Tests pass a fixed zone.
@@ -20,8 +21,8 @@ public enum ReplyComposer {
         quote: Bool,
         timeZone: TimeZone = .current
     ) -> DraftMessage {
-        let to = original.replyTo.isEmpty ? original.from : original.replyTo
         let me = [from.address] + (username.contains("@") ? [username] : [])
+        let to = recipients(of: original, me: me)
         let cc = replyAll ? ccRecipients(of: original, to: to, me: me) : []
 
         var markdown = BodyCleanup.normalizeLineEndings(body)
@@ -56,13 +57,32 @@ public enum ReplyComposer {
         return subject.isEmpty ? "Re:" : "Re: \(subject)"
     }
 
+    /// Who the reply goes to: the original's Reply-To, else its From. When you
+    /// sent the original (its From is one of `me`, the user's own addresses),
+    /// the reply goes to the original's To recipients instead, as mail apps
+    /// reply to a message in Sent; when those are only you, the first rule applies.
+    static func recipients(of original: MessageDocument, me: [String]) -> [MailAddress] {
+        if let sender = original.from.first, me.contains(where: { $0.lowercased() == sender.address.lowercased() }) {
+            let others = unique(original.to, excluding: me)
+            if !others.isEmpty {
+                return others
+            }
+        }
+        return original.replyTo.isEmpty ? original.from : original.replyTo
+    }
+
     /// The original's To and Cc recipients without the addresses in `to` and
-    /// in `me` (the user's own addresses), and without repeats. Addresses are
-    /// compared ignoring case.
+    /// in `me` (the user's own addresses), and without repeats.
     static func ccRecipients(of original: MessageDocument, to: [MailAddress], me: [String]) -> [MailAddress] {
-        var seen = Set((to.map(\.address) + me).map { $0.lowercased() })
-        return (original.to + original.cc).filter { recipient in
-            seen.insert(recipient.address.lowercased()).inserted
+        unique(original.to + original.cc, excluding: to.map(\.address) + me)
+    }
+
+    /// `addresses` without the ones in `excluded` and without repeats; the
+    /// first copy wins. Addresses are compared ignoring case.
+    private static func unique(_ addresses: [MailAddress], excluding excluded: [String]) -> [MailAddress] {
+        var seen = Set(excluded.map { $0.lowercased() })
+        return addresses.filter { address in
+            seen.insert(address.address.lowercased()).inserted
         }
     }
 

@@ -406,9 +406,12 @@ you to type. An empty reply, or one that is not UTF-8, is an error too.
 
 The draft is built from the original message:
 
-- **To:** the original's `Reply-To`, else its `From`. With `--all`, **Cc:**
-  the original's To and Cc recipients, without the To addresses and without
-  you (your From address, and the username when it is an address).
+- **To:** the original's `Reply-To`, else its `From`. When you sent the
+  original (a message in Sent), the reply goes to its To recipients instead,
+  as mail apps do; when it went to no one but you, the reply goes to you.
+  With `--all`, **Cc:** the original's To and Cc recipients, without the To
+  addresses and without you (your From address, and the username when it is
+  an address).
 - **Subject:** `Re: ` and the original subject (no second `Re:`).
 - **In-Reply-To** and **References**, so mail apps show the draft in the
   same thread.

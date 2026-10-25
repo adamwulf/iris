@@ -103,6 +103,46 @@ final class ReplyComposerTests: XCTestCase {
         XCTAssertEqual(draft.cc, [jane], "the sender is Cc'd when the reply goes to Reply-To")
     }
 
+    // MARK: - Recipients of a reply to your own message
+
+    /// A follow-up to a message in Sent goes to the people it was sent to, not to you.
+    func testAReplyToYourOwnMessageGoesToItsToRecipients() {
+        let bob = MailAddress(name: "Bob", address: "bob@example.com")
+        let draft = reply(to: original(from: [me], to: [jane, bob], cc: [MailAddress(name: nil, address: "carol@example.com")]))
+        XCTAssertEqual(draft.to, [jane, bob])
+        XCTAssertEqual(draft.cc, [], "without --all, Cc stays empty")
+    }
+
+    func testAllOnYourOwnMessageCcsItsCcRecipientsWithoutYou() {
+        let bob = MailAddress(name: "Bob", address: "bob@example.com")
+        let draft = reply(to: original(from: [me], to: [jane, me], cc: [bob, me, jane]), replyAll: true)
+        XCTAssertEqual(draft.to, [jane])
+        XCTAssertEqual(draft.cc, [bob])
+    }
+
+    func testYourOwnMessageIsKnownByTheUsernameIgnoringCase() {
+        let login = MailAddress(name: nil, address: "Login@Example.com")
+        let draft = reply(to: original(from: [login], to: [jane]), username: "login@example.com")
+        XCTAssertEqual(draft.to, [jane])
+    }
+
+    func testYourOwnMessageIgnoresItsReplyTo() {
+        let list = MailAddress(name: "Team", address: "team@example.com")
+        XCTAssertEqual(reply(to: original(from: [me], to: [jane], replyTo: [list])).to, [jane])
+    }
+
+    func testYourOwnMessageLosesRepeatedToRecipients() {
+        let shouting = MailAddress(name: "Jane", address: "JANE@example.com")
+        XCTAssertEqual(reply(to: original(from: [me], to: [jane, shouting])).to, [jane])
+    }
+
+    /// With no one else in To (a note to yourself, or only Cc and Bcc), the
+    /// usual rule applies: the reply goes to the sender, you.
+    func testYourOwnMessageToNoOneElseGoesToYou() {
+        XCTAssertEqual(reply(to: original(from: [me], to: [me])).to, [me])
+        XCTAssertEqual(reply(to: original(from: [me], to: [], cc: [jane])).to, [me])
+    }
+
     // MARK: - Subject
 
     func testSubjectGetsOneRe() {
