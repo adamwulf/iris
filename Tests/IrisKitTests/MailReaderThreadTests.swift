@@ -224,6 +224,25 @@ final class MailReaderThreadTests: XCTestCase {
         }
     }
 
+    func testRepliesWithListAndGatewayTagsStayInTheThread() async throws {
+        // Mailman 3 writes "[list] Re: x"; corporate gateways add "[EXTERNAL]".
+        let expected = ["work/INBOX/1", "work/INBOX/2", "work/Sent/3"]
+        for rules in SearchRules.allCases {
+            let fake = server([
+                "INBOX": [
+                    1: message("a", subject: "[list] Budget", day: 1),
+                    2: message("b", subject: "[list] Re: Budget", day: 2, replyTo: "a", references: ["a"]),
+                ],
+                "Sent": [3: message("c", subject: "Re: [EXTERNAL] Budget", day: 3, replyTo: "b", references: ["a", "b"])],
+            ], rules: rules)
+
+            for start in expected {
+                let found = try await thread(fake, from: start)
+                XCTAssertEqual(found, expected, "\(rules) rules, from \(start)")
+            }
+        }
+    }
+
     func testAReplyWithoutAMessageIDIsShown() async throws {
         let fake = server([
             "INBOX": [10: message("a", subject: "Budget", day: 1)],
