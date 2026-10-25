@@ -188,7 +188,9 @@ client ID but no refresh token yet.
   Markdown; MIME parts, quoted-printable, base64, charsets, encoded headers,
   and `format=flowed` text are decoded. Also as JSON, or as the raw `.eml`
   source. Markdown and JSON include a `message:` URL that opens the message
-  in Apple Mail, and list the attachments, each with its attachment ID.
+  in Apple Mail, and list the attachments, each with its attachment ID. A
+  message over 1 MiB is shown from its text and HTML parts alone (see
+  "Large messages"), so its attachments stay on the server.
 - `iris thread`: every message in the thread of one message, oldest first,
   by the iris ID of any message in it. Each message is shown in full, as
   `iris show` shows it, with its own iris ID (a reply you sent shows its
@@ -328,9 +330,10 @@ When one message cannot be shown (in every format but `id`), iris leaves
 it out, shows the others, and writes a line to stderr with its iris ID,
 why, and what to do next:
 
-- It did not download in time (SwiftMail stops every download after 10
-  seconds): it may be large, or the connection slow, so try again on a
-  faster connection. `iris show` has the same limit.
+- It did not download in time (SwiftMail stops the download of a whole
+  message after 10 seconds, and of each part of a large message after 60):
+  it may be large, or the connection slow, so try again on a faster
+  connection. `iris show` has the same limits.
 - It cannot be read as an email, or its HTML cannot be converted:
   `iris show '<iris-id>' --format raw` shows its source. With
   `--body html`, a message that also has a text part says to use
@@ -339,7 +342,7 @@ why, and what to do next:
   run the command again.
 
 When no message of the thread can be shown (in practice, a thread of one
-large message), the command fails with the error `iris show` would give
+message whose download timed out), the command fails with the error `iris show` would give
 for the message you named. Notes about which part of a message is shown
 (such as "The message has no text part") start with that message's iris
 ID.
@@ -418,7 +421,10 @@ MIME section number, such as `2` or `1.2`.
 
 In JSON it is the `attachmentID` key of each object in `attachments`. They
 never include the attachment's bytes; `--format raw` is the message source,
-unchanged.
+unchanged. The size is the attachment's own size, without the base64 or
+quoted-printable that carries it. For a large message (below) it can be an
+estimate: `about 19.7 MB` in Markdown, and `"sizeIsEstimate": true` next to
+`size` in JSON.
 
 `iris download <iris-id> <attachment-id>` downloads that one attachment.
 It fetches only that part (not the whole message), decodes its base64 or
@@ -445,12 +451,31 @@ downloads whole, as an `.eml` file.
 An attachment that does not download in 60 seconds fails (SwiftMail stops
 every part download then): try again on a faster connection.
 
-The attachment IDs come only from `iris show` and `iris thread`, which
-download the whole message within 10 seconds. So a message that is large
-because of its attachments can time out there before you see an ID. The
-first attachment of a plain message with attachments (the text, then the
-files) is usually `2`, the next `3`, so `iris download '<iris-id>' 2` is
-worth a try without `show`.
+### Large messages
+
+SwiftMail, the IMAP library iris uses, stops the download of a whole
+message after 10 seconds, and attachments are what make a message large.
+So `iris show` (Markdown and JSON), `iris thread`, and `iris draft` first
+ask the server for the message's size. A message of up to 1 MiB (nearly
+all mail without attachments) is downloaded whole, as always. A larger one
+is downloaded in parts: its headers and its list of parts, then only its
+text and HTML parts, with 60 seconds each. Its attachments stay on the
+server, and the list shows their attachment IDs for `iris download`. What
+is different for a large message:
+
+- An attachment's size is an estimate when it is sent as base64 or
+  quoted-printable: iris knows only the size of the encoded part.
+- Some filenames differ. A name that is not plain ASCII (RFC 2231
+  `filename*=`, such as `Résumé.pdf`) can show as `(no filename)` on some
+  servers; its attachment ID still works. And a part without a name can
+  get one, such as `invite.ics` for an invitation or the subject plus
+  `.eml` for a forwarded message.
+- A plain-text body sent as `format=flowed` keeps its line breaks.
+- A `Date:` header without seconds shows as `(unknown)`.
+
+`iris show --format raw` is the message source, so it is always the whole
+message, and a large one can still time out after 10 seconds. That is a
+known limit of SwiftMail.
 
 ### Drafts
 

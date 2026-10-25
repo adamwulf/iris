@@ -19,6 +19,15 @@ describes them.
 - Run `iris download` once per provider (Gmail, iCloud, Zoho), on a PDF, an
   inline image, and a forwarded message (`message/rfc822`, which must save
   as an `.eml`), and check that the bytes match the attachment.
+- Show a 20 MB message (a large PDF attached) on Zoho and on Gmail with
+  `iris show`, `iris thread`, and `iris draft`: they must take the parts
+  path (no 10 second timeout), show the body and the attachment IDs, and
+  `iris download` must then fetch the PDF. Compare the body, the filenames,
+  and the estimated sizes with `iris show --format raw` of the same message
+  on a fast link, and with the same message under 1 MiB, which takes the
+  whole path. Note what each server sends in BODYSTRUCTURE for a non-ASCII
+  filename (`filename*=`), and whether its answer to the outline FETCH puts
+  RFC822.SIZE, BODYSTRUCTURE, and the header fields in one FETCH response.
 - Run `iris read`, `iris unread`, and `iris draft` once per provider (Gmail,
   iCloud, Zoho). They have not run against a real server yet. For
   `iris draft`, check that the draft opens in Apple Mail as its own draft,
@@ -127,15 +136,25 @@ Next:
 
 - Raw message download has a 10 second total deadline: SwiftMail's
   `FetchRawMessageCommand.timeoutSeconds` is hard-coded at the pinned
-  revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. Large
-  messages may fail. Fix: an upstream SwiftMail change that adds a timeout
-  parameter, then a pin bump (ask Adam before opening an upstream PR).
-  This also limits `iris download`: the attachment IDs come only from
-  `iris show` and `iris thread`, which download the whole message, so the
-  large messages that `download` is for can time out before an ID is shown.
-  The first attachment of a plain multipart/mixed message (text, then the
-  file) is usually `2`, so `iris download '<iris-id>' 2` can be tried
-  without `show`.
+  revision (`88c45cbd`), and `fetchRawMessage` takes no timeout. `iris show`,
+  `iris thread`, and `iris draft` download a message over 1 MiB in parts
+  (its headers and BODYSTRUCTURE, then only its text and HTML parts, 60
+  seconds each), so they show its body and attachment IDs. Only
+  `iris show --format raw` still needs the whole message, so a large one can
+  time out there, and so can a message up to 1 MiB on a link slower than
+  about 0.84 Mbit/s. A chunked whole download is not possible with
+  SwiftMail's API: the ranged `fetchPart(section:of:offset:count:)` cannot
+  ask for `BODY[]`, because `Section([])` becomes `[1]`. Fix: an upstream
+  SwiftMail change that adds a timeout parameter (or a ranged `BODY[]`),
+  then a pin bump (ask Adam before opening an upstream PR).
+- A large message, shown in parts, takes its filenames from SwiftMail's
+  BODYSTRUCTURE conversion (`MessagePart+BodyStructure.swift`), which reads
+  only the `filename` and `name` parameters, not RFC 2231 `filename*=`.
+  So on a server that sends only `filename*` in BODYSTRUCTURE, a non-ASCII
+  name (`Résumé.pdf`) shows as "(no filename)"; its attachment ID still
+  works. The conversion also keeps only the `charset` parameter of a
+  Content-Type, so a `format=flowed` text body keeps its soft line breaks.
+  Fix upstream (decode `filename*`, keep the parameters).
 - `iris download` fetches one part with SwiftMail's `fetchPart`, whose
   `FetchMessagePartCommand.timeoutSeconds` is hard-coded at 60 at the
   pinned revision, so an attachment that takes more than 60 seconds to
@@ -156,7 +175,8 @@ Next:
   range), and a server that answers `BODY[<section>] NIL` gives no bytes
   too. There BODYSTRUCTURE gives the part's size, so for a part that is not
   empty iris says that the server sent no bytes (`attachmentNotReceived`)
-  instead of saving an empty file.
+  instead of saving an empty file. The body parts of a large message have
+  the same risk, and the same check (`bodyNotReceived`).
 - A filtered `iris list` gets every matching UID in one SEARCH reply, and
   SwiftMail reads at most 1 MiB per reply
   (`IMAPServer.defaultResponseBufferLimit`). A plain SEARCH reply takes
