@@ -58,8 +58,8 @@ enum CLI {
         IrisLog.handler = { message in
             printToStderr("iris: \(message)")
         }
-        IrisLog.fileHandler = { event in
-            fileLog?.record(event)
+        IrisLog.fileHandler = { record in
+            fileLog?.record(record.event, file: record.file, function: record.function, line: record.line)
         }
     }
 

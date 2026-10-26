@@ -1,6 +1,6 @@
 import ArgumentParser
 import Foundation
-import IrisKit
+@testable import IrisKit
 import Logging
 import XCTest
 @testable import iris
@@ -104,11 +104,40 @@ final class FileLoggingTests: XCTestCase {
         XCTAssertTrue(text.contains("google_sign_in_started"), text)
         XCTAssertTrue(text.contains("logout_failed"), text)
         XCTAssertTrue(text.contains("FileLoggingTests"), text)
-        XCTAssertFalse(text.contains("IrisFileLog.swift"), text)
+        XCTAssertFalse(text.contains("IrisFileLog."), text)
         for value in sensitive.split(separator: " ") {
             XCTAssertFalse(text.contains(value), text)
         }
         XCTAssertFalse(text.contains("protocol-payload-must-stay-out"), text)
+    }
+
+    func testLibraryEventsPreserveTheirSourceWithoutInteractiveContent() async throws {
+        let previousHandler = IrisLog.handler
+        let previousFileHandler = IrisLog.fileHandler
+        defer {
+            IrisLog.handler = previousHandler
+            IrisLog.fileHandler = previousFileHandler
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let log = try IrisFileLog(directory: directory)
+        CLI.installLogHandler(fileLog: log)
+        IrisLog.handler = { _ in }
+        let interactiveLine = #line + 1
+        IrisLog.log("private-mail-body-and-token", fileEvent: .threadSearchFallback)
+        let eventLine = #line + 1
+        IrisLog.record(.bodyFormatFallback)
+        await log.drain()
+
+        let text = try String(contentsOf: directory.appendingPathComponent("iris.log"), encoding: .utf8)
+        for (event, line) in [("thread_search_fallback", interactiveLine), ("body_format_fallback", eventLine)] {
+            let record = try XCTUnwrap(text.split(separator: "\n").first { $0.contains(event) })
+            XCTAssertTrue(record.contains("FileLoggingTests.\(#function):\(line)"), String(record))
+        }
+        XCTAssertFalse(text.contains("CLISupport."), text)
+        XCTAssertFalse(text.contains("IrisFileLog."), text)
+        XCTAssertFalse(text.contains("IrisLog."), text)
+        XCTAssertFalse(text.contains("private-mail-body-and-token"), text)
     }
 
     func testReadOnlyDoesNotCreateDirectoryOrPruneLogs() throws {

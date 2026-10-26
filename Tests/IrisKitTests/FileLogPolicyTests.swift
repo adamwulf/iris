@@ -52,7 +52,7 @@ final class FileLogPolicyTests: XCTestCase {
             IrisLog.fileHandler = previousFileHandler
         }
         IrisLog.handler = console.record
-        IrisLog.fileHandler = { file.record($0.rawValue) }
+        IrisLog.fileHandler = { file.record($0.event.rawValue) }
         let sensitive = "private URL, token, email subject and body"
         IrisLog.log(sensitive)
         IrisLog.log(sensitive, fileEvent: .threadSearchFallback)

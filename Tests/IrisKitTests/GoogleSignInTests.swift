@@ -246,7 +246,7 @@ final class GoogleSignInTests: XCTestCase {
         let previousHandler = IrisLog.handler
         let previousFileHandler = IrisLog.fileHandler
         IrisLog.handler = console.record
-        IrisLog.fileHandler = { file.record($0.rawValue) }
+        IrisLog.fileHandler = { file.record($0.event.rawValue) }
         defer {
             IrisLog.handler = previousHandler
             IrisLog.fileHandler = previousFileHandler

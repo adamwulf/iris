@@ -20,19 +20,33 @@ public enum IrisLog {
         case threadMessageOmitted = "thread_message_omitted"
     }
 
+    /// A fixed event and its compiler-provided source location.
+    public struct FileRecord: Sendable {
+        public let event: FileEvent
+        public let file: String
+        public let function: String
+        public let line: UInt
+    }
+
     /// Set once at startup, like `handler`.
-    nonisolated(unsafe) public static var fileHandler: (@Sendable (FileEvent) -> Void)?
+    nonisolated(unsafe) public static var fileHandler: (@Sendable (FileRecord) -> Void)?
 
     static func log(_ message: String) {
         handler?(message)
     }
 
-    static func log(_ message: String, fileEvent: FileEvent) {
+    static func log(
+        _ message: String, fileEvent: FileEvent,
+        file: String = #fileID, function: String = #function, line: UInt = #line
+    ) {
         handler?(message)
-        record(fileEvent)
+        record(fileEvent, file: file, function: function, line: line)
     }
 
-    static func record(_ event: FileEvent) {
-        fileHandler?(event)
+    static func record(
+        _ event: FileEvent,
+        file: String = #fileID, function: String = #function, line: UInt = #line
+    ) {
+        fileHandler?(FileRecord(event: event, file: file, function: function, line: line))
     }
 }
