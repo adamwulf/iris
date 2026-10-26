@@ -166,7 +166,8 @@ public struct MailReader: Sendable {
         guard !outline.parts.isEmpty else {
             IrisLog.log(
                 "The server did not describe the parts of \(id) (its answer had no BODYSTRUCTURE that iris can read), "
-                    + "so iris downloads the whole message (\(MessageFormatter.sizeText(size))), which can time out."
+                    + "so iris downloads the whole message (\(MessageFormatter.sizeText(size))), which can time out.",
+                fileEvent: .wholeMessageFallback
             )
             return .whole(try await fetchRawMessage(id, with: client))
         }
@@ -368,7 +369,8 @@ public struct MailReader: Sendable {
         if subjectSearches.isEmpty {
             IrisLog.log(
                 "The message has no subject to search for, so iris followed only the message IDs "
-                    + "that the messages name, and the thread may miss replies."
+                    + "that the messages name, and the thread may miss replies.",
+                fileEvent: .threadSearchFallback
             )
         }
 
@@ -390,7 +392,8 @@ public struct MailReader: Sendable {
                 if subjectSearches.isEmpty {
                     IrisLog.log(
                         "The server could not search by subject (\(failure)), so iris followed only the message IDs "
-                            + "that the messages name, and the thread may miss replies."
+                            + "that the messages name, and the thread may miss replies.",
+                        fileEvent: .threadSearchFallback
                     )
                 }
             }

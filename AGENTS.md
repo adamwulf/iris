@@ -20,8 +20,8 @@ Markdown into HTML. The reasons, the alternatives, and the risks are in
 
 **The one rule:** if it can be unit-tested, it belongs in `IrisKit`. The
 executable only parses arguments, calls the library, and prints. IrisKit never
-prints: it logs through `IrisLog`, and the executable decides where the lines
-go (stderr).
+prints: it reports through `IrisLog`. The executable sends interactive lines
+to stderr and fixed behavior events to rotating diagnostic files outside `ro`.
 
 ```
 Sources/IrisKit/
@@ -68,6 +68,8 @@ Sources/IrisKit/
                MailAddress (the one address type), DateText, ModifiedUTF7,
                CalendarDay (a YYYY-MM-DD day for --since and --before),
                Redaction (removes secrets from text that iris shows),
+               FileLogPolicy (no disk writes under ro, fixed error codes that
+               discard every associated value for persistent diagnostics),
                AttachmentOutput (`download`: stdout, or a new file at the -o path)
   IrisError.swift   the one error type; each message says what to do next
   IrisLog.swift     the logging seam
@@ -75,12 +77,15 @@ Sources/iris/
   Iris.swift        @main root command; ExpressibleByArgument conformances
   CLISupport.swift  log handler, swift-log bootstrap, AccountOptions (--account),
                     ArgumentHelp.irisID (the help for every iris ID argument)
+  IrisFileLog.swift FellerBuncher file destination, independent of swift-log's
+                    global handler so SwiftMail protocol logs never reach disk
   Commands/         one file per command
 Tests/IrisKitTests/ offline library tests (LoopbackServerTests binds 127.0.0.1);
                     Support/ has FakeMailClient, LogRecorder, StubTransport
                     (HTTP), FakeRedirectReceiver (sign-in), and
                     ThreadMessage+Whole (a thread message by its raw bytes)
-Tests/CLITests/     argument parsing only, never run()
+Tests/CLITests/     argument parsing and file-log backend/lifecycle wiring;
+                    only synthetic test commands run, never real commands
 ```
 
 ### The IMAP seam
@@ -339,6 +344,14 @@ AUTHENTICATE). The one exception: when `iris auth login` does not write
 refresh token's `KEY=value` line (`RefreshTokenSave.stdoutLine`) on stdout
 for the user to save.
 
+Persistent logs describe **behavior, never content**. Never forward an
+interactive `IrisLog` string or an `IrisError.errorDescription` to disk.
+`IrisLog.fileHandler` takes a `FileRecord` containing only a payload-free
+`FileEvent` and its compiler-provided source location, and
+`FileLogPolicy.failureCode` discards every associated error value. No account
+details, URLs, keys, credentials, message subjects/bodies, draft text, attachment
+data, user paths, IDs, or server replies may enter diagnostic files.
+
 ### Output
 
 - A message is always named by its iris ID (`IrisID`), `<account>/<mailbox>/<UID>`
@@ -488,9 +501,11 @@ agent `Bash(iris ro:*)` and nothing else. `Sources/iris/Commands/ReadOnlyCommand
 enforces it:
 
 - A **read-only** command (it cannot send, draft, move, flag, or delete,
-  and writes no file) is
+  and writes no output file) is
   declared `struct X: ReadOnlyCommand` and added to `ReadOnly.sharedCommands`.
-  It then appears both as `iris x` and `iris ro x`.
+  It then appears both as `iris x` and `iris ro x`. Diagnostic file logging
+  is disabled under `ro` by `FileLogPolicy.writesFiles(arguments:)`; a
+  top-level invocation can still write diagnostic files.
 - A **write** command (such as `read`, `unread`, `draft`, and `download`)
   is declared `struct X: AsyncParsableCommand` and added only to
   `Iris.configuration.subcommands`, after the read-only ones. Never
@@ -533,6 +548,9 @@ top-level write command (`auth`, `download`), and that
 `iris ro <write command>` and `iris ro download -o` fail.
 
 ### Add an error
+
+Add a fixed behavior code to the exhaustive `FileLogPolicy.failureCode` switch;
+never put the error's associated values or description in persistent logs.
 
 Add a case to `IrisError` in its section (`// IMAP`, `// Message rendering`,
 `// Drafts`, `// Attachments`, `// Google sign-in`) with an `errorDescription` that says what the user can
@@ -776,7 +794,24 @@ account (`--account <name>`).
 - **swift-log:** SwiftMail logs at `.info` to stderr by default, and logs
   every failed command at `.error`. iris reports each failure itself as an
   `IrisError`, so `CLI.bootstrapSwiftLog()` keeps only `.critical`. Only the
-  executable depends on swift-log.
+  executable depends on swift-log and FellerBuncher (pinned to `2e24570`,
+  which includes O_APPEND for overlapping writers; bump in Package.swift
+  and re-resolve).
+  `IrisFileLog` uses a
+  dedicated `FileDestination`, never FellerBuncher's global bootstrap: that
+  would persist SwiftMail's protocol diagnostics. Outside `ro`, after parsing,
+  it appends to `~/Library/Logs/iris/iris.log` with graham's defaults (10 MiB,
+  five rotated siblings, seven-day retention). Startup failure warns and
+  continues; `CLI.run` awaits `drain()` before returning or rethrowing on
+  both exit paths. It derives command paths from the parser tree and records
+  explicit `ExitCode` outcomes as exit statuses. `IrisLog.fileHandler` receives
+  a `FileRecord` containing only a fixed, payload-free `FileEvent` and its
+  compiler-provided source location. Untagged interactive messages
+  never persist. `FileLogPolicy.failureCode` maps Iris errors exhaustively to
+  fixed behavior codes and maps other errors to `command_failed`, without
+  rendering errors or reading associated values. The file sink exposes no
+  free-text API and does not read account settings. Source locations are
+  forwarded by its wrappers. `ro` never opens the destination, even for pruning.
 - **Google OAuth, 7 days:** Adam's Google Cloud app is External and in
   Testing, so Google ends each refresh token after 7 days (and when the
   Google password changes). The refresh then answers HTTP 400

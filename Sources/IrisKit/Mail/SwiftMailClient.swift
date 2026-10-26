@@ -352,7 +352,7 @@ struct SwiftMailClient: MailWriteClient {
             try await server.logout()
         } catch {
             let reason = Redaction.redacting(account.secrets, in: Self.reason(of: error))
-            IrisLog.log("Logging out of \(account.host) failed (\(reason)). Closing the connection.")
+            IrisLog.log("Logging out of \(account.host) failed (\(reason)). Closing the connection.", fileEvent: .logoutFailed)
             try? await server.disconnect()
         }
     }

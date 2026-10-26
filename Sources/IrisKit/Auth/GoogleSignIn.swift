@@ -69,7 +69,8 @@ public struct GoogleSignIn: Sendable {
             redirect = try await receiver.waitForRedirect(timeoutSeconds: Self.redirectTimeoutSeconds) {
                 IrisLog.log(
                     "Opening the Google sign-in page in your browser. Sign in as \(account.username). "
-                        + "If the page does not open, open this URL:\n\(url.absoluteString)"
+                        + "If the page does not open, open this URL:\n\(url.absoluteString)",
+                    fileEvent: .googleSignInStarted
                 )
                 openURL(url)
             }

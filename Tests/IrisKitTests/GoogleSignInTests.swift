@@ -241,12 +241,24 @@ final class GoogleSignInTests: XCTestCase {
     // MARK: - The whole flow
 
     func testRunOpensThePageAfterWaitingThenExchangesTheCode() async throws {
+        let console = LogRecorder()
+        let file = LogRecorder()
+        let previousHandler = IrisLog.handler
+        let previousFileHandler = IrisLog.fileHandler
+        IrisLog.handler = console.record
+        IrisLog.fileHandler = { file.record($0.event.rawValue) }
+        defer {
+            IrisLog.handler = previousHandler
+            IrisLog.fileHandler = previousFileHandler
+        }
         let transport = StubTransport(json: tokensJSON)
         let receiver = receiver()
         let signIn = GoogleSignIn(account: account, transport: transport, receiver: receiver, openURL: receiver.open)
 
         let refreshToken = try await signIn.run()
 
+        XCTAssertTrue(console.lines.joined().contains("https://accounts.google.com/"))
+        XCTAssertEqual(file.lines, ["google_sign_in_started"])
         XCTAssertEqual(refreshToken, "1//refresh")
         let events = receiver.events
         XCTAssertEqual(events.count, 4, "\(events)")

@@ -24,8 +24,6 @@ These are the remaining ideas, not a committed implementation order:
   reading mail, using iris IDs, handling attachments, and saving drafts.
 - **Cc filtering:** extend `list` alongside the existing From and To
   filters.
-- **File logging:** use FellerBuncher, as graham does, to retain diagnostic
-  logs for troubleshooting.
 - **Stable paging:** consider a cursor that does not shift when new mail
   arrives; the interface is still an open question below.
 

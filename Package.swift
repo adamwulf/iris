@@ -26,6 +26,8 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.8.0"),
         // SwiftMail logs through swift-log. Only the executable picks the backend.
         .package(url: "https://github.com/apple/swift-log", from: "1.6.0"),
+        // Includes O_APPEND so overlapping CLI processes cannot overwrite log lines.
+        .package(url: "https://github.com/adamwulf/FellerBuncher.git", revision: "2e24570d248d04c5811d8c6b9cfb733387312e03"),
     ],
     targets: [
         // The library holds all logic and never prints: it logs through the
@@ -44,6 +46,7 @@ let package = Package(
                 "IrisKit",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "FellerBuncher", package: "FellerBuncher"),
             ]
         ),
         .testTarget(

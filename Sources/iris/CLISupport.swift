@@ -4,10 +4,62 @@ import IrisKit
 import Logging
 
 enum CLI {
-    /// Library log lines go to stderr, so stdout stays clean for piping.
-    static func installLogHandler() {
+    /// Run one parsed command, draining diagnostics before returning or
+    /// rethrowing to main's exit(withError:). Tests pass a temporary directory
+    /// so they exercise the same lifecycle without real accounts.
+    static func run(
+        _ parsedCommand: any ParsableCommand,
+        arguments: [String],
+        logDirectory: URL = IrisFileLog.defaultDirectory
+    ) async throws {
+        var command = parsedCommand
+        let logging = IrisFileLog.openIfPossible(
+            command: command, arguments: arguments, directory: logDirectory
+        )
+        installLogHandler(fileLog: logging)
+        logging?.record(.started, command: type(of: command))
+        do {
+            if var asyncCommand = command as? AsyncParsableCommand {
+                try await asyncCommand.run()
+            } else {
+                try command.run()
+            }
+            logging?.record(.completed, command: type(of: command))
+            await logging?.drain()
+        } catch {
+            if let exitCode = error as? ExitCode {
+                logging?.record(.exited(exitCode.rawValue), command: type(of: command))
+            } else {
+                logging?.record(.failed(error), command: type(of: command))
+            }
+            await logging?.drain()
+            throw error
+        }
+    }
+
+    /// Derive names from the parser's command tree, never from argv values.
+    /// Top-level paths come first; the duplicate read-only paths do not log.
+    static func commandPath(for command: any ParsableCommand.Type) -> String {
+        func path(under node: any ParsableCommand.Type) -> [String]? {
+            if node == command { return [node._commandName] }
+            for child in node.configuration.subcommands {
+                if let remainder = path(under: child) {
+                    return [node._commandName] + remainder
+                }
+            }
+            return nil
+        }
+        return path(under: Iris.self)?.dropFirst().joined(separator: " ") ?? command._commandName
+    }
+
+    /// Live lines go to stderr; fixed behavior events go to the optional file
+    /// sink. Neither destination mixes diagnostics with stdout data.
+    static func installLogHandler(fileLog: IrisFileLog?) {
         IrisLog.handler = { message in
             printToStderr("iris: \(message)")
+        }
+        IrisLog.fileHandler = { record in
+            fileLog?.record(record.event, file: record.file, function: record.function, line: record.line)
         }
     }
 

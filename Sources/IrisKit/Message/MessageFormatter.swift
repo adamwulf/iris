@@ -225,12 +225,12 @@ public enum MessageFormatter {
         }
         if documents.isEmpty, let failed = leftOut.first(where: \.message.isInput) {
             for other in leftOut where other.message.irisID != failed.message.irisID {
-                IrisLog.log(other.line)
+                IrisLog.log(other.line, fileEvent: .threadMessageOmitted)
             }
             throw failed.error
         }
         for item in leftOut {
-            IrisLog.log(item.line)
+            IrisLog.log(item.line, fileEvent: .threadMessageOmitted)
         }
         switch format {
         case .markdown:

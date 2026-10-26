@@ -173,6 +173,8 @@ client ID but no refresh token yet.
 
 ## What works today
 
+- Rotating diagnostic files through FellerBuncher in `~/Library/Logs/iris/`,
+  with file logging disabled under `iris ro`.
 - Any number of named accounts in `.env`, picked with `--account`.
 - Gmail without an app password: `iris auth login` signs in with Google
   (OAuth), and every command then logs in with XOAUTH2. `iris auth status`
@@ -742,6 +744,14 @@ For Claude Code, in `.claude/settings.json`:
 { "permissions": { "allow": ["Bash(iris ro:*)"] } }
 ```
 
+### Diagnostic log files
+
+Normal commands retain diagnostic logs in `~/Library/Logs/iris/iris.log`, using FellerBuncher with the same defaults as graham: rotation at 10 MiB, up to five rotated files (`iris-1.log` through `iris-5.log`), and seven-day retention for inactive logs. Timestamps are UTC. Pending writes are drained before successful or failed exit.
+
+Diagnostic files describe behavior only: command names, start/completion events, exit statuses, fixed error codes, and fixed library events such as `thread_search_fallback`. They never receive email subjects or bodies, draft text, attachments, account details, addresses, mailboxes, iris IDs, URLs, configuration keys or values, credentials, file paths, server replies, raw error descriptions, command arguments, or stdout data. The persistent sink accepts typed events rather than free-form text; unknown errors become `command_failed`. SwiftMail protocol logging is not connected to the file destination. The logger also records timestamps, levels, and source-code locations.
+
+`iris ro` disables file logging completely, including directory creation and pruning. Help and argument-parsing failures also create no logs. If the log directory cannot be opened, iris prints one warning on stderr and continues. Live notices and errors still go to stderr, and stdout remains data only.
+
 ## Development
 
 ```sh
@@ -752,8 +762,9 @@ swift run iris --help
 
 The tests use fake IMAP clients and HTTP transports; they do not connect
 to a mail provider or send mail. One test exercises the OAuth redirect
-listener on `127.0.0.1`. CLI tests check argument parsing without running
-the commands. A passing suite does not replace the live provider checks.
+listener on `127.0.0.1`. CLI tests check argument parsing and file logging in
+temporary directories using synthetic commands. A passing suite does not
+replace the live provider checks.
 
 See [AGENTS.md](AGENTS.md) for the architecture and how to add a command.
 Future work is in [plans/roadmap.md](plans/roadmap.md). The

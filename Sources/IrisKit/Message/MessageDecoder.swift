@@ -281,11 +281,13 @@ public enum MessageDecoder {
                 )
                 return (converted.text, .html, converted.trimmed)
             } catch IrisError.htmlNotConverted(let reason, _) where preference == .auto && text != nil {
+                IrisLog.record(.htmlConversionFallback)
                 log("The HTML part could not be converted to Markdown (\(reason)), so the text part is shown.")
             }
         }
         if let text {
             if preference == .html && html == nil {
+                IrisLog.record(.bodyFormatFallback)
                 log("The message has no html part, so the text part is shown.")
             }
             // The joined text, so that only the end of the whole body is cut.
@@ -298,6 +300,7 @@ public enum MessageDecoder {
             return ("", nil, false)
         }
         // Only `.text` gets here with an HTML part: the other choices returned or threw above.
+        IrisLog.record(.bodyFormatFallback)
         log("The message has no text part, so the html part is shown.")
         let converted = try await markdown(
             fromHTMLParts: html, hasTextPart: false, trimming: trimming, inReply: inReply, parseHTML: parseHTML
