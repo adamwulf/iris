@@ -492,7 +492,9 @@ data, user paths, IDs, or server replies may enter diagnostic files.
    set `commandName`, or the tests cannot tell the two apart.
 4. Add parse tests in `Tests/CLITests/ArgumentParsingTests.swift`.
 5. Update README.md ("What works today", "Usage") and remove the item from
-   `plans/roadmap.md`.
+   `plans/roadmap.md`. Update `skill/iris/SKILL.md`, the agent skill, when
+   the command changes what it says (it is a short orientation, not a
+   command catalog: `--help` lists the options).
 
 ### Read-only and write commands
 
