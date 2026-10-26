@@ -346,7 +346,8 @@ for the user to save.
 
 Persistent logs describe **behavior, never content**. Never forward an
 interactive `IrisLog` string or an `IrisError.errorDescription` to disk.
-`IrisLog.fileHandler` takes only payload-free `FileEvent` cases, and
+`IrisLog.fileHandler` takes a `FileRecord` containing only a payload-free
+`FileEvent` and its compiler-provided source location, and
 `FileLogPolicy.failureCode` discards every associated error value. No account
 details, URLs, keys, credentials, message subjects/bodies, draft text, attachment
 data, user paths, IDs, or server replies may enter diagnostic files.
@@ -804,7 +805,8 @@ account (`--account <name>`).
   continues; `CLI.run` awaits `drain()` before returning or rethrowing on
   both exit paths. It derives command paths from the parser tree and records
   explicit `ExitCode` outcomes as exit statuses. `IrisLog.fileHandler` receives
-  only fixed, payload-free `FileEvent` cases. Untagged interactive messages
+  a `FileRecord` containing only a fixed, payload-free `FileEvent` and its
+  compiler-provided source location. Untagged interactive messages
   never persist. `FileLogPolicy.failureCode` maps Iris errors exhaustively to
   fixed behavior codes and maps other errors to `command_failed`, without
   rendering errors or reading associated values. The file sink exposes no
